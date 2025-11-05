@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id        Int             @id @default(autoincrement())
+  sku       String          @unique
+  barcode   String?         @unique
+  name      String
+  category  String?
+  cost      Decimal         @default(0)
+  price     Decimal         @default(0)
+  taxRate   Decimal         @default(0)
+  minStock  Int             @default(0)
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  SaleItem  SaleItem[]
+  StockMove StockMovement[]
+
+  @@index([sku])
+  @@index([name])
+  @@index([category])
+}
+
+model Sale {
+  id        Int        @id @default(autoincrement())
+  userId    Int?
+  storeId   Int?
+  customer  String?
+  subtotal  Decimal    @default(0)
+  tax       Decimal    @default(0)
+  discount  Decimal    @default(0)
+  total     Decimal    @default(0)
+  status    String     @default("paid") // paid|void|return
+  createdAt DateTime   @default(now())
+  items     SaleItem[]
+  payments  Payment[]
+}
+
+model SaleItem {
+  id        Int     @id @default(autoincrement())
+  sale      Sale    @relation(fields: [saleId], references: [id])
+  saleId    Int
+  product   Product @relation(fields: [productId], references: [id])
+  productId Int
+  qty       Int
+  unitPrice Decimal @default(0)
+  taxRate   Decimal @default(0)
+  discount  Decimal @default(0)
+  total     Decimal @default(0)
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  saleId    Int
+  method    String   // EFECTIVO | QR_LLAVE | DATAFONO
+  amount    Decimal  @default(0)
+  reference String?
+  createdAt DateTime @default(now())
+}
+
+model StockMovement {
+  id        Int      @id @default(autoincrement())
+  product   Product  @relation(fields: [productId], references: [id])
+  productId Int
+  type      String   // in|out|adj|return
+  qty       Int
+  unitCost  Decimal  @default(0)
+  reference String?
+  userId    Int?
+  storeId   Int?
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([type])
+}
+
+model Expense {
+  id            Int      @id @default(autoincrement())
+  storeId       Int?
+  userId        Int?
+  category      String
+  description   String?
+  amount        Decimal  @default(0)
+  paymentMethod String?  // EFECTIVO | QR_LLAVE | DATAFONO
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  role      Role     @default(EMPLOYEE)
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum WorkStatus {
+  RECEIVED   // Recibido
+  IN_PROGRESS // En proceso
+  FINISHED   // Finalizado (listo para entrega)
+  DELIVERED  // Entregado
+}
+
+enum WorkLocation {
+  LOCAL
+  BOGOTA
+}
+
+model WorkOrder {
+  id            Int          @id @default(autoincrement())
+  code          String       @unique            // WK-00001
+  item          String                           // qué se recibe
+  description   String                           // descripción del caso
+  customerName  String
+  customerPhone String
+  reviewPaid    Boolean      @default(false)     // pagó $20.000 revisión
+  status        WorkStatus   @default(RECEIVED)
+  location      WorkLocation @default(LOCAL)
+  quote         Decimal?                          // cotización (opcional)
+  total         Decimal?                          // total final (opcional)
+  notes         String?                           // notas internas
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, location, createdAt])
+  @@index([code])
+}
