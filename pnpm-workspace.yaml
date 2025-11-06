@@ -1,3 +1,13 @@
 packages:
   - apps/*
   - packages/*
+
+ignoredBuiltDependencies:
+  - core-js
+  - sharp
+  - unrs-resolver
+
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
