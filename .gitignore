@@ -1,19 +1,60 @@
-# Node / PNPM
+# === Node / PNPM ===
 node_modules/
 .pnpm-store/
 .pnpm/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Next.js / Build
+# === Build / Output ===
 .next/
 out/
 dist/
 build/
 .turbo/
 .cache/
+.eslintcache
+.vite/
 
-# Env / OS / IDE
-.env*
+# === Next.js SWC Compiled Binaries ===
+**/@next/swc-*/ 
+**/next-swc*.node
+
+# === Monorepo app outputs ===
+apps/*/.next/
+apps/*/dist/
+apps/*/build/
+packages/*/.next/
+packages/*/dist/
+packages/*/build/
+
+# === Prisma ===
+# Generated client
+prisma/client/
+# Engine binaries + caches
+.prisma/
+*.db-journal
+
+# === Env files (no subir datos sensibles) ===
+.env
+.env.*
 !.env.example
+
+# === IDE / OS ===
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-.vscode/
+
+# === Logs ===
+logs/
+*.log
+*.pid
+*.seed
+*.tsbuildinfo
+
+# === Local Dev Only ===
+coverage/
+tmp/
+temp/
