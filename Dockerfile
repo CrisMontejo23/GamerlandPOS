@@ -35,7 +35,7 @@ RUN pnpm --filter ./apps/api build
 # Compila el Web (Next.js build)
 ENV NEXT_TELEMETRY_DISABLED=1
 # Front hablará con API interna en :4000 dentro del mismo contenedor
-ENV NEXT_PUBLIC_API_URL=http://localhost:4000
+ENV NEXT_PUBLIC_API_URL=/api
 RUN pnpm --filter ./apps/web build
 
 # ------------ Runtime: una sola imagen que corre web+api ------------
