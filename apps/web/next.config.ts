@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:4000/:path*",
+        destination: "http://localhost:4000/:path*", // proxy interno al server de la API
       },
     ];
   },
