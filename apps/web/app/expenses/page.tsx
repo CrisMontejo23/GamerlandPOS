@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch, getApiBase } from "../lib/api";
-
-const API = getApiBase();
+import { apiFetch} from "../lib/api";
 
 type Expense = {
   id: number;
@@ -71,10 +69,8 @@ export default function ExpensesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const url = new URL(`${API}/expenses`);
-      url.searchParams.set("from", from);
-      url.searchParams.set("to", to);
-      const r = await apiFetch(url.toString());
+      const qs = new URLSearchParams({ from, to }).toString();
+      const r = await apiFetch(`/expenses?${qs}`);
       const data: Expense[] = await r.json();
       setRows(data);
     } finally {
@@ -100,7 +96,7 @@ export default function ExpensesPage() {
       amount: Number(amount),
     };
 
-    const r = await apiFetch(`${API}/expenses`, {
+    const r = await apiFetch(`/expenses`, {
       method: "POST",
       body: JSON.stringify(payload),
     });

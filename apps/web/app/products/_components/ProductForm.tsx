@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch, getApiBase } from "../../lib/api";
-
-const API = getApiBase();
+import { apiFetch } from "../../lib/api";
 
 export type Product = {
   id?: number;
@@ -77,7 +75,7 @@ export default function ProductForm({
     const run = async () => {
       if (!id) return;
       try {
-        const r = await apiFetch(`${API}/products/${id}`);
+        const r = await apiFetch(`/products/${id}`);
         const p = await r.json();
         setForm((f) => ({
           ...f,
@@ -147,9 +145,7 @@ export default function ProductForm({
     }
     setLoadingSku(true);
     try {
-      const r = await apiFetch(
-        `${API}/products/next-sku?category=${encodeURIComponent(catName)}`
-      );
+      const r = await apiFetch(`/products/next-sku?category=${encodeURIComponent(catName)}`);
       const data = await r.json();
       setForm((f) => ({ ...f, sku: data.sku || "" }));
     } finally {
@@ -194,7 +190,7 @@ export default function ProductForm({
     };
 
     const method = isEdit ? "PATCH" : "POST";
-    const url = isEdit ? `${API}/products/${id}` : `${API}/products`;
+    const url = isEdit ? `/products/${id}` : `/products`;
 
     const r = await apiFetch(url, { method, body: JSON.stringify(payload) });
 

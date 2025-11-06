@@ -1,9 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetch, getApiBase } from "../lib/api";
-
-const API = getApiBase();
+import { apiFetch } from "../lib/api";
 
 // ===== Tipos =====
 type Product = { id: number; sku: string; name: string; price: string; cost: string; stock?: number };
@@ -36,10 +34,10 @@ export default function POSPage() {
       if (!q) { setFound([]); return; }
       setLoading(true);
       try {
-        const url = new URL(`${API}/products`);
+        const url = new URL(`/products`, window.location.origin);
         url.searchParams.set("q", q);
         url.searchParams.set("withStock", "true");
-        const r = await apiFetch(url.toString());
+        const r = await apiFetch(`/products?${url.searchParams.toString()}`);
         const data: Product[] = await r.json();
         if (!abort) setFound(data);
       } finally { if (!abort) setLoading(false); }
@@ -89,7 +87,7 @@ export default function POSPage() {
       items: cart.map(i => ({ productId: i.product.id, qty: i.qty, unitPrice: i.unitPrice, taxRate: 0, discount: 0 })),
       payments: [{ method: payMethod, amount: subtotal }],
     };
-    const r = await apiFetch(`${API}/sales`, { method: "POST", body: JSON.stringify(payload) });
+    const r = await apiFetch(`/sales`, { method: "POST", body: JSON.stringify(payload) });
     if (r.ok) { setCart([]); setMsg("Venta creada ✅"); setReceived(0); }
     else { const e = await r.json().catch(() => ({})); setMsg("Error: " + (e?.error || "No se pudo crear la venta")); }
     setTimeout(() => setMsg(""), 2500);
@@ -111,13 +109,13 @@ export default function POSPage() {
       const r = raw as Partial<Product>;
       return { id: Number(r.id ?? 0), sku: String(r.sku ?? ""), name: String(r.name ?? "PAPELERIA"), price: String(r.price ?? "0"), cost: String(r.cost ?? "0"), stock: Number(r.stock ?? 0) };
     };
-    const r = await fetch(`${API}/products?q=PAPELERIA&withStock=true`);
+    const r = await apiFetch(`/products?q=PAPELERIA&withStock=true`);
     const list: unknown = await r.json();
     let raw = Array.isArray(list)
       ? (list.find((x) => typeof x === "object" && x !== null && String((x as { name?: string }).name ?? "").toUpperCase() === "PAPELERIA") as Partial<Product> | undefined)
       : undefined;
     if (!raw) {
-      const created = await apiFetch(`${API}/products`, { method: "POST", body: JSON.stringify({ name: "PAPELERIA", sku: "", category: "SERVICIOS", cost: 0, price: 0, taxRate: 0, active: true, minStock: 0 }) });
+      const created = await apiFetch(`/products`, { method: "POST", body: JSON.stringify({ name: "PAPELERIA", sku: "", category: "SERVICIOS", cost: 0, price: 0, taxRate: 0, active: true, minStock: 0 }) });
       raw = (await created.json()) as Partial<Product>;
     }
     const paper = toProduct(raw);

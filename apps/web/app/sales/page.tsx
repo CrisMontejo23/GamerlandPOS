@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch, getApiBase } from "../lib/api";
-
-const API = getApiBase();
+import { apiFetch } from "../lib/api";
 
 type Payment = {
   method: "EFECTIVO" | "QR_LLAVE" | "DATAFONO" | string;
@@ -78,10 +76,10 @@ export default function SalesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const url = new URL(`${API}/reports/sales-lines`);
+      const url = new URL(`/reports/sales-lines`, window.location.origin);
       url.searchParams.set("from", from);
       url.searchParams.set("to", to);
-      const r = await apiFetch(url);
+      const r = await apiFetch(`/reports/sales-lines?${url.searchParams.toString()}`);
       const data: Row[] = await r.json();
       setRows(data);
     } finally {

@@ -1,10 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch, getApiBase } from "../lib/api";
+import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
-
-const API = getApiBase();
 
 type Product = {
   id: number;
@@ -30,11 +28,11 @@ export default function ProductsPage() {
 
   useEffect(() => {
     const load = async () => {
-      const url = new URL(`${API}/products`);
+      const url = new URL(`/products`, window.location.origin);
       if (q) url.searchParams.set("q", q);
       if (includeInactive) url.searchParams.set("includeInactive", "true");
       url.searchParams.set("withStock", "true");
-      const res = await apiFetch(url);
+      const res = await apiFetch(`/products?${url.searchParams.toString()}`);
       const data = await res.json();
       setRows(data);
     };
@@ -42,15 +40,13 @@ export default function ProductsPage() {
   }, [q, includeInactive, reload]);
 
   const toggleActive = async (id: number, active: boolean) => {
-    await apiFetch(`${API}/products/${id}/activate?active=${String(!active)}`, {
-      method: "PATCH",
-    });
+    await apiFetch(`/products/${id}/activate?active=${String(!active)}`, { method: "PATCH" });
     setReload((r) => r + 1);
   };
 
   const remove = async (id: number) => {
     if (!confirm("¿Eliminar este producto permanentemente?")) return;
-    const r = await apiFetch(`${API}/products/${id}`, { method: "DELETE" });
+    const r = await apiFetch(`/products/${id}`, { method: "DELETE" });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       alert(e?.error || "No se pudo eliminar (tiene ventas o movimientos)");

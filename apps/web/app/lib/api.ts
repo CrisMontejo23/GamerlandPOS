@@ -1,11 +1,5 @@
 "use client";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "/api";
-
-export function getApiBase() {
-  return API;
-}
-
 export function getAuth() {
   if (typeof window === "undefined") {
     return { token: "", role: "" as "ADMIN" | "EMPLOYEE" | "" };
@@ -15,14 +9,16 @@ export function getAuth() {
   return { token, role };
 }
 
-// Une base + path relativo de forma segura.
-function resolveUrl(input: string | URL): string {
+/** Normaliza rutas al backend:
+ * - Si es absoluta (http/https), la deja igual.
+ * - Si es relativa, garantiza que sea /api/...
+ */
+function toApiUrl(input: string | URL): string {
   const s = input instanceof URL ? input.toString() : String(input);
-  // Si ya es absoluta (http/https), no tocar
-  if (/^https?:\/\//i.test(s)) return s;
-  // Si es relativa, anteponer API
-  if (s.startsWith("/")) return `${API}${s}`;
-  return `${API}/${s}`;
+  if (/^https?:\/\//i.test(s)) return s; // absoluta → no tocar
+  let path = s.startsWith("/") ? s : `/${s}`;
+  if (!path.startsWith("/api/")) path = `/api${path}`;
+  return path;
 }
 
 export async function apiFetch(input: string | URL, init: RequestInit = {}) {
@@ -31,11 +27,9 @@ export async function apiFetch(input: string | URL, init: RequestInit = {}) {
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
 
-  const url = resolveUrl(input);
-
+  const url = toApiUrl(input);
   const res = await fetch(url, { ...init, headers });
 
-  // Auto-logout si 401
   if (res.status === 401 && typeof window !== "undefined") {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_role");

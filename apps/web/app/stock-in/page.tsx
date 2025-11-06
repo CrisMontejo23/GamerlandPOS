@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { apiFetch, getApiBase } from "../lib/api";
-
-const API = getApiBase();
+import { apiFetch } from "../lib/api";
 
 type Product = {
   id: number;
@@ -37,11 +35,11 @@ export default function StockInPage() {
         setFound([]);
         return;
       }
-      const url = new URL(`${API}/products`);
+      const url = new URL(`/products`, window.location.origin);
       url.searchParams.set("q", q);
       url.searchParams.set("withStock", "true");
       try {
-        const r = await apiFetch(url);
+        const r = await apiFetch(`/products?${url.searchParams.toString()}`);
         const data: Product[] = await r.json();
         if (!abort) setFound(data);
       } catch {
@@ -58,7 +56,7 @@ export default function StockInPage() {
   const choose = async (p: Product) => {
     if (p.cost === undefined) {
       try {
-        const r = await apiFetch(`${API}/products/${p.id}`);
+        const r = await apiFetch(`/products/${p.id}`);
         const full = await r.json();
         setSelected({ ...p, cost: full?.cost });
         return;
@@ -89,7 +87,7 @@ export default function StockInPage() {
       reference: "COMPRA",
     };
 
-    const r = await apiFetch(`${API}/stock/in`, {
+    const r = await apiFetch(`/stock/in`, {
       method: "POST",
       body: JSON.stringify(payload),
     });

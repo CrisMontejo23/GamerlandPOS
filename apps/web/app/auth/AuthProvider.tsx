@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { apiFetch, getApiBase, getAuth } from "../lib/api";
+import { apiFetch, getAuth } from "../lib/api";
 import { usePathname, useRouter } from "next/navigation";
 
 type Role = "ADMIN" | "EMPLOYEE";
@@ -64,7 +64,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       setRole((role as Role) || null);
       setUsername(username);
       // Valida en /auth/me (opcional: se puede diferir)
-      apiFetch(`${getApiBase()}/auth/me`)
+      apiFetch(`/auth/me`)
         .then(async (r) => {
           if (!r.ok) throw new Error();
           return r.json();
@@ -105,7 +105,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
   const login = async (username: string, password: string) => {
     try {
-      const r = await fetch(`${getApiBase()}/auth/login`, {
+      const r = await fetch(`/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),

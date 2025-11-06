@@ -18,13 +18,11 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logo from "../../assets/logo.png";
-import { apiFetch, getApiBase } from "../lib/api";
+import { apiFetch } from "../lib/api";
 
 type JsPDFWithAutoTable = jsPDF & {
   lastAutoTable?: { finalY: number };
 };
-
-const API = getApiBase();
 
 /* ===== Tipos ===== */
 type Summary = {
@@ -151,10 +149,10 @@ export default function ReportsPage() {
     setLoading(true);
     try {
       const [r1, r2, r3, r4] = await Promise.all([
-        apiFetch(`${API}/reports/summary?from=${from}&to=${to}`),
-        apiFetch(`${API}/reports/payments?from=${from}&to=${to}`),
-        apiFetch(`${API}/reports/summary?from=${monthStartISO(to)}&to=${to}`),
-        apiFetch(`${API}/reports/summary?from=${yearStartISO(to)}&to=${to}`),
+        apiFetch(`/reports/summary?from=${from}&to=${to}`),
+        apiFetch(`/reports/payments?from=${from}&to=${to}`),
+        apiFetch(`/reports/summary?from=${monthStartISO(to)}&to=${to}`),
+        apiFetch(`/reports/summary?from=${yearStartISO(to)}&to=${to}`),
       ]);
       const [d1, d2, d3, d4] = await Promise.all([
         r1.json(),
@@ -212,10 +210,10 @@ export default function ReportsPage() {
     try {
       // 1) Pide datos del rango actual
       const [salesRes, expRes, sumRes, payRes] = await Promise.all([
-        apiFetch(`${API}/reports/sales-lines?from=${from}&to=${to}`),
-        apiFetch(`${API}/expenses?from=${from}&to=${to}`),
-        apiFetch(`${API}/reports/summary?from=${from}&to=${to}`),
-        apiFetch(`${API}/reports/payments?from=${from}&to=${to}`),
+        apiFetch(`/reports/sales-lines?from=${from}&to=${to}`),
+        apiFetch(`/expenses?from=${from}&to=${to}`),
+        apiFetch(`/reports/summary?from=${from}&to=${to}`),
+        apiFetch(`/reports/payments?from=${from}&to=${to}`),
       ]);
       const [sales, expenses, summary, payments] = await Promise.all([
         salesRes.json() as Promise<SaleLine[]>,
