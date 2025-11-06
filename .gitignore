@@ -1,0 +1,19 @@
+# Node / PNPM
+node_modules/
+.pnpm-store/
+.pnpm/
+
+# Next.js / Build
+.next/
+out/
+dist/
+build/
+.turbo/
+.cache/
+
+# Env / OS / IDE
+.env*
+!.env.example
+.DS_Store
+Thumbs.db
+.vscode/
