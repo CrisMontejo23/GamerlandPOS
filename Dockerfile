@@ -33,7 +33,7 @@ ENV NEXT_PUBLIC_API_URL=/api
 RUN pnpm -C apps/web build
 
 # *** Importante: deps de prod locales para API ***
-RUN pnpm --filter ./apps/api deploy --prod /app/apps/api_deploy
+RUN pnpm --filter apps/api deploy --prod /app/apps/api_deploy
 
 # ------------ Runtime: una sola imagen que corre web+api ------------
 FROM node:20-alpine AS runner
