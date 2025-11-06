@@ -1,0 +1,94 @@
+/* Tailwind core */
+@import "tailwindcss";
+
+/* =========================
+   Tema GAMERLAND (variables)
+   ========================= */
+:root {
+  --bg:       #0B0C2A; /* fondo app */
+  --panel:    #111231; /* sidebar */
+  --card:     #14163A; /* tarjetas/tablas */
+  --input:    #0F1030; /* inputs/botones secundarios */
+  --border:   #1E1F4B; /* bordes/splits */
+  --text:     #E5E5E5; /* texto base */
+
+  --cyan:     #00FFFF; /* primario neón */
+  --pink:     #FF00FF; /* acento neón */
+  --yellow:   #E5FF00; /* detalle */
+}
+
+/* Aplica el tema a la app completa */
+.theme-gamer {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* =====================================
+   Utilidades y componentes (Tailwind v4)
+   ===================================== */
+@layer utilities {
+  /* Backgrounds y bordes */
+  .bg-panel { background-color: var(--panel); }
+  .bg-card  { background-color: var(--card); }
+  .bg-input { background-color: var(--input); }
+
+  .border-eon { border-color: var(--border); }
+
+  /* Texto/acento */
+  .text-neon    { color: var(--cyan); }
+  .text-neon-2  { color: var(--pink); }
+  .text-muted   { color: #b7b7cf; }
+
+  /* Tarjeta base */
+  .card {
+    @apply rounded-xl border p-3;
+    background-color: var(--card);
+    border-color: var(--border);
+  }
+
+  /* Botón secundario/ghost */
+  .btn-ghost {
+    @apply rounded-lg transition;
+    background-color: var(--input);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-ghost:hover { background-color: #191B4B; }
+
+  /* Botón principal con glow neón */
+  .btn-neon {
+    @apply w-full py-3 rounded-lg text-lg font-semibold transition;
+    color: #001014;
+    background: linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9));
+    box-shadow: 0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25);
+  }
+  .btn-neon:disabled { opacity: .55; }
+  .btn-neon:hover {
+    box-shadow: 0 0 26px rgba(0,255,255,.55), 0 0 36px rgba(255,0,255,.45);
+  }
+
+  /* Input oscuro con focus ring */
+  .input-neon {
+    @apply rounded outline-none;
+    background-color: var(--input);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .input-neon::placeholder { color: #8b8bb5; }
+  .input-neon:focus {
+    box-shadow: 0 0 0 2px rgba(0,255,255,.25), inset 0 0 .4rem rgba(255,0,255,.12);
+    border-color: var(--cyan);
+  }
+
+  /* Tabla */
+  .table-neon thead tr { border-bottom: 1px solid var(--border); }
+  .table-neon th { @apply text-left; color: #cbd1ff; }
+  .table-neon tbody tr { border-bottom: 1px solid var(--border); }
+  .table-neon tbody tr:hover { background-color: #191B4B; }
+
+  /* Chips */
+  .chip {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[11px];
+    background-color: var(--border);
+  }
+}

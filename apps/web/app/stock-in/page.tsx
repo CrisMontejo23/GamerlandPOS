@@ -1,0 +1,272 @@
+"use client";
+import { useEffect, useState } from "react";
+import { apiFetch, getApiBase } from "../lib/api";
+
+const API = getApiBase();
+
+type Product = {
+  id: number;
+  sku: string;
+  name: string;
+  stock?: number;
+  cost?: string | number;
+};
+
+const COLORS = {
+  bgCard: "#14163A",
+  border: "#1E1F4B",
+  input: "#0F1030",
+  cyan: "#00FFFF",
+  pink: "#FF00FF",
+  text: "#E5E5E5",
+};
+
+export default function StockInPage() {
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<Product[]>([]);
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [qty, setQty] = useState<number | "">("");
+  const [unitCost, setUnitCost] = useState<number | "">("");
+  const [msg, setMsg] = useState("");
+
+  // Buscar productos
+  useEffect(() => {
+    let abort = false;
+    const run = async () => {
+      if (!q) {
+        setFound([]);
+        return;
+      }
+      const url = new URL(`${API}/products`);
+      url.searchParams.set("q", q);
+      url.searchParams.set("withStock", "true");
+      try {
+        const r = await apiFetch(url);
+        const data: Product[] = await r.json();
+        if (!abort) setFound(data);
+      } catch {
+        if (!abort) setFound([]);
+      }
+    };
+    const t = setTimeout(run, 200);
+    return () => {
+      abort = true;
+      clearTimeout(t);
+    };
+  }, [q]);
+
+  const choose = async (p: Product) => {
+    if (p.cost === undefined) {
+      try {
+        const r = await apiFetch(`${API}/products/${p.id}`);
+        const full = await r.json();
+        setSelected({ ...p, cost: full?.cost });
+        return;
+      } catch {
+        setSelected(p);
+        return;
+      }
+    }
+    setSelected(p);
+  };
+
+  const resetAll = () => {
+    setSelected(null);
+    setQty("");
+    setUnitCost("");
+    setQ("");
+    setFound([]);
+  };
+
+  const save = async () => {
+    if (!selected || !qty) return;
+    if (unitCost === "" || unitCost < 0) return;
+
+    const payload = {
+      productId: selected.id,
+      qty: Number(qty),
+      unitCost: Number(unitCost),
+      reference: "COMPRA",
+    };
+
+    const r = await apiFetch(`${API}/stock/in`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (r.ok) {
+      setMsg("Ingreso registrado ✅");
+      resetAll();
+    } else {
+      const e = await r.json().catch(() => ({}));
+      setMsg("Error: " + (e?.error || "No se pudo registrar"));
+    }
+    setTimeout(() => setMsg(""), 2500);
+  };
+
+  const fmtCOP = (v: unknown) => {
+    const n = Number(v);
+    return isNaN(n) ? "—" : `$${n.toLocaleString("es-CO")}`;
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto text-gray-200 space-y-6">
+      <h1 className="text-2xl font-bold text-cyan-400">Ingreso de stock</h1>
+
+      {/* Buscador */}
+      <div
+        className="rounded-xl p-4"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
+      >
+        <input
+          className="rounded px-3 py-2 w-full text-gray-100 placeholder-gray-400 outline-none"
+          style={{
+            backgroundColor: COLORS.input,
+            border: `1px solid ${COLORS.border}`,
+          }}
+          placeholder="Buscar producto por nombre o SKU"
+          value={q}
+          onChange={(e) => setQ(e.target.value.toUpperCase())}
+        />
+
+        {found.length > 0 && (
+          <div
+            className="rounded p-2 mt-2 max-h-60 overflow-y-auto"
+            style={{
+              backgroundColor: "#0F1030",
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            {found.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => choose(p)}
+                className="block w-full text-left p-2 rounded hover:bg-[#1E1F4B]"
+              >
+                <span className="font-mono text-cyan-300">{p.sku}</span>{" "}
+                <span>{p.name}</span>
+                {typeof p.stock !== "undefined" && (
+                  <span className="ml-2 text-xs text-gray-400">
+                    • Stock: {p.stock}
+                  </span>
+                )}
+                {typeof p.cost !== "undefined" && (
+                  <span className="ml-2 text-xs text-gray-400">
+                    • Costo: {fmtCOP(p.cost)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Detalle producto seleccionado */}
+      {selected && (
+        <div
+          className="rounded-xl p-4 space-y-3"
+          style={{
+            backgroundColor: COLORS.bgCard,
+            border: `1px solid ${COLORS.border}`,
+          }}
+        >
+          <div>
+            <b className="text-cyan-300">Producto:</b>{" "}
+            <span className="font-mono text-pink-300">{selected.sku}</span> —{" "}
+            {selected.name}
+          </div>
+
+          <div className="text-sm text-gray-300 space-y-1">
+            <div>
+              <b>Stock actual:</b>{" "}
+              <span
+                className="inline-block px-2 py-0.5 rounded"
+                style={{ backgroundColor: COLORS.input }}
+              >
+                {typeof selected.stock === "number" ? selected.stock : "—"}
+              </span>
+            </div>
+            <div>
+              <b>Costo actual:</b>{" "}
+              <span
+                className="inline-block px-2 py-0.5 rounded"
+                style={{ backgroundColor: COLORS.input }}
+              >
+                {fmtCOP(selected.cost)}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">
+                Cantidad a ingresar
+              </label>
+              <input
+                className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                type="number"
+                placeholder="Cantidad"
+                value={qty}
+                onChange={(e) =>
+                  setQty(e.target.value === "" ? "" : Number(e.target.value))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">
+                Nuevo costo unitario (COP)
+              </label>
+              <input
+                className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                type="number"
+                placeholder="Costo unitario"
+                value={unitCost}
+                onChange={(e) =>
+                  setUnitCost(
+                    e.target.value === "" ? "" : Number(e.target.value)
+                  )
+                }
+              />
+            </div>
+
+            <div className="mt-2 sm:mt-0">
+              <button
+                className="w-full px-5 py-2.5 rounded-lg font-semibold disabled:opacity-60"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={save}
+                disabled={
+                  !qty ||
+                  unitCost === "" ||
+                  Number(qty) <= 0 ||
+                  Number(unitCost) < 0
+                }
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
+    </div>
+  );
+}
