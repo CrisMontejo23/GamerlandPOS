@@ -44,6 +44,10 @@ WORKDIR /app
 # Copiamos node_modules completos del builder (ya reproducibles por lockfile)
 COPY --from=builder /app/node_modules ./node_modules
 
+# ✅ NEW: también los node_modules de cada app (necesarios con pnpm workspaces)
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules 
+COPY --from=builder /app/apps/web/node_modules ./apps/web/node_modules    
+
 # API compilada + package.json
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
@@ -52,6 +56,9 @@ COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 COPY --from=builder /app/apps/web/.next/standalone ./apps/web/standalone
 COPY --from=builder /app/apps/web/.next/static     ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public           ./apps/web/public
+
+# ✅ NEW: para que el fallback `pnpm -C apps/web start` tenga manifiesto
+COPY --from=builder /app/apps/web/package.json     ./apps/web/package.json
 
 # Prisma schema y metadatos del monorepo
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
