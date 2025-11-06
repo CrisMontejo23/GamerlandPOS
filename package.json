@@ -15,11 +15,9 @@
   "license": "ISC",
   "packageManager": "pnpm@10.20.0",
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "prisma": "6.19.0"
+    "concurrently": "^9.2.1"
   },
   "dependencies": {
-    "@prisma/client": "6.19.0",
     "dom-to-image-more": "^3.7.2",
     "html2canvas": "^1.4.1",
     "recharts": "^3.3.0"
