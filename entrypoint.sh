@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -euo pipefail
 
-PRISMA_SCHEMA=${PRISMA_SCHEMA:-packages/db/prisma/schema.prisma}
+PRISMA_SCHEMA=${PRISMA_SCHEMA:-prisma/schema.prisma}
 API_PORT=${API_PORT:-4000}
 WEB_PORT=${PORT:-3000}
 
@@ -15,9 +15,9 @@ pnpm --filter ./packages/db exec prisma generate --schema "$PRISMA_SCHEMA" >/dev
 
 # Migraciones en producción
 echo "==> prisma migrate deploy"
-if ! pnpm --filter ./packages/db exec prisma migrate deploy --schema "$PRISMA_SCHEMA"; then
+pnpm --filter ./packages/db exec prisma migrate deploy --schema "$PRISMA_SCHEMA" || {
   echo "WARN: prisma migrate deploy falló (¿DATABASE_URL faltante o DB inaccesible?). Continuando…"
-fi
+}
 
 # Arranca API (Express) en segundo plano
 echo "==> Iniciando API en :${API_PORT}"

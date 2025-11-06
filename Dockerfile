@@ -24,7 +24,7 @@ RUN pnpm install -r --frozen-lockfile
 # ===== Prisma: forzamos engine BINARIO en la etapa donde se genera el cliente
 ENV PRISMA_CLIENT_ENGINE_TYPE=binary
 ENV PRISMA_CLI_QUERY_ENGINE_TYPE=binary
-ENV PRISMA_SCHEMA=packages/db/prisma/schema.prisma
+ENV PRISMA_SCHEMA=prisma/schema.prisma
 
 # Genera Prisma Client (usando el paquete real de prisma de packages/db)
 RUN pnpm --filter ./packages/db exec prisma generate --schema ${PRISMA_SCHEMA}
