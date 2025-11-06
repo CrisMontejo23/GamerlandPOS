@@ -23,7 +23,7 @@ RUN pnpm install -r --frozen-lockfile
 
 # Genera Prisma Client (apunta a tu schema real)
 ENV PRISMA_SCHEMA=packages/db/prisma/schema.prisma
-RUN pnpm dlx prisma generate --schema ${PRISMA_SCHEMA}
+RUN pnpm prisma generate --schema ${PRISMA_SCHEMA}
 
 # Compila la API (TS -> JS en ./apps/api/dist)
 RUN pnpm --filter ./apps/api build
