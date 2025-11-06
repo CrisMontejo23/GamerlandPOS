@@ -38,9 +38,9 @@ ENV NODE_ENV=production
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends dumb-init ca-certificates openssl \
-  && rm -rf /var/lib/apt/lists/*
+ && apt-get update \
+ && apt-get install -y --no-install-recommends dumb-init ca-certificates openssl bash \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
