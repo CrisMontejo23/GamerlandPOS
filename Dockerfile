@@ -1,5 +1,5 @@
 # ------------ Base para construir (node + pnpm) ------------
-FROM node:20-alpine AS base
+FROM node:20-bookworm-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -37,14 +37,9 @@ FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-# Prisma en Alpine necesita las libs de OpenSSL 1.1 para el query-engine (musl)
-RUN corepack enable && apk add --no-cache dumb-init openssl1.1-compat
+RUN corepack enable && apk add --no-cache dumb-init
 
 WORKDIR /app
-
-# También en runtime forzamos motores BINARIOS
-ENV PRISMA_CLIENT_ENGINE_TYPE=binary
-ENV PRISMA_CLI_QUERY_ENGINE_TYPE=binary
 
 # Copiamos node_modules completos del builder (ya reproducibles por lockfile)
 COPY --from=builder /app/node_modules ./node_modules
