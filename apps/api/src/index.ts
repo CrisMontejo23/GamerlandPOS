@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -11,6 +10,16 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "gamerland_secret";
+
+// Carga .env solo en desarrollo/local. En producción (Railway) no hace falta.
+if (process.env.NODE_ENV !== "production") {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require("dotenv").config();
+  } catch {
+    /* noop */
+  }
+}
 
 // --------- Setup ----------
 app.use(cors());
