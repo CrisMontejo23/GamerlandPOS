@@ -59,6 +59,8 @@ COPY --from=builder /app/apps/web/public           ./apps/web/public
 
 # ✅ NEW: para que el fallback `pnpm -C apps/web start` tenga manifiesto
 COPY --from=builder /app/apps/web/package.json     ./apps/web/package.json
+# 👇 NECESARIO para que el fallback `next start` funcione
+COPY --from=builder /app/apps/web/.next            ./apps/web/.next
 
 # Prisma schema y metadatos del monorepo
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
