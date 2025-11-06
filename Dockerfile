@@ -32,11 +32,10 @@ RUN pnpm --filter ./packages/db exec prisma generate --schema ${PRISMA_SCHEMA}
 # Compila la API (TS -> JS en ./apps/api/dist)
 RUN pnpm --filter ./apps/api build
 
-# Compila el Web (Next.js build)
+# Compila el Web (Next.js) — usa -C para ejecutar dentro de apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
-# Front hablará con API interna en :4000 dentro del mismo contenedor
 ENV NEXT_PUBLIC_API_URL=/api
-RUN pnpm --filter ./apps/web build
+RUN pnpm -C apps/web build
 
 # ------------ Runtime: una sola imagen que corre web+api ------------
 FROM node:20-alpine AS runner
@@ -51,9 +50,12 @@ WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
-COPY --from=builder /app/apps/web/.next ./apps/web/.next
-COPY --from=builder /app/apps/web/public ./apps/web/public
-COPY --from=builder /app/apps/web/package.json ./apps/web/package.json
+
+# Next standalone:
+COPY --from=builder /app/apps/web/.next/standalone ./apps/web/standalone
+COPY --from=builder /app/apps/web/.next/static     ./apps/web/.next/static
+COPY --from=builder /app/apps/web/public            ./apps/web/public
+
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 COPY --from=builder /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
 
