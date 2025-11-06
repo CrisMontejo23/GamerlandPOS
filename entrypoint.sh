@@ -10,25 +10,31 @@ echo "==> DATABASE_URL: ${DATABASE_URL:-<no definida>}"
 echo "==> Prisma schema: ${PRISMA_SCHEMA}"
 echo "==> API_PORT: ${API_PORT} | WEB_PORT: ${WEB_PORT}"
 
-echo "==> prisma generate (workspace)"
-pnpm --filter ./packages/db exec prisma generate --schema "$PRISMA_SCHEMA" >/dev/null 2>&1 || true
-
-echo "==> prisma migrate deploy"
-if ! pnpm --filter ./packages/db exec prisma migrate deploy --schema "$PRISMA_SCHEMA"; then
-  echo "WARN: migrate deploy falló (DB no accesible?). Continúo…"
+# Migraciones (usa el CLI local de la API)
+if [ -x "./apps/api/node_modules/.bin/prisma" ]; then
+  echo "==> prisma migrate deploy"
+  ./apps/api/node_modules/.bin/prisma migrate deploy --schema "$PRISMA_SCHEMA" || {
+    echo "WARN: migrate deploy falló (DB no accesible?). Continúo…"
+  }
+else
+  echo "WARN: Prisma CLI no encontrado en ./apps/api/node_modules/.bin/prisma"
 fi
 
+# Inicia API
 echo "==> Iniciando API en :${API_PORT}"
 PORT="$API_PORT" node apps/api/dist/index.js &
 API_PID=$!
 
-echo "==> Iniciando Web en :${WEB_PORT}"
-if [ -f "apps/web/standalone/server.js" ]; then
-  node apps/web/standalone/server.js -p "$WEB_PORT" -H 0.0.0.0 &
-else
-  echo "WARN: no hay standalone; fallback a 'pnpm -C apps/web start'"
-  pnpm -C apps/web start -p "$WEB_PORT" --hostname 0.0.0.0 &
+# Inicia Web (standalone)
+SERVER="apps/web/standalone/server.js"
+if [ ! -f "$SERVER" ]; then
+  echo "ERROR: No se encontró $SERVER. Revisa output:'standalone' y el build de Next."
+  kill "$API_PID" >/dev/null 2>&1 || true
+  exit 1
 fi
+
+echo "==> Iniciando Web (standalone) en :${WEB_PORT}"
+PORT="$WEB_PORT" node "$SERVER" -p "$WEB_PORT" -H 0.0.0.0 &
 WEB_PID=$!
 
 wait -n "$API_PID" "$WEB_PID"
