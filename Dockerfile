@@ -33,11 +33,14 @@ ENV NEXT_PUBLIC_API_URL=/api
 RUN pnpm -C apps/web build
 
 # ------------ Runtime: una sola imagen que corre web+api ------------
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 ENV NODE_ENV=production
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable && apk add --no-cache dumb-init
+RUN corepack enable \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends dumb-init ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
