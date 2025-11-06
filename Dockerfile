@@ -19,7 +19,7 @@ FROM base AS builder
 COPY . .
 
 # Instala TODAS las deps del monorepo con el lockfile ya resuelto
-RUN pnpm install -r --offline
+RUN pnpm install -r --frozen-lockfile
 
 # Genera Prisma Client (apunta a tu schema real)
 ENV PRISMA_SCHEMA=packages/db/prisma/schema.prisma
