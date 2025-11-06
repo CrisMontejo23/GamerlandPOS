@@ -32,31 +32,29 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=/api
 RUN pnpm -C apps/web build
 
-# *** Importante: deps de prod locales para API ***
-RUN pnpm --filter apps/api deploy --prod /app/apps/api_deploy
-
 # ------------ Runtime: una sola imagen que corre web+api ------------
 FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable && apk add --no-cache dumb-init
+
 WORKDIR /app
 
-# API: dist + node_modules locales + package.json
-COPY --from=builder /app/apps/api/dist                 ./apps/api/dist
-COPY --from=builder /app/apps/api_deploy/package.json  ./apps/api/package.json
-COPY --from=builder /app/apps/api_deploy/node_modules  ./apps/api/node_modules
+# Copiamos node_modules completos del builder (ya reproducibles por lockfile)
+COPY --from=builder /app/node_modules ./node_modules
 
-# Web: standalone + static + public
+# API compilada + package.json
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+
+# Next standalone + static + public
 COPY --from=builder /app/apps/web/.next/standalone ./apps/web/standalone
 COPY --from=builder /app/apps/web/.next/static     ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public           ./apps/web/public
 
-# Prisma schema para migrate deploy en runtime
+# Prisma schema y metadatos del monorepo
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
-
-# (opcional) raíz mínima
 COPY --from=builder /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
 
 # Entrypoint
@@ -65,6 +63,5 @@ RUN chmod +x /entrypoint.sh
 
 ENV PORT=3000
 EXPOSE 3000 4000
-
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+ENTRYPOINT ["/usr/bin/dumb-init","--"]
 CMD ["/entrypoint.sh"]
