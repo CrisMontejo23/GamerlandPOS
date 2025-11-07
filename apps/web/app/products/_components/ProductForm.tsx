@@ -64,7 +64,9 @@ export default function ProductForm({
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [loadingSku, setLoadingSku] = useState(false);
-  const [loadedCategoryName, setLoadedCategoryName] = useState<string | null>(null);
+  const [loadedCategoryName, setLoadedCategoryName] = useState<string | null>(
+    null
+  );
 
   // --- NUEVO: modal de confirmación tras crear ---
   const [createdOpen, setCreatedOpen] = useState(false);
@@ -75,7 +77,7 @@ export default function ProductForm({
   // helper para limpiar el formulario (crear otro)
   const resetToBlank = () => {
     setForm({
-      sku: genSku(),
+      sku: "", // ← vacío
       barcode: "",
       name: "",
       cost: "",
@@ -84,7 +86,6 @@ export default function ProductForm({
       active: true,
       categoryId: null,
     });
-    // focus al nombre
     setTimeout(() => nameRef.current?.focus(), 0);
   };
 
@@ -191,7 +192,8 @@ export default function ProductForm({
     if (!validate()) return;
     setSaving(true);
 
-    const chosenCategoryName = cats.find((c) => c.id === form.categoryId)?.name ?? null;
+    const chosenCategoryName =
+      cats.find((c) => c.id === form.categoryId)?.name ?? null;
 
     // Si es nuevo y borraron el SKU, regénéralo
     const finalSku = form.sku?.trim() ? toUpper(String(form.sku)) : genSku();
@@ -215,12 +217,15 @@ export default function ProductForm({
     if (r.ok) {
       setMsg("Guardado ✅");
       if (!isEdit) {
-        // mostrar modal y limpiar para cargar otro
-        setCreatedOpen(true);
         resetToBlank();
+        setCreatedOpen(true);
+        setTimeout(() => setCreatedOpen(false), 1000); // ← auto-hide en 1s
       }
     } else {
-      const err = await r.json().then((x) => x?.error).catch(() => "No se pudo guardar");
+      const err = await r
+        .json()
+        .then((x) => x?.error)
+        .catch(() => "No se pudo guardar");
       setMsg("Error: " + err);
     }
 
@@ -232,7 +237,10 @@ export default function ProductForm({
     return (
       <div
         className="rounded-xl p-4 text-gray-300"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
         Cargando…
       </div>
@@ -244,9 +252,14 @@ export default function ProductForm({
       {/* Identificación */}
       <section
         className="rounded-xl p-4"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
-        <h2 className="text-lg font-semibold mb-3 text-cyan-300">Identificación</h2>
+        <h2 className="text-lg font-semibold mb-3 text-cyan-300">
+          Identificación
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* SKU */}
           <div>
@@ -254,30 +267,49 @@ export default function ProductForm({
             {isEdit ? (
               <input
                 className="rounded px-3 py-2 w-full text-gray-100 outline-none"
-                style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
                 value={form.sku}
-                onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value.toUpperCase() }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, sku: e.target.value.toUpperCase() }))
+                }
               />
             ) : (
               <div
                 className="rounded px-3 py-2 w-full flex justify-between items-center"
-                style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
               >
                 <span className="font-mono">{form.sku || "—"}</span>
-                {loadingSku && <span className="text-xs text-gray-400">generando…</span>}
+                {loadingSku && (
+                  <span className="text-xs text-gray-400">generando…</span>
+                )}
               </div>
             )}
-            {errors.sku && <p className="text-xs text-pink-300 mt-1">{errors.sku}</p>}
+            {errors.sku && (
+              <p className="text-xs text-pink-300 mt-1">{errors.sku}</p>
+            )}
           </div>
 
           {/* Barcode */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">CÓDIGO DE BARRAS</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              CÓDIGO DE BARRAS
+            </label>
             <input
               className="rounded px-3 py-2 w-full text-gray-100 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={form.barcode ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, barcode: toUpper(e.target.value) }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, barcode: toUpper(e.target.value) }))
+              }
             />
           </div>
 
@@ -287,11 +319,18 @@ export default function ProductForm({
             <input
               ref={nameRef}
               className="rounded px-3 py-2 w-full text-gray-100 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: toUpper(e.target.value) }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, name: toUpper(e.target.value) }))
+              }
             />
-            {errors.name && <p className="text-xs text-pink-300 mt-1">{errors.name}</p>}
+            {errors.name && (
+              <p className="text-xs text-pink-300 mt-1">{errors.name}</p>
+            )}
           </div>
         </div>
       </section>
@@ -299,53 +338,90 @@ export default function ProductForm({
       {/* Precios */}
       <section
         className="rounded-xl p-4"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
         <h2 className="text-lg font-semibold mb-3 text-cyan-300">Precios</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {/* Costo */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">COSTO (COP)</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              COSTO (COP)
+            </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-gray-400">$</span>
               <input
                 className="rounded pl-7 pr-3 py-2 w-full text-gray-100 outline-none"
-                style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
                 inputMode="numeric"
                 value={form.cost}
-                onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value.replace(/[^\d.]/g, "") }))}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    cost: e.target.value.replace(/[^\d.]/g, ""),
+                  }))
+                }
               />
             </div>
-            <p className="text-xs text-gray-400 mt-1">Vista previa: {costPreview || "—"}</p>
-            {errors.cost && <p className="text-xs text-pink-300 mt-1">{errors.cost}</p>}
+            <p className="text-xs text-gray-400 mt-1">
+              Vista previa: {costPreview || "—"}
+            </p>
+            {errors.cost && (
+              <p className="text-xs text-pink-300 mt-1">{errors.cost}</p>
+            )}
           </div>
 
           {/* Precio */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">PRECIO VENTA (COP)</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              PRECIO VENTA (COP)
+            </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-gray-400">$</span>
               <input
                 className="rounded pl-7 pr-3 py-2 w-full text-gray-100 outline-none"
-                style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
                 inputMode="numeric"
                 value={form.price}
-                onChange={(e) => setForm((f) => ({ ...f, price: e.target.value.replace(/[^\d.]/g, "") }))}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    price: e.target.value.replace(/[^\d.]/g, ""),
+                  }))
+                }
               />
             </div>
-            <p className="text-xs text-gray-400 mt-1">Vista previa: {pricePreview || "—"}</p>
-            {errors.price && <p className="text-xs text-pink-300 mt-1">{errors.price}</p>}
+            <p className="text-xs text-gray-400 mt-1">
+              Vista previa: {pricePreview || "—"}
+            </p>
+            {errors.price && (
+              <p className="text-xs text-pink-300 mt-1">{errors.price}</p>
+            )}
           </div>
 
           {/* Categoría */}
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-300 mb-1">CATEGORÍA</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              CATEGORÍA
+            </label>
             <select
               className="rounded px-3 py-2 w-full text-gray-100 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={form.categoryId ?? ""}
               onChange={(e) => {
-                const val = e.target.value === "" ? null : Number(e.target.value);
+                const val =
+                  e.target.value === "" ? null : Number(e.target.value);
                 setForm((f) => ({ ...f, categoryId: val }));
                 if (!isEdit) fetchNextSkuByCategory(val); // genera SKU según categoría al crear
               }}
@@ -364,24 +440,33 @@ export default function ProductForm({
       {/* Estado + Guardar */}
       <section
         className="rounded-xl p-4"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
         <div className="flex items-center gap-2 mb-4">
           <input
             id="active"
             type="checkbox"
             checked={!!form.active}
-            onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, active: e.target.checked }))
+            }
           />
-          <label htmlFor="active" className="text-gray-300">ACTIVO</label>
+          <label htmlFor="active" className="text-gray-300">
+            ACTIVO
+          </label>
         </div>
 
         <button
           className="w-full md:w-auto px-5 py-2.5 rounded-lg font-semibold disabled:opacity-60"
           style={{
             color: "#001014",
-            background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-            boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+            background:
+              "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+            boxShadow:
+              "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
           }}
           onClick={save}
           disabled={saving}
@@ -393,48 +478,50 @@ export default function ProductForm({
         {!!msg && <div className="text-sm mt-3 text-cyan-300">{msg}</div>}
       </section>
 
-      {/* --- Modal de confirmación tras crear --- */}
+      {/* Aviso de confirmación (auto-hide, sin botones) */}
       {createdOpen && !isEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setCreatedOpen(false)} />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="absolute inset-0 bg-black/60" />
           <div
-            className="relative w-full max-w-md rounded-2xl p-5 text-center"
+            className="relative w-full max-w-sm rounded-2xl p-5 text-center"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
-              boxShadow: "0 0 28px rgba(0,255,255,.18), 0 0 36px rgba(255,0,255,.18)",
+              boxShadow:
+                "0 0 28px rgba(0,255,255,.18), 0 0 36px rgba(255,0,255,.18)",
             }}
           >
             <div
               className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
               style={{
-                background: "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))",
                 filter: "blur(6px)",
                 opacity: 0.35,
               }}
             />
             <div className="relative">
-              <h3 className="text-xl font-extrabold text-cyan-300">¡Producto creado!</h3>
-              <p className="mt-1 text-gray-200">Puedes ingresar otro inmediatamente.</p>
-              <div className="mt-5 flex justify-center gap-2">
-                <button
-                  onClick={() => { setCreatedOpen(false); /* ya está limpio y enfocado */ }}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold"
-                  style={{
-                    color: "#001014",
-                    background: "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
-                  }}
-                >
-                  Crear otro
-                </button>
-                <button
-                  onClick={() => setCreatedOpen(false)}
-                  className="px-4 py-2 rounded-lg text-sm font-medium"
-                  style={{ backgroundColor: "#374151", color: "#E5E5E5" }}
-                >
-                  Cerrar
-                </button>
+              <div
+                className="mx-auto mb-2 h-12 w-12 rounded-full grid place-items-center"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+              >
+                <span className="text-2xl" style={{ color: "#7CF9FF" }}>
+                  ✔
+                </span>
               </div>
+              <h3 className="text-xl font-extrabold text-cyan-300">
+                Creado exitosamente
+              </h3>
+              <p className="mt-1 text-gray-200 text-sm">
+                Los campos fueron limpiados.
+              </p>
             </div>
           </div>
         </div>
