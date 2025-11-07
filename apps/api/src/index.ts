@@ -300,7 +300,7 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
   const products = await prisma.product.findMany({
     where,
     take: 100,
-    orderBy: { id: "desc" },
+    orderBy: { id: "asc" },
   });
 
   if (!withStock) return res.json(products);
