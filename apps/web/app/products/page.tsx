@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
@@ -15,6 +15,13 @@ type Product = {
   stock?: number;
 };
 
+const UI = {
+  bgCard: "#14163A",
+  border: "#1E1F4B",
+  input: "#0F1030",
+  glow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+};
+
 const fmtCOP = (v: unknown) => {
   const n = Number(v);
   return isNaN(n) ? "-" : `$${n.toLocaleString("es-CO")}`;
@@ -26,6 +33,11 @@ export default function ProductsPage() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [reload, setReload] = useState(0);
 
+  // ---- Paginación (client-side) ----
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+
+  // Carga datos
   useEffect(() => {
     const load = async () => {
       const url = new URL(`/products`, window.location.origin);
@@ -38,6 +50,34 @@ export default function ProductsPage() {
     };
     load();
   }, [q, includeInactive, reload]);
+
+  // Totales y página “segura” derivada (sin setState en efectos)
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+
+  const pageSlice = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return rows.slice(start, start + PAGE_SIZE);
+  }, [rows, safePage]);
+
+  // Rango compacto de páginas
+  const pageRange = useMemo(() => {
+    const maxToShow = 7;
+    if (totalPages <= maxToShow) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const out: (number | "…")[] = [];
+    const add = (n: number | "…") => out.push(n);
+    const left = Math.max(2, safePage - 2);
+    const right = Math.min(totalPages - 1, safePage + 2);
+
+    add(1);
+    if (left > 2) add("…");
+    for (let p = left; p <= right; p++) add(p);
+    if (right < totalPages - 1) add("…");
+    add(totalPages);
+    return out;
+  }, [safePage, totalPages]);
 
   const toggleActive = async (id: number, active: boolean) => {
     await apiFetch(`/products/${id}/activate?active=${String(!active)}`, { method: "PATCH" });
@@ -57,6 +97,16 @@ export default function ProductsPage() {
 
   const { role } = useAuth();
 
+  // Handlers que resetean página sin efectos
+  const onSearchChange = (val: string) => {
+    setQ(val.toUpperCase());
+    setPage(1);
+  };
+  const onToggleInactive = (checked: boolean) => {
+    setIncludeInactive(checked);
+    setPage(1);
+  };
+
   return (
     <div className="max-w-7xl mx-auto text-gray-200">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-5 gap-3">
@@ -68,8 +118,7 @@ export default function ProductsPage() {
             style={{
               background:
                 "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-              boxShadow:
-                "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+              boxShadow: UI.glow,
             }}
           >
             NUEVO
@@ -80,19 +129,16 @@ export default function ProductsPage() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input
           className="rounded px-3 py-2 flex-1 text-gray-100 placeholder-gray-400 outline-none"
-          style={{
-            backgroundColor: "#0F1030",
-            border: "1px solid #1E1F4B",
-          }}
+          style={{ backgroundColor: UI.input, border: `1px solid ${UI.border}` }}
           placeholder="Buscar por nombre, SKU o categoría"
           value={q}
-          onChange={(e) => setQ(e.target.value.toUpperCase())}
+          onChange={(e) => onSearchChange(e.target.value)}
         />
         <label className="flex items-center gap-2 text-sm uppercase text-gray-300">
           <input
             type="checkbox"
             checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
+            onChange={(e) => onToggleInactive(e.target.checked)}
           />
           Ver inactivos
         </label>
@@ -100,10 +146,7 @@ export default function ProductsPage() {
 
       <div
         className="rounded-xl overflow-x-auto"
-        style={{
-          backgroundColor: "#14163A",
-          border: "1px solid #1E1F4B",
-        }}
+        style={{ backgroundColor: UI.bgCard, border: `1px solid ${UI.border}` }}
       >
         <table className="w-full border-collapse">
           <thead>
@@ -120,22 +163,15 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => (
-              <tr
-                key={p.id}
-                className="border-b border-[#1E1F4B] hover:bg-[#191B4B]"
-              >
+            {pageSlice.map((p) => (
+              <tr key={p.id} className="border-b border-[#1E1F4B] hover:bg-[#191B4B]">
                 <td className="py-2 px-3">{p.id}</td>
                 <td className="px-3 font-mono">{p.sku?.toUpperCase()}</td>
                 <td className="px-3">{p.name?.toUpperCase()}</td>
                 <td className="px-3">{(p.category || "-").toUpperCase()}</td>
                 <td className="px-3 text-right">{Number(p.stock ?? 0)}</td>
-                <td className="px-3 text-right text-cyan-300">
-                  {fmtCOP(p.price)}
-                </td>
-                <td className="px-3 text-right text-pink-300">
-                  {fmtCOP(p.cost)}
-                </td>
+                <td className="px-3 text-right text-cyan-300">{fmtCOP(p.price)}</td>
+                <td className="px-3 text-right text-pink-300">{fmtCOP(p.cost)}</td>
                 <td className="px-3 text-center">
                   {p.active === false ? (
                     <span className="text-red-400">INACTIVO</span>
@@ -146,22 +182,14 @@ export default function ProductsPage() {
                 <td className="px-3 text-right space-x-2">
                   {role === "ADMIN" ? (
                     <>
-                      <Link
-                        href={`/products/${p.id}/edit`}
-                        className="underline text-cyan-300"
-                      >
-                        Editar
-                      </Link>
+                      <Link href={`/products/${p.id}/edit`} className="underline text-cyan-300">Editar</Link>
                       <button
                         onClick={() => toggleActive(p.id, p.active !== false)}
                         className="underline text-yellow-300"
                       >
                         {p.active === false ? "Activar" : "Desactivar"}
                       </button>
-                      <button
-                        onClick={() => remove(p.id)}
-                        className="underline text-pink-400"
-                      >
+                      <button onClick={() => remove(p.id)} className="underline text-pink-400">
                         Eliminar
                       </button>
                     </>
@@ -171,7 +199,7 @@ export default function ProductsPage() {
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && (
+            {pageSlice.length === 0 && (
               <tr>
                 <td className="py-4 px-3 text-center text-gray-400" colSpan={9}>
                   Sin resultados
@@ -180,7 +208,89 @@ export default function ProductsPage() {
             )}
           </tbody>
         </table>
+
+        {/* Paginador */}
+        <div
+          className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between p-3"
+          style={{ borderTop: `1px solid ${UI.border}` }}
+        >
+          <div className="text-xs text-gray-300">
+            Mostrando{" "}
+            <b>{rows.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}</b>
+            {" – "}
+            <b>{Math.min(safePage * PAGE_SIZE, rows.length)}</b> de <b>{rows.length}</b>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <PagerButton label="«" disabled={safePage === 1} onClick={() => setPage(1)} />
+            <PagerButton
+              label="‹"
+              disabled={safePage === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            />
+
+            {pageRange.map((p, idx) =>
+              p === "…" ? (
+                <span key={`dots-${idx}`} className="px-2 text-gray-400 select-none">…</span>
+              ) : (
+                <PagerButton
+                  key={p}
+                  label={String(p)}
+                  active={p === safePage}
+                  onClick={() => setPage(p)}
+                />
+              )
+            )}
+
+            <PagerButton
+              label="›"
+              disabled={safePage === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            />
+            <PagerButton label="»" disabled={safePage === totalPages} onClick={() => setPage(totalPages)} />
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+/* ===== Botón pager ===== */
+function PagerButton({
+  label,
+  onClick,
+  disabled,
+  active,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+}) {
+  const base = "px-3 py-1.5 rounded border text-sm select-none transition transform";
+  const border = `1px solid ${UI.border}`;
+  const activeStyle = {
+    background: "linear-gradient(90deg, rgba(0,255,255,0.22), rgba(255,0,255,0.22))",
+    boxShadow: UI.glow,
+    color: "#E5E7EB",
+    cursor: "default",
+  } as React.CSSProperties;
+  const normalStyle = {
+    backgroundColor: "#0F1030",
+    border,
+    color: "#D1D5DB",
+  } as React.CSSProperties;
+  const disabledStyle = { opacity: 0.45, cursor: "not-allowed" } as React.CSSProperties;
+
+  return (
+    <button
+      className={`${base} ${active ? "font-semibold" : ""}`}
+      style={{ ...(active ? activeStyle : normalStyle), ...(disabled ? disabledStyle : {}) }}
+      onClick={() => !disabled && !active && onClick()}
+      disabled={disabled || active}
+      aria-current={active ? "page" : undefined}
+    >
+      {label}
+    </button>
   );
 }
