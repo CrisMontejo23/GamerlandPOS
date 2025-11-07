@@ -30,14 +30,15 @@ const COLORS = {
   input: "#0F1030",
 };
 
+// Etiquetas “bonitas”
 const niceStatus: Record<WorkStatus, string> = {
-  RECEIVED: "Recibido",
-  IN_PROGRESS: "En proceso",
-  FINISHED: "Finalizado",
-  DELIVERED: "Entregado",
+  RECEIVED: "RECIBIDO",
+  IN_PROGRESS: "EN PROCESO",
+  FINISHED: "FINALIZADO",
+  DELIVERED: "ENTREGADO",
 };
 
-// === NUEVO: estilos por estado (badge + borde tarjeta)
+// Estilos por estado
 const STATUS_STYLES: Record<
   "RECEIVED" | "IN_PROGRESS" | "FINISHED" | "DELIVERED",
   { badge: string; card: string }
@@ -48,10 +49,13 @@ const STATUS_STYLES: Record<
   DELIVERED:   { badge: "bg-gray-200 text-gray-700",       card: "border-gray-300 opacity-85" },
 };
 
-// === NUEVO: formateador de fecha para “Ingresó”
+// === Util: MAYÚSCULAS “oficiales” ===
+const U = (v: unknown) => (v == null ? "" : String(v).toUpperCase().trim());
+
+// Fecha “Ingresó”
 function fmt(d: string | Date) {
   const date = new Date(d);
-  return date.toLocaleString(); // si prefieres solo fecha: toLocaleDateString()
+  return date.toLocaleString();
 }
 
 export default function WorksPage() {
@@ -92,12 +96,12 @@ export default function WorksPage() {
       const p = new URLSearchParams();
       if (status) p.set("status", status);
       if (location) p.set("location", location);
-      if (q.trim()) p.set("q", q.trim());
+      if (q.trim()) p.set("q", U(q)); // Buscar en upper para consistencia
       const r = await apiFetch(`/works?${p.toString()}`);
       const data: WorkOrder[] = await r.json();
       setRows(data);
     } catch {
-      setMsg("No se pudieron cargar los trabajos");
+      setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
       setTimeout(() => setMsg(""), 2200);
     } finally {
       setLoading(false);
@@ -112,15 +116,15 @@ export default function WorksPage() {
 
   const onCreate = async () => {
     if (!item.trim() || !description.trim() || !customerName.trim() || !customerPhone.trim()) {
-      setMsg("Faltan campos obligatorios");
+      setMsg("FALTAN CAMPOS OBLIGATORIOS");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
     const payload = {
-      item,
-      description,
-      customerName,
-      customerPhone,
+      item: U(item),
+      description: U(description),
+      customerName: U(customerName),
+      customerPhone: U(customerPhone),
       reviewPaid,
       location: newLocation,
     };
@@ -129,94 +133,113 @@ export default function WorksPage() {
       body: JSON.stringify(payload),
     });
     if (r.ok) {
-      setMsg("Trabajo creado ✅");
+      setMsg("TRABAJO CREADO ✅");
       resetForm();
       setOpenForm(false);
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("Error: " + (e?.error || "No se pudo crear"));
+      setMsg("ERROR: " + U(e?.error || "NO SE PUDO CREAR"));
       setTimeout(() => setMsg(""), 2500);
     }
   };
 
+  // Nota: este update se usa para cambios de estado/ubicación/reviewPaid;
+  // si en el futuro mandas strings, aquí mismo te los subimos a upper.
+  const normalizePatch = (patch: Partial<WorkOrder>) => {
+    const out: Partial<WorkOrder> = { ...patch };
+    if (out.item != null) out.item = U(out.item);
+    if (out.description != null) out.description = U(out.description);
+    if (out.customerName != null) out.customerName = U(out.customerName);
+    if (out.customerPhone != null) out.customerPhone = U(out.customerPhone);
+    if (out.notes != null) out.notes = U(out.notes);
+    return out;
+  };
+
   const update = async (id: number, patch: Partial<WorkOrder>) => {
+    const body = normalizePatch(patch);
     const r = await apiFetch(`/works/${id}`, {
       method: "PATCH",
-      body: JSON.stringify(patch),
+      body: JSON.stringify(body),
     });
     if (r.ok) {
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("Error: " + (e?.error || "No se pudo actualizar"));
+      setMsg("ERROR: " + U(e?.error || "NO SE PUDO ACTUALIZAR"));
       setTimeout(() => setMsg(""), 2500);
     }
   };
 
   const onDelete = async (id: number) => {
     if (!canDelete) return;
-    if (!confirm("¿Eliminar este trabajo? Esta acción es permanente.")) return;
+    if (!confirm("¿ELIMINAR ESTE TRABAJO? ESTA ACCIÓN ES PERMANENTE.")) return;
     const r = await apiFetch(`/works/${id}`, { method: "DELETE" });
     if (r.ok) {
-      setMsg("Trabajo eliminado ✅");
+      setMsg("TRABAJO ELIMINADO ✅");
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("Error: " + (e?.error || "No se pudo eliminar"));
+      setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR"));
       setTimeout(() => setMsg(""), 2500);
     }
   };
 
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
-    { key: "", label: "Todos" },
-    { key: "RECEIVED", label: "Recibidos" },
-    { key: "IN_PROGRESS", label: "En proceso" },
-    { key: "FINISHED", label: "Finalizados" },
-    { key: "DELIVERED", label: "Entregados" },
+    { key: "", label: "TODOS" },
+    { key: "RECEIVED", label: "RECIBIDOS" },
+    { key: "IN_PROGRESS", label: "EN PROCESO" },
+    { key: "FINISHED", label: "FINALIZADOS" },
+    { key: "DELIVERED", label: "ENTREGADOS" },
   ];
 
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-cyan-400">Trabajos</h1>
-        <div className="flex gap-2">
+      {/* Header responsive */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold text-cyan-400">TRABAJOS</h1>
+
+        <div className="flex flex-col w-full gap-2 sm:flex-row sm:w-auto sm:items-center">
           <select
-            className="rounded px-3 py-2 text-gray-100"
+            className="rounded px-3 py-2 text-gray-100 w-full sm:w-auto"
             style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
             value={location}
             onChange={(e) => setLocation(e.target.value as WorkLocation | "")}
           >
-            <option value="">Ubicación: Todas</option>
-            <option value="LOCAL">En local</option>
-            <option value="BOGOTA">En Bogotá</option>
+            <option value="">UBICACIÓN: TODAS</option>
+            <option value="LOCAL">EN LOCAL</option>
+            <option value="BOGOTA">EN BOGOTÁ</option>
           </select>
+
           <input
-            placeholder="Buscar por código, cliente, equipo..."
-            className="rounded px-3 py-2 w-64 text-gray-100"
+            placeholder="BUSCAR POR CÓDIGO, CLIENTE, EQUIPO..."
+            className="rounded px-3 py-2 text-gray-100 w-full sm:w-64 uppercase"
             style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => setQ(U(e.target.value))}
             onKeyDown={(e) => e.key === "Enter" && load()}
           />
-          <button
-            onClick={load}
-            className="px-4 py-2 rounded-lg font-semibold"
-            style={{
-              color: "#001014",
-              background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-              boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
-            }}
-          >
-            Buscar
-          </button>
-          <button
-            onClick={() => setOpenForm(true)}
-            className="px-4 py-2 rounded border"
-            style={{ borderColor: COLORS.border }}
-          >
-            + Nuevo trabajo
-          </button>
+
+          <div className="flex gap-2">
+            <button
+              onClick={load}
+              className="px-4 py-2 rounded-lg font-semibold w-full sm:w-auto"
+              style={{
+                color: "#001014",
+                background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+              }}
+            >
+              BUSCAR
+            </button>
+            <button
+              onClick={() => setOpenForm(true)}
+              className="px-4 py-2 rounded border w-full sm:w-auto"
+              style={{ borderColor: COLORS.border }}
+            >
+              + NUEVO TRABAJO
+            </button>
+          </div>
         </div>
       </header>
 
@@ -239,19 +262,19 @@ export default function WorksPage() {
 
       {/* Aviso revisión */}
       <div
-        className="rounded-lg p-3 text-sm"
+        className="rounded-lg p-3 text-sm uppercase"
         style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
       >
-        💡 <b>Revisión $20.000:</b> si el cliente <b>acepta el arreglo</b>, la revisión <b>no se cobra</b>.
-        Marca <b>“Pagó revisión”</b> para recordarlo al cerrar el caso.
+        💡 <b>REVISIÓN $20.000:</b> SI EL CLIENTE <b>ACEPTA EL ARREGLO</b>, LA REVISIÓN <b>NO SE COBRA</b>.
+        MARCA <b>“PAGÓ REVISIÓN”</b> PARA RECORDARLO AL CERRAR EL CASO.
       </div>
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
 
       {/* Lista de tarjetas */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading && <div className="col-span-full text-gray-400">Cargando…</div>}
-        {!loading && rows.length === 0 && <div className="col-span-full text-gray-400">No hay trabajos</div>}
+        {loading && <div className="col-span-full text-gray-400">CARGANDO…</div>}
+        {!loading && rows.length === 0 && <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>}
 
         {rows.map((w) => {
           const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
@@ -262,32 +285,33 @@ export default function WorksPage() {
               style={{ backgroundColor: COLORS.bgCard }}
             >
               <header className="flex items-center justify-between">
-                <div className="font-semibold text-cyan-300">{w.code}</div>
-                <span className={`text-xs px-2 py-0.5 rounded ${s.badge}`}>
+                <div className="font-semibold text-cyan-300 uppercase">{U(w.code)}</div>
+                <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
                   {niceStatus[w.status]}
                 </span>
               </header>
 
               <div className="text-sm text-gray-300">
-                {/* NUEVO: Fecha de ingreso */}
-                <div><b>Ingresó:</b> {fmt(w.createdAt)}</div>
-                <div><b>Ubicación:</b> {w.location === "LOCAL" ? "En local" : "En Bogotá"}</div>
+                <div><b>INGRESÓ:</b> {fmt(w.createdAt)}</div>
+                <div><b>UBICACIÓN:</b> {w.location === "LOCAL" ? "EN LOCAL" : "EN BOGOTÁ"}</div>
               </div>
 
-              <div className="text-sm">
-                <div><b>Equipo:</b> {w.item}</div>
-                <div><b>Descripción:</b> {w.description}</div>
-                <div><b>Cliente:</b> {w.customerName} • {w.customerPhone}</div>
-                <div><b>Revisión:</b> {w.reviewPaid ? "Pagada ($20.000)" : "Pendiente"}</div>
+              <div className="text-sm uppercase">
+                <div><b>EQUIPO:</b> {U(w.item)}</div>
+                <div><b>DESCRIPCIÓN:</b> {U(w.description)}</div>
+                <div>
+                  <b>CLIENTE:</b> {U(w.customerName)} • {U(w.customerPhone)}
+                </div>
+                <div><b>REVISIÓN:</b> {w.reviewPaid ? "PAGADA ($20.000)" : "PENDIENTE"}</div>
 
                 {w.quote != null && (
-                  <div><b>Cotización:</b> ${Number(w.quote).toLocaleString("es-CO")}</div>
+                  <div><b>COTIZACIÓN:</b> ${Number(w.quote).toLocaleString("es-CO")}</div>
                 )}
                 {w.total != null && (
-                  <div><b>Total final:</b> ${Number(w.total).toLocaleString("es-CO")}</div>
+                  <div><b>TOTAL FINAL:</b> ${Number(w.total).toLocaleString("es-CO")}</div>
                 )}
                 {!!w.notes && (
-                  <div><b>Notas:</b> {w.notes}</div>
+                  <div><b>NOTAS:</b> {U(w.notes)}</div>
                 )}
               </div>
 
@@ -295,69 +319,69 @@ export default function WorksPage() {
               <div className="flex flex-wrap gap-2 pt-2">
                 {w.status !== "RECEIVED" && (
                   <button
-                    className="px-3 py-1 rounded border text-xs"
+                    className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => update(w.id, { status: "RECEIVED" })}
                   >
-                    Recibido
+                    RECIBIDO
                   </button>
                 )}
                 {w.status !== "IN_PROGRESS" && (
                   <button
-                    className="px-3 py-1 rounded border text-xs"
+                    className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => update(w.id, { status: "IN_PROGRESS" })}
                   >
-                    En proceso
+                    EN PROCESO
                   </button>
                 )}
                 {w.status !== "FINISHED" && (
                   <button
-                    className="px-3 py-1 rounded border text-xs"
+                    className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => update(w.id, { status: "FINISHED" })}
                   >
-                    Finalizado
+                    FINALIZADO
                   </button>
                 )}
                 {w.status !== "DELIVERED" && (
                   <button
-                    className="px-3 py-1 rounded border text-xs"
+                    className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => update(w.id, { status: "DELIVERED" })}
                   >
-                    Entregado
+                    ENTREGADO
                   </button>
                 )}
 
                 {/* Toggle ubicación */}
                 <button
-                  className="px-3 py-1 rounded border text-xs"
+                  className="px-3 py-1 rounded border text-xs uppercase"
                   style={{ borderColor: COLORS.border }}
                   onClick={() =>
                     update(w.id, { location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL" })
                   }
                 >
-                  {w.location === "LOCAL" ? "→ Bogotá" : "→ Local"}
+                  {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
                 </button>
 
                 {/* Toggle revisión pagada */}
                 <button
-                  className="px-3 py-1 rounded border text-xs"
+                  className="px-3 py-1 rounded border text-xs uppercase"
                   style={{ borderColor: COLORS.border }}
                   onClick={() => update(w.id, { reviewPaid: !w.reviewPaid })}
                 >
-                  {w.reviewPaid ? "Quitar revisión pagada" : "Marcar revisión pagada"}
+                  {w.reviewPaid ? "QUITAR REVISIÓN PAGADA" : "MARCAR REVISIÓN PAGADA"}
                 </button>
 
                 {/* Eliminar (solo ADMIN) */}
                 {canDelete && (
                   <button
-                    className="px-3 py-1 rounded border text-xs text-pink-400"
+                    className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => onDelete(w.id)}
                   >
-                    Eliminar
+                    ELIMINAR
                   </button>
                 )}
               </div>
@@ -368,62 +392,62 @@ export default function WorksPage() {
 
       {/* Modal Crear */}
       {openForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
             className="w-full max-w-xl rounded-xl p-4"
             style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
           >
-            <h2 className="text-lg font-semibold text-cyan-300 mb-3">Nuevo trabajo</h2>
+            <h2 className="text-lg font-semibold text-cyan-300 mb-3 uppercase">NUEVO TRABAJO</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm mb-1">¿Qué se recibe? *</label>
+                <label className="block text-sm mb-1 uppercase">¿QUÉ SE RECIBE? *</label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
-                  placeholder="Ej: Xbox 360, Control"
+                  placeholder="EJ: XBOX 360, CONTROL"
                   value={item}
-                  onChange={(e) => setItem(e.target.value)}
+                  onChange={(e) => setItem(U(e.target.value))}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Ubicación *</label>
+                <label className="block text-sm mb-1 uppercase">UBICACIÓN *</label>
                 <select
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   value={newLocation}
                   onChange={(e) => setNewLocation(e.target.value as WorkLocation)}
                 >
-                  <option value="LOCAL">En local</option>
-                  <option value="BOGOTA">En Bogotá</option>
+                  <option value="LOCAL">EN LOCAL</option>
+                  <option value="BOGOTA">EN BOGOTÁ</option>
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm mb-1">Descripción del caso *</label>
+                <label className="block text-sm mb-1 uppercase">DESCRIPCIÓN DEL CASO *</label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
-                  placeholder="No prende / mantenimiento / actualización / joystick derecho..."
+                  placeholder="NO PRENDE / MANTENIMIENTO / ACTUALIZACIÓN / JOYSTICK DERECHO..."
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => setDescription(U(e.target.value))}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Nombre cliente *</label>
+                <label className="block text-sm mb-1 uppercase">NOMBRE CLIENTE *</label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
+                  onChange={(e) => setCustomerName(U(e.target.value))}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">WhatsApp cliente *</label>
+                <label className="block text-sm mb-1 uppercase">WHATSAPP CLIENTE *</label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  onChange={(e) => setCustomerPhone(U(e.target.value))}
                 />
               </div>
               <div className="md:col-span-2 flex items-center gap-2">
@@ -433,24 +457,24 @@ export default function WorksPage() {
                   checked={reviewPaid}
                   onChange={(e) => setReviewPaid(e.target.checked)}
                 />
-                <label htmlFor="rev" className="text-sm">Pagó revisión ($20.000)</label>
+                <label htmlFor="rev" className="text-sm uppercase">PAGÓ REVISIÓN ($20.000)</label>
               </div>
-              <div className="md:col-span-2 text-xs text-gray-300">
-                💬 Se informa al cliente: <i>“La revisión tiene un costo de $20.000; si realiza el arreglo,
-                no se cobra la revisión, solo el valor del arreglo.”</i>
+              <div className="md:col-span-2 text-xs text-gray-300 uppercase">
+                💬 SE INFORMA AL CLIENTE: <i>“LA REVISIÓN TIENE UN COSTO DE $20.000; SI REALIZA EL ARREGLO,
+                NO SE COBRA LA REVISIÓN, SOLO EL VALOR DEL ARREGLO.”</i>
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="px-4 py-2 rounded border"
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
                 style={{ borderColor: COLORS.border }}
                 onClick={() => { setOpenForm(false); resetForm(); }}
               >
-                Cancelar
+                CANCELAR
               </button>
               <button
-                className="px-5 py-2.5 rounded-lg font-semibold"
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
                 style={{
                   color: "#001014",
                   background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
@@ -458,7 +482,7 @@ export default function WorksPage() {
                 }}
                 onClick={onCreate}
               >
-                Crear
+                CREAR
               </button>
             </div>
           </div>
