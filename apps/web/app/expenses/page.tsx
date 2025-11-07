@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch} from "../lib/api";
+import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
 
 type Expense = {
@@ -40,7 +40,9 @@ function isPaymentMethod(v: string): v is PaymentMethod {
   return v === "" || (paymentOptions as readonly string[]).includes(v);
 }
 function isExpenseCategory(v: string): v is ExpenseCategory {
-  return (categoryOptions as readonly ExpenseCategory[]).includes(v as ExpenseCategory);
+  return (categoryOptions as readonly ExpenseCategory[]).includes(
+    v as ExpenseCategory
+  );
 }
 
 function todayISO() {
@@ -211,9 +213,11 @@ export default function ExpensesPage() {
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        <div className="grid grid-cols-1 md:grid-cols-8 gap-3">
+        {/* En md+: 2 filas, 12 columnas. El botón ocupa 3 columnas y 2 filas (alto completo). */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+          {/* Fila 1 */}
           <input
-            className="rounded px-3 py-2 text-gray-100 outline-none md:col-span-3"
+            className="rounded px-3 py-2 text-gray-100 outline-none md:col-span-5"
             style={{
               backgroundColor: COLORS.input,
               border: `1px solid ${COLORS.border}`,
@@ -222,6 +226,7 @@ export default function ExpensesPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value.toUpperCase())}
           />
+
           <select
             className="rounded px-3 py-2 text-gray-100 outline-none md:col-span-2"
             style={{
@@ -252,7 +257,31 @@ export default function ExpensesPage() {
             <option value="FUERA_DEL_LOCAL">FUERA DEL LOCAL</option>
           </select>
 
-          <div className="flex gap-2 md:col-span-2 md:col-start-7">
+          {/* Botón grande (2 filas) */}
+          <div className="md:col-span-3 md:row-span-2 flex">
+            <button
+              onClick={add}
+              disabled={
+                !description.trim() ||
+                !paymentMethod ||
+                !category ||
+                amount === ""
+              }
+              className="w-full h-full min-h-[44px] md:min-h-[96px] rounded-lg font-semibold disabled:opacity-60 text-lg md:text-xl"
+              style={{
+                color: "#001014",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow:
+                  "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
+              }}
+            >
+              Agregar
+            </button>
+          </div>
+
+          {/* Fila 2 */}
+          <div className="flex gap-2 md:col-span-9">
             <input
               className="rounded px-3 py-2 text-gray-100 outline-none w-full"
               style={{
@@ -271,22 +300,9 @@ export default function ExpensesPage() {
                 )
               }
             />
-            <button
-              onClick={add}
-              disabled={!description.trim() || !paymentMethod || !category || amount === ""}
-              className="px-4 py-2 rounded-lg font-semibold disabled:opacity-60"
-              style={{
-                color: "#001014",
-                background:
-                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                boxShadow:
-                  "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
-              }}
-            >
-              Agregar
-            </button>
           </div>
         </div>
+
         {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
       </section>
 
@@ -366,14 +382,20 @@ export default function ExpensesPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 6 : 5}>
+                  <td
+                    className="py-3 px-3 text-gray-400"
+                    colSpan={isAdmin ? 6 : 5}
+                  >
                     Cargando…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 6 : 5}>
+                  <td
+                    className="py-3 px-3 text-gray-400"
+                    colSpan={isAdmin ? 6 : 5}
+                  >
                     Sin registros
                   </td>
                 </tr>
@@ -394,9 +416,14 @@ export default function ExpensesPage() {
                       {isEditing ? (
                         <input
                           className="rounded px-2 py-1 w-full outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           value={editDesc}
-                          onChange={(e) => setEditDesc(e.target.value.toUpperCase())}
+                          onChange={(e) =>
+                            setEditDesc(e.target.value.toUpperCase())
+                          }
                         />
                       ) : (
                         r.description || "-"
@@ -407,7 +434,10 @@ export default function ExpensesPage() {
                       {isEditing ? (
                         <select
                           className="rounded px-2 py-1 w-full outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           value={editPay}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -419,16 +449,21 @@ export default function ExpensesPage() {
                           <option value="QR_LLAVE">QR / LLAVE</option>
                           <option value="DATAFONO">DATAFONO</option>
                         </select>
-                      ) : r.paymentMethod === "QR_LLAVE"
-                        ? "QR / LLAVE"
-                        : r.paymentMethod || "-"}
+                      ) : r.paymentMethod === "QR_LLAVE" ? (
+                        "QR / LLAVE"
+                      ) : (
+                        r.paymentMethod || "-"
+                      )}
                     </td>
 
                     <td className="px-3">
                       {isEditing ? (
                         <select
                           className="rounded px-2 py-1 w-full outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           value={editCat}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -438,7 +473,9 @@ export default function ExpensesPage() {
                           <option value="">Seleccione</option>
                           <option value="MERCANCIA">MERCANCIA</option>
                           <option value="LOCAL">LOCAL</option>
-                          <option value="FUERA_DEL_LOCAL">FUERA DEL LOCAL</option>
+                          <option value="FUERA_DEL_LOCAL">
+                            FUERA DEL LOCAL
+                          </option>
                         </select>
                       ) : (
                         r.category || "-"
@@ -449,13 +486,18 @@ export default function ExpensesPage() {
                       {isEditing ? (
                         <input
                           className="rounded px-2 py-1 w-32 text-right outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           type="number"
                           min={0}
                           value={editAmount}
                           onChange={(e) =>
                             setEditAmount(
-                              e.target.value === "" ? "" : Math.max(0, Number(e.target.value))
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(0, Number(e.target.value))
                             )
                           }
                         />
@@ -483,9 +525,15 @@ export default function ExpensesPage() {
                             <button
                               onClick={saveEdit}
                               className="px-3 py-1 rounded text-sm font-semibold"
-                              style={{ backgroundColor: "#0bd977", color: "#001014" }}
+                              style={{
+                                backgroundColor: "#0bd977",
+                                color: "#001014",
+                              }}
                               disabled={
-                                !editDesc.trim() || !editPay || !editCat || editAmount === ""
+                                !editDesc.trim() ||
+                                !editPay ||
+                                !editCat ||
+                                editAmount === ""
                               }
                             >
                               Guardar
