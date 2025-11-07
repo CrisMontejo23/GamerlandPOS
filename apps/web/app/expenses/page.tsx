@@ -196,6 +196,23 @@ export default function ExpensesPage() {
     }
   };
 
+  const deleteExpense = async (id: number) => {
+    if (!isAdmin) return;
+    const sure = window.confirm("¿Eliminar definitivamente este gasto?");
+    if (!sure) return;
+
+    const r = await apiFetch(`/expenses/${id}`, { method: "DELETE" });
+    if (r.ok) {
+      setMsg("Gasto eliminado ✅");
+      setTimeout(() => setMsg(""), 2000);
+      load();
+    } else {
+      const e = await r.json().catch(() => ({} as { error?: string }));
+      setMsg(`Error: ${e?.error || "No se pudo eliminar"}`);
+      setTimeout(() => setMsg(""), 3000);
+    }
+  };
+
   const total = useMemo(
     () => rows.reduce((a, r) => a + Number(r.amount || 0), 0),
     [rows]
@@ -236,7 +253,7 @@ export default function ExpensesPage() {
             value={paymentMethod}
             onChange={onPaymentChange}
           >
-            <option value="">Seleccione método *</option>
+            <option value="">MÉTODO</option>
             <option value="EFECTIVO">EFECTIVO</option>
             <option value="QR_LLAVE">QR / LLAVE</option>
             <option value="DATAFONO">DATAFONO</option>
@@ -251,7 +268,7 @@ export default function ExpensesPage() {
             value={category}
             onChange={onCategoryChange}
           >
-            <option value="">Categoría *</option>
+            <option value="">CATEGORÍA *</option>
             <option value="MERCANCIA">MERCANCIA</option>
             <option value="LOCAL">LOCAL</option>
             <option value="FUERA_DEL_LOCAL">FUERA DEL LOCAL</option>
@@ -444,7 +461,7 @@ export default function ExpensesPage() {
                             if (isPaymentMethod(v)) setEditPay(v);
                           }}
                         >
-                          <option value="">Seleccione</option>
+                          <option value="">MÉTODO</option>
                           <option value="EFECTIVO">EFECTIVO</option>
                           <option value="QR_LLAVE">QR / LLAVE</option>
                           <option value="DATAFONO">DATAFONO</option>
@@ -470,7 +487,7 @@ export default function ExpensesPage() {
                             if (isExpenseCategory(v)) setEditCat(v);
                           }}
                         >
-                          <option value="">Seleccione</option>
+                          <option value="">CATEGORIA</option>
                           <option value="MERCANCIA">MERCANCIA</option>
                           <option value="LOCAL">LOCAL</option>
                           <option value="FUERA_DEL_LOCAL">
@@ -509,17 +526,30 @@ export default function ExpensesPage() {
                     {isAdmin && (
                       <td className="px-3">
                         {!isEditing ? (
-                          <button
-                            onClick={() => startEdit(r)}
-                            className="px-3 py-1 rounded text-sm font-medium"
-                            style={{
-                              color: "#001014",
-                              background:
-                                "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                            }}
-                          >
-                            Editar
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => startEdit(r)}
+                              className="px-3 py-1 rounded text-sm font-medium"
+                              style={{
+                                color: "#001014",
+                                background:
+                                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                              }}
+                            >
+                              Editar
+                            </button>
+
+                            <button
+                              onClick={() => deleteExpense(r.id)}
+                              className="px-3 py-1 rounded text-sm font-semibold"
+                              style={{
+                                backgroundColor: "#ef4444",
+                                color: "#001014",
+                              }}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
                         ) : (
                           <div className="flex gap-2">
                             <button

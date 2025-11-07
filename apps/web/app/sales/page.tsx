@@ -58,13 +58,16 @@ function rangeFrom(period: Period, baseISO: string) {
   const m = d.getMonth();
 
   if (period === "day") {
-    const s = baseISO, e = baseISO;
+    const s = baseISO,
+      e = baseISO;
     return { from: s, to: e };
   }
   if (period === "month") {
     const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
     const lastDay = new Date(y, m + 1, 0).getDate();
-    const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(
+      lastDay
+    ).padStart(2, "0")}`;
     return { from: start, to: end };
   }
   return { from: `${y}-01-01`, to: `${y}-12-31` };
@@ -86,7 +89,10 @@ export default function SalesPage() {
   const [editDatafono, setEditDatafono] = useState<number | "">("");
   const [editMsg, setEditMsg] = useState<string>("");
 
-  const { from, to } = useMemo(() => rangeFrom(period, baseDate), [period, baseDate]);
+  const { from, to } = useMemo(
+    () => rangeFrom(period, baseDate),
+    [period, baseDate]
+  );
 
   const load = async () => {
     setLoading(true);
@@ -94,7 +100,9 @@ export default function SalesPage() {
       const url = new URL(`/reports/sales-lines`, window.location.origin);
       url.searchParams.set("from", from);
       url.searchParams.set("to", to);
-      const r = await apiFetch(`/reports/sales-lines?${url.searchParams.toString()}`);
+      const r = await apiFetch(
+        `/reports/sales-lines?${url.searchParams.toString()}`
+      );
       const data: Row[] = await r.json();
       setRows(data);
     } finally {
@@ -123,7 +131,10 @@ export default function SalesPage() {
         acc.set(p.method, (acc.get(p.method) || 0) + p.amount);
       }
     }
-    return Array.from(acc.entries()).map(([method, amount]) => ({ method, amount }));
+    return Array.from(acc.entries()).map(([method, amount]) => ({
+      method,
+      amount,
+    }));
   }, [rows]);
 
   // ---- helpers por venta ----
@@ -138,9 +149,17 @@ export default function SalesPage() {
 
   // pagos agrupados por venta
   const salePaysById = useMemo(() => {
-    const m = new Map<number, { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }>();
+    const m = new Map<
+      number,
+      { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }
+    >();
     for (const r of rows) {
-      const prev = m.get(r.saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
+      const prev = m.get(r.saleId) || {
+        EFECTIVO: 0,
+        QR_LLAVE: 0,
+        DATAFONO: 0,
+        otros: 0,
+      };
       for (const p of r.paymentMethods || []) {
         if (p.method === "EFECTIVO") prev.EFECTIVO += p.amount;
         else if (p.method === "QR_LLAVE") prev.QR_LLAVE += p.amount;
@@ -166,7 +185,10 @@ export default function SalesPage() {
   }, [rows]);
 
   // --- acciones admin (genéricas ya existentes) ---
-  const patchSale = async (id: number, body: SalePatch | Record<string, unknown>) => {
+  const patchSale = async (
+    id: number,
+    body: SalePatch | Record<string, unknown>
+  ) => {
     const r = await apiFetch(`/sales/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
@@ -180,7 +202,10 @@ export default function SalesPage() {
   };
 
   const editCustomer = async (saleId: number) => {
-    const nuevo = window.prompt("Nuevo nombre de cliente (dejar vacío para quitar):", "");
+    const nuevo = window.prompt(
+      "Nuevo nombre de cliente (dejar vacío para quitar):",
+      ""
+    );
     if (nuevo === null) return;
     const ok = await patchSale(saleId, { customer: nuevo.trim() || null });
     if (ok) load();
@@ -188,7 +213,12 @@ export default function SalesPage() {
 
   // --- NUEVO: Editor de pagos por venta ---
   const openEditPayments = (saleId: number) => {
-    const pays = salePaysById.get(saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
+    const pays = salePaysById.get(saleId) || {
+      EFECTIVO: 0,
+      QR_LLAVE: 0,
+      DATAFONO: 0,
+      otros: 0,
+    };
     setEditSaleId(saleId);
     setEditEfectivo(pays.EFECTIVO || "");
     setEditQR(pays.QR_LLAVE || "");
@@ -211,7 +241,11 @@ export default function SalesPage() {
     const suma = EFECTIVO + QR + DATAFONO;
 
     if (Math.abs(suma - totalVenta) > 0.5) {
-      setEditMsg(`La suma de pagos (${fmtCOP(suma)}) debe ser igual al total de la venta (${fmtCOP(totalVenta)}).`);
+      setEditMsg(
+        `La suma de pagos (${fmtCOP(
+          suma
+        )}) debe ser igual al total de la venta (${fmtCOP(totalVenta)}).`
+      );
       return;
     }
 
@@ -232,12 +266,19 @@ export default function SalesPage() {
 
   // --- NUEVO: Eliminar venta (duro) ---
   const deleteSale = async (saleId: number) => {
-    const sure = window.confirm("¿Eliminar definitivamente esta venta? Esta acción no se puede deshacer.");
+    const sure = window.confirm(
+      "¿Eliminar definitivamente esta venta? Esta acción no se puede deshacer."
+    );
     if (!sure) return;
     const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
     if (!r.ok) {
       const e = await r.json().catch(() => ({} as { error?: string }));
-      alert(`Error: ${e?.error || "No se pudo eliminar. Asegúrate de tener el endpoint DELETE /sales/:id en el backend."}`);
+      alert(
+        `Error: ${
+          e?.error ||
+          "No se pudo eliminar. Asegúrate de tener el endpoint DELETE /sales/:id en el backend."
+        }`
+      );
       return;
     }
     load();
@@ -250,13 +291,19 @@ export default function SalesPage() {
       {/* Filtros */}
       <section
         className="rounded-xl p-4"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex gap-2">
             <select
               className="rounded px-3 py-2 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={period}
               onChange={(e) => setPeriod(e.target.value as Period)}
             >
@@ -267,7 +314,10 @@ export default function SalesPage() {
             <input
               type="date"
               className="rounded px-3 py-2 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={baseDate}
               onChange={(e) => setBaseDate(e.target.value)}
             />
@@ -276,8 +326,10 @@ export default function SalesPage() {
               className="px-4 rounded font-medium"
               style={{
                 color: "#001014",
-                background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow:
+                  "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
               }}
             >
               Actualizar
@@ -298,10 +350,15 @@ export default function SalesPage() {
               <span
                 key={p.method}
                 className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
-                style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
                 title={p.method}
               >
-                <b className="text-cyan-300">{p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:</b>{" "}
+                <b className="text-cyan-300">
+                  {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:
+                </b>{" "}
                 {fmtCOP(p.amount)}
               </span>
             ))}
@@ -312,12 +369,18 @@ export default function SalesPage() {
       {/* Tabla */}
       <section
         className="rounded-xl overflow-hidden"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="text-left" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+              <tr
+                className="text-left"
+                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+              >
                 <Th>Fecha</Th>
                 <Th>SKU</Th>
                 <Th>Producto</Th>
@@ -334,14 +397,20 @@ export default function SalesPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
+                  <td
+                    className="py-3 px-3 text-gray-400"
+                    colSpan={isAdmin ? 11 : 10}
+                  >
                     Cargando…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
+                  <td
+                    className="py-3 px-3 text-gray-400"
+                    colSpan={isAdmin ? 11 : 10}
+                  >
                     Sin registros
                   </td>
                 </tr>
@@ -360,16 +429,23 @@ export default function SalesPage() {
                     <Td className="text-right">{fmtCOP(r.unitPrice)}</Td>
                     <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
                     <Td className="text-center">{r.qty}</Td>
-                    <Td className="text-right text-cyan-300">{fmtCOP(r.revenue)}</Td>
+                    <Td className="text-right text-cyan-300">
+                      {fmtCOP(r.revenue)}
+                    </Td>
                     <Td className="text-right">{fmtCOP(r.cost)}</Td>
-                    <Td className="text-right text-pink-300">{fmtCOP(r.profit)}</Td>
+                    <Td className="text-right text-pink-300">
+                      {fmtCOP(r.profit)}
+                    </Td>
                     <Td>
                       <div className="flex flex-wrap gap-1">
                         {r.paymentMethods.map((p, i) => (
                           <span
                             key={i}
                             className="px-2 py-0.5 rounded text-xs"
-                            style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
                             title={p.method}
                           >
                             {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}
@@ -383,27 +459,21 @@ export default function SalesPage() {
                         {isFirstOfSale ? (
                           <div className="flex flex-wrap gap-2">
                             <button
-                              onClick={() => editCustomer(r.saleId)}
-                              className="px-3 py-1 rounded text-sm font-medium"
-                              style={{ backgroundColor: "#374151" }}
-                              title="Editar cliente"
-                            >
-                              Cliente
-                            </button>
-
-                            <button
                               onClick={() => openEditPayments(r.saleId)}
                               className="px-3 py-1 rounded text-sm font-semibold"
                               style={{ backgroundColor: "#0ea5e9" }}
-                              title="Editar pagos"
+                              title="Editar venta (métodos de pago)"
                             >
-                              Pagos
+                              Editar
                             </button>
 
                             <button
                               onClick={() => deleteSale(r.saleId)}
                               className="px-3 py-1 rounded text-sm font-semibold"
-                              style={{ backgroundColor: "#ef4444", color: "#001014" }}
+                              style={{
+                                backgroundColor: "#ef4444",
+                                color: "#001014",
+                              }}
                               title="Eliminar venta"
                             >
                               Eliminar
@@ -425,12 +495,20 @@ export default function SalesPage() {
       {/* Modal edición de pagos */}
       {isAdmin && editSaleId != null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={closeEditPayments} />
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={closeEditPayments}
+          />
           <div
             className="relative w-full max-w-md rounded-xl p-4 space-y-3"
-            style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
           >
-            <h2 className="text-lg font-semibold text-cyan-300">Editar métodos de pago</h2>
+            <h2 className="text-lg font-semibold text-cyan-300">
+              Editar métodos de pago
+            </h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <NumberInput
                 label="Efectivo"
@@ -448,7 +526,9 @@ export default function SalesPage() {
                 onChange={(v) => setEditDatafono(v)}
               />
             </div>
-            {!!editMsg && <div className="text-sm text-pink-300">{editMsg}</div>}
+            {!!editMsg && (
+              <div className="text-sm text-pink-300">{editMsg}</div>
+            )}
             <div className="flex justify-end gap-2 pt-1">
               <button
                 onClick={closeEditPayments}
@@ -462,8 +542,10 @@ export default function SalesPage() {
                 className="px-4 py-2 rounded font-semibold"
                 style={{
                   color: "#001014",
-                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
                 }}
               >
                 Guardar
@@ -480,14 +562,23 @@ export default function SalesPage() {
 }
 
 /* ---------- UI helpers ---------- */
-function SummaryCard({ title, value, accent }: { title: string; value: number; accent?: "cyan" | "pink" }) {
+function SummaryCard({
+  title,
+  value,
+  accent,
+}: {
+  title: string;
+  value: number;
+  accent?: "cyan" | "pink";
+}) {
   const glow =
     accent === "cyan"
       ? "0 0 18px rgba(0,255,255,.25), inset 0 0 18px rgba(0,255,255,.08)"
       : accent === "pink"
       ? "0 0 18px rgba(255,0,255,.25), inset 0 0 18px rgba(255,0,255,.08)"
       : "inset 0 0 12px rgba(255,255,255,.04)";
-  const titleColor = accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
+  const titleColor =
+    accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
   const border = `1px solid ${COLORS.border}`;
 
   return (
@@ -505,14 +596,26 @@ function SummaryCard({ title, value, accent }: { title: string; value: number; a
   );
 }
 
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Th({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <th className={`py-2 px-3 text-gray-300 ${className}`} style={{}}>
       {children}
     </th>
   );
 }
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Td({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <td className={`py-2 px-3 ${className}`} style={{}}>
       {children}
@@ -535,11 +638,18 @@ function NumberInput({
       <div className="mb-1 text-gray-300">{label}</div>
       <input
         className="w-full rounded px-3 py-2 text-right outline-none"
-        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.input,
+          border: `1px solid ${COLORS.border}`,
+        }}
         type="number"
         min={0}
         value={value}
-        onChange={(e) => onChange(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+        onChange={(e) =>
+          onChange(
+            e.target.value === "" ? "" : Math.max(0, Number(e.target.value))
+          )
+        }
       />
     </label>
   );
