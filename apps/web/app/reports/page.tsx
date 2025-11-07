@@ -31,15 +31,31 @@ type Summary = {
   iva: number;
   descuentos: number;
   costo_vendido: number;
-  gastos: number;
-  utilidad: number;
+  gastos_total: number;        // suma de todos los gastos
+  gastos_operativos: number;   // excluye MERCANCIA
+  utilidad: number;            // ventas - costo - gastos_operativos
 };
 
 type PaymentsBreakdown = {
+  // bruto por método
   EFECTIVO: number;
   QR_LLAVE: number;
   DATAFONO: number;
   total: number;
+  // gastos por método
+  gastos?: {
+    EFECTIVO: number;
+    QR_LLAVE: number;
+    DATAFONO: number;
+    total: number;
+  };
+  // neto por método (bruto - gastos)
+  neto?: {
+    EFECTIVO: number;
+    QR_LLAVE: number;
+    DATAFONO: number;
+    total: number;
+  };
 };
 
 type RangeType = "day" | "month" | "year" | "custom";
@@ -57,7 +73,7 @@ type SaleLine = {
   cost?: number;
   profit?: number;
   paymentMethods?: { method: string; amount: number }[];
-  payMethods?: string; // por compatibilidad con otros endpoints
+  payMethods?: string; // compat
 };
 
 // Gasto
@@ -66,6 +82,7 @@ type ExpenseRow = {
   description?: string | null;
   amount: number | string;
   paymentMethod?: string | null;
+  category?: string | null;
   createdAt: string;
 };
 
@@ -128,6 +145,7 @@ export default function ReportsPage() {
   const [payDay, setPayDay] = useState<PaymentsBreakdown | null>(null);
   const [sumMonth, setSumMonth] = useState<Summary | null>(null);
   const [sumYear, setSumYear] = useState<Summary | null>(null);
+  const [papTotal, setPapTotal] = useState<number>(0);
 
   const dashRef = useRef<HTMLDivElement>(null);
 
@@ -148,22 +166,25 @@ export default function ReportsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [r1, r2, r3, r4] = await Promise.all([
+      const [r1, r2, r3, r4, r5] = await Promise.all([
         apiFetch(`/reports/summary?from=${from}&to=${to}`),
         apiFetch(`/reports/payments?from=${from}&to=${to}`),
         apiFetch(`/reports/summary?from=${monthStartISO(to)}&to=${to}`),
         apiFetch(`/reports/summary?from=${yearStartISO(to)}&to=${to}`),
+        apiFetch(`/reports/papeleria?from=${from}&to=${to}`),
       ]);
-      const [d1, d2, d3, d4] = await Promise.all([
+      const [d1, d2, d3, d4, d5] = await Promise.all([
         r1.json(),
         r2.json(),
         r3.json(),
         r4.json(),
+        r5.json(),
       ]);
       setSumDay(d1);
       setPayDay(d2);
       setSumMonth(d3);
       setSumYear(d4);
+      setPapTotal(Number(d5?.total || 0));
       setMsg("");
     } catch {
       setMsg("No se pudo cargar la información");
@@ -180,27 +201,40 @@ export default function ReportsPage() {
   /* Datos de charts (solo UI) */
   const dayChartData = [
     { name: "Ventas", value: sumDay?.ventas || 0 },
-    { name: "Gastos", value: sumDay?.gastos || 0 },
+    { name: "Gastos (Op.)", value: sumDay?.gastos_operativos || 0 },
     { name: "Utilidad", value: sumDay?.utilidad || 0 },
   ];
+
+  // Usar neto si lo devuelve el backend; si no, usar bruto
+  const payForChart = payDay?.neto ?? {
+    EFECTIVO: payDay?.EFECTIVO || 0,
+    QR_LLAVE: payDay?.QR_LLAVE || 0,
+    DATAFONO: payDay?.DATAFONO || 0,
+    total:
+      (payDay?.EFECTIVO || 0) +
+      (payDay?.QR_LLAVE || 0) +
+      (payDay?.DATAFONO || 0),
+  };
+
   const payChartData = payDay
     ? [
-        { name: "Efectivo", value: payDay.EFECTIVO },
-        { name: "QR / Llave", value: payDay.QR_LLAVE },
-        { name: "Datafono", value: payDay.DATAFONO },
+        { name: "Efectivo", value: payForChart.EFECTIVO || 0 },
+        { name: "QR / Llave", value: payForChart.QR_LLAVE || 0 },
+        { name: "Datáfono", value: payForChart.DATAFONO || 0 },
       ]
     : [];
+
   const monthlyComparison = [
     {
       name: "Mes",
       Ventas: sumMonth?.ventas || 0,
-      Gastos: sumMonth?.gastos || 0,
+      Gastos: sumMonth?.gastos_operativos || 0,
       Utilidad: sumMonth?.utilidad || 0,
     },
     {
       name: "Año",
       Ventas: sumYear?.ventas || 0,
-      Gastos: sumYear?.gastos || 0,
+      Gastos: sumYear?.gastos_operativos || 0,
       Utilidad: sumYear?.utilidad || 0,
     },
   ];
@@ -209,21 +243,23 @@ export default function ReportsPage() {
   const exportReportPdf = async () => {
     try {
       // 1) Pide datos del rango actual
-      const [salesRes, expRes, sumRes, payRes] = await Promise.all([
+      const [salesRes, expRes, sumRes, payRes, papRes] = await Promise.all([
         apiFetch(`/reports/sales-lines?from=${from}&to=${to}`),
         apiFetch(`/expenses?from=${from}&to=${to}`),
         apiFetch(`/reports/summary?from=${from}&to=${to}`),
         apiFetch(`/reports/payments?from=${from}&to=${to}`),
+        apiFetch(`/reports/papeleria?from=${from}&to=${to}`),
       ]);
-      const [sales, expenses, summary, payments] = await Promise.all([
+      const [sales, expenses, summary, payments, pap] = await Promise.all([
         salesRes.json() as Promise<SaleLine[]>,
         expRes.json() as Promise<ExpenseRow[]>,
         sumRes.json() as Promise<Summary>,
         payRes.json() as Promise<PaymentsBreakdown>,
+        papRes.json() as Promise<{ total: number }>,
       ]);
 
       // 2) Prepara PDF
-      const pdf = new jsPDF({ unit: "pt", format: "a4" }); // 595 x 842 aprox
+      const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
       const marginX = 40;
@@ -236,7 +272,7 @@ export default function ReportsPage() {
       const logoSrc =
         (typeof logo === "string"
           ? logo
-          : (logo as unknown as { src?: string })?.src) || "/logo.png"; // fallback si lo moviste a /public
+          : (logo as unknown as { src?: string })?.src) || "/logo.png";
       const logoDataUrl = await fetchImageAsDataUrl(logoSrc);
 
       if (logoDataUrl) {
@@ -267,8 +303,10 @@ export default function ReportsPage() {
         body: [
           ["Ventas totales", toCOP(summary?.ventas || 0)],
           ["Costo vendido", toCOP(summary?.costo_vendido || 0)],
-          ["Gastos", toCOP(summary?.gastos || 0)],
+          ["Gastos (total)", toCOP(summary?.gastos_total || 0)],
+          ["Gastos operativos", toCOP(summary?.gastos_operativos || 0)],
           ["Utilidad", toCOP(summary?.utilidad || 0)],
+          ["PAPELERÍA (periodo)", toCOP(Number(pap?.total || 0))],
         ],
         theme: "grid",
         styles: {
@@ -287,27 +325,47 @@ export default function ReportsPage() {
       const lastY1 = (pdf as JsPDFWithAutoTable).lastAutoTable?.finalY ?? curY;
       curY = lastY1 + 24;
 
-      // ===== Caja por método de pago =====
+      // ===== Caja por método de pago (Bruto / Gastos / Neto) =====
       pdf.setFontSize(13);
       pdf.setTextColor(0, 255, 255);
       pdf.setFont("helvetica", "bold");
       pdf.text("Caja por método de pago", marginX, curY);
       curY += 8;
 
-      // Línea decorativa
       pdf.setDrawColor(30, 31, 75);
       pdf.setLineWidth(0.8);
       pdf.line(marginX, curY, pageW - marginX, curY);
       curY += 8;
 
+      const bruto = {
+        EFECTIVO: payments?.EFECTIVO || 0,
+        QR_LLAVE: payments?.QR_LLAVE || 0,
+        DATAFONO: payments?.DATAFONO || 0,
+        total: payments?.total || 0,
+      };
+      const gastos = {
+        EFECTIVO: payments?.gastos?.EFECTIVO || 0,
+        QR_LLAVE: payments?.gastos?.QR_LLAVE || 0,
+        DATAFONO: payments?.gastos?.DATAFONO || 0,
+        total: payments?.gastos?.total || 0,
+      };
+      const neto = {
+        EFECTIVO: payments?.neto?.EFECTIVO ?? (bruto.EFECTIVO - gastos.EFECTIVO),
+        QR_LLAVE: payments?.neto?.QR_LLAVE ?? (bruto.QR_LLAVE - gastos.QR_LLAVE),
+        DATAFONO: payments?.neto?.DATAFONO ?? (bruto.DATAFONO - gastos.DATAFONO),
+        total:
+          payments?.neto?.total ??
+          (bruto.total - gastos.total),
+      };
+
       autoTable(pdf, {
         startY: curY,
-        head: [["Método", "Monto"]],
+        head: [["Método", "Bruto", "Gastos", "Neto"]],
         body: [
-          ["Efectivo", toCOP(payments?.EFECTIVO || 0)],
-          ["QR / Llave", toCOP(payments?.QR_LLAVE || 0)],
-          ["Datafono", toCOP(payments?.DATAFONO || 0)],
-          ["TOTAL", toCOP(payments?.total || 0)],
+          ["Efectivo", toCOP(bruto.EFECTIVO), toCOP(gastos.EFECTIVO), toCOP(neto.EFECTIVO)],
+          ["QR / Llave", toCOP(bruto.QR_LLAVE), toCOP(gastos.QR_LLAVE), toCOP(neto.QR_LLAVE)],
+          ["Datáfono", toCOP(bruto.DATAFONO), toCOP(gastos.DATAFONO), toCOP(neto.DATAFONO)],
+          ["TOTAL", toCOP(bruto.total), toCOP(gastos.total), toCOP(neto.total)],
         ],
         theme: "grid",
         styles: {
@@ -322,9 +380,7 @@ export default function ReportsPage() {
           textColor: 0,
           fontStyle: "bold",
         },
-        bodyStyles: {
-          fontStyle: "normal",
-        },
+        bodyStyles: { fontStyle: "normal" },
         alternateRowStyles: { fillColor: [25, 27, 75] },
         margin: { left: marginX, right: marginX },
       });
@@ -333,13 +389,11 @@ export default function ReportsPage() {
       curY = lastYPayments + 24;
 
       // ===== Ventas =====
-      // Cabecera de sección
       pdf.setFontSize(13);
       pdf.setTextColor(255, 0, 255);
       pdf.setFont("helvetica", "bold");
       pdf.text("Ventas del periodo", marginX, curY);
       curY += 8;
-      // subrayado
       pdf.setDrawColor(30, 31, 75);
       pdf.setLineWidth(0.8);
       pdf.line(marginX, curY, pageW - marginX, curY);
@@ -418,17 +472,15 @@ export default function ReportsPage() {
       pdf.line(marginX, curY, pageW - marginX, curY);
       curY += 8;
 
-      const totalGastos = expenses.reduce(
-        (a, e) => a + Number(e.amount || 0),
-        0
-      );
+      const totalGastos = expenses.reduce((a, e) => a + Number(e.amount || 0), 0);
 
       autoTable(pdf, {
         startY: curY,
-        head: [["Fecha", "Descripción", "Método", "Monto"]],
+        head: [["Fecha", "Descripción", "Categoría", "Método", "Monto"]],
         body: expenses.map((e) => [
           new Date(e.createdAt).toLocaleString("es-CO"),
           e.description || "-",
+          (e.category || "-").toString(),
           e.paymentMethod || "-",
           toCOP(Number(e.amount)),
         ]),
@@ -446,16 +498,16 @@ export default function ReportsPage() {
         },
         alternateRowStyles: { fillColor: [25, 27, 75] },
         margin: { left: marginX, right: marginX },
-        foot: [["", "", "TOTAL", toCOP(totalGastos)]],
+        foot: [["", "", "", "TOTAL", toCOP(totalGastos)]],
         footStyles: {
           fillColor: [230, 230, 230],
           textColor: 0,
           fontStyle: "bold",
         },
-        columnStyles: { 3: { halign: "right" } },
+        columnStyles: { 4: { halign: "right" } },
       });
 
-      // ===== Footer en todas las páginas
+      // ===== Footer
       const pageCount = pdf.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         pdf.setPage(i);
@@ -556,26 +608,30 @@ export default function ReportsPage() {
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
       {loading && <div>Cargando…</div>}
 
-      {/* Contenedor del dashboard (para UI) */}
+      {/* Contenedor del dashboard */}
       <div ref={dashRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Resumen diario */}
         <Card title="Resumen diario">
           <ChartBar data={dayChartData} />
           <div className="space-y-1 mt-2">
             <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
-            <KV k="Gastos" v={toCOP(sumDay?.gastos || 0)} />
+            <KV k="Gastos (operativos)" v={toCOP(sumDay?.gastos_operativos || 0)} />
             <KV k="Utilidad" v={toCOP(sumDay?.utilidad || 0)} strong />
+            <KV k='PAPELERÍA (hoy)' v={toCOP(papTotal || 0)} />
           </div>
         </Card>
 
-        {/* Métodos de pago */}
-        <Card title="Caja por método de pago">
+        {/* Caja por método de pago (NETO) */}
+        <Card title="Caja por método de pago (Neto)">
           <ChartPie data={payChartData} />
           <div className="space-y-1 mt-2">
-            <KV k="Efectivo" v={toCOP(payDay?.EFECTIVO || 0)} />
-            <KV k="QR / Llave" v={toCOP(payDay?.QR_LLAVE || 0)} />
-            <KV k="Datafono" v={toCOP(payDay?.DATAFONO || 0)} />
-            <KV k="Total" v={toCOP(payDay?.total || 0)} strong />
+            <KV k="Efectivo (neto)" v={toCOP(payForChart.EFECTIVO || 0)} />
+            <KV k="QR / Llave (neto)" v={toCOP(payForChart.QR_LLAVE || 0)} />
+            <KV k="Datáfono (neto)" v={toCOP(payForChart.DATAFONO || 0)} />
+            <KV k="Total neto" v={toCOP(payForChart.total || 0)} strong />
+            <div className="text-xs text-gray-400">
+              * Neto = Cobros - Gastos pagados con ese método.
+            </div>
           </div>
         </Card>
 
@@ -592,7 +648,7 @@ export default function ReportsPage() {
           />
           <KV
             k="% Gastos / Ventas (mes)"
-            v={pct(sumMonth?.gastos || 0, sumMonth?.ventas || 0)}
+            v={pct(sumMonth?.gastos_operativos || 0, sumMonth?.ventas || 0)}
           />
           <KV
             k="% Utilidad / Ventas (año)"
@@ -600,7 +656,7 @@ export default function ReportsPage() {
           />
           <KV
             k="% Gastos / Ventas (año)"
-            v={pct(sumYear?.gastos || 0, sumYear?.ventas || 0)}
+            v={pct(sumYear?.gastos_operativos || 0, sumYear?.ventas || 0)}
           />
         </Card>
       </div>

@@ -11,6 +11,9 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "gamerland_secret";
 
+const ExpenseCategories = ["MERCANCIA", "LOCAL", "FUERA_DEL_LOCAL"] as const;
+type ExpenseCategory = (typeof ExpenseCategories)[number];
+
 // Carga .env solo en desarrollo/local. En producción (Railway) no hace falta.
 if (process.env.NODE_ENV !== "production") {
   try {
@@ -592,6 +595,158 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req, res) => {
   }
 });
 
+const saleAdminUpdateSchema = z.object({
+  customer: z.string().nullish(),
+  items: z
+    .array(
+      z.object({
+        productId: z.coerce.number().int().positive(),
+        qty: z.coerce.number().int().positive(),
+        unitPrice: z.coerce.number().nonnegative(),
+        discount: z.coerce.number().nonnegative().default(0),
+      })
+    )
+    .min(1)
+    .optional(),
+  payments: z
+    .array(
+      z.object({
+        method: z.enum(PaymentMethods),
+        amount: z.coerce.number().nonnegative(),
+        reference: z.string().optional(),
+      })
+    )
+    .min(1)
+    .optional(),
+  status: z.enum(["paid", "void", "return"]).optional(),
+});
+
+app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
+  const parsed = saleAdminUpdateSchema.safeParse(req.body);
+  if (!parsed.success)
+    return res
+      .status(400)
+      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const prev = await tx.sale.findUnique({
+        where: { id },
+        include: { items: true, payments: true },
+      });
+      if (!prev) throw new Error("No encontrado");
+
+      // Si vienen items: recalcular totales y reconciliar stock
+      let items = prev.items;
+      if (parsed.data.items) {
+        // 1) revertir stock de items previos (crear movimientos 'in' de reverso)
+        for (const it of prev.items) {
+          await tx.stockMovement.create({
+            data: {
+              productId: it.productId,
+              type: "in",
+              qty: it.qty,
+              unitCost: it.unitPrice, // aproximación: no conocemos avgCost histórico aquí
+              reference: `sale#${id}:edit-revert`,
+            },
+          });
+        }
+        // 2) borrar items y crear nuevos
+        await tx.saleItem.deleteMany({ where: { saleId: id } });
+        items = await Promise.all(
+          parsed.data.items.map(async (it) =>
+            tx.saleItem.create({
+              data: {
+                saleId: id,
+                productId: it.productId,
+                qty: it.qty,
+                unitPrice: it.unitPrice,
+                taxRate: 0,
+                discount: it.discount ?? 0,
+                total: it.unitPrice * it.qty - (it.discount ?? 0),
+              },
+            })
+          )
+        );
+        // 3) crear nuevos movimientos 'out'
+        for (const it of parsed.data.items) {
+          // usar costo promedio actual como unitCost de salida
+          const prod = await tx.product.findUnique({
+            where: { id: it.productId },
+            select: { cost: true },
+          });
+          await tx.stockMovement.create({
+            data: {
+              productId: it.productId,
+              type: "out",
+              qty: it.qty,
+              unitCost: Number(prod?.cost ?? 0),
+              reference: `sale#${id}:edit`,
+            },
+          });
+        }
+      }
+
+      // Si vienen pagos: reemplazar pagos
+      if (parsed.data.payments) {
+        await tx.payment.deleteMany({ where: { saleId: id } });
+        await tx.payment.createMany({
+          data: parsed.data.payments.map((p) => ({
+            saleId: id,
+            method: p.method,
+            amount: p.amount,
+            reference: p.reference,
+          })),
+        });
+      }
+
+      // Recalcular totales de la venta (con los items actuales)
+      const curItems = parsed.data.items ? items : prev.items;
+      const subtotal = curItems.reduce(
+        (a, it) => a + Number(it.unitPrice) * it.qty,
+        0
+      );
+      const discount = curItems.reduce(
+        (a, it) => a + Number(it.discount ?? 0),
+        0
+      );
+      const tax = 0;
+      const total = subtotal + tax - discount;
+
+      const sale = await tx.sale.update({
+        where: { id },
+        data: {
+          customer:
+            parsed.data.customer !== undefined
+              ? parsed.data.customer
+                ? U(parsed.data.customer)
+                : null
+              : prev.customer,
+          subtotal,
+          discount,
+          tax,
+          total,
+          status: parsed.data.status ?? prev.status,
+        },
+        include: { items: true, payments: true },
+      });
+
+      return sale;
+    });
+
+    res.json(updated);
+  } catch (e: any) {
+    if (e?.message === "No encontrado")
+      return res.status(404).json({ error: "No encontrado" });
+    res
+      .status(400)
+      .json({ error: e?.message || "No se pudo actualizar la venta" });
+  }
+});
+
 // ==================== STOCK IN (SOLO ADMIN) ====================
 const stockInSchema = z.object({
   productId: z.coerce.number().int().positive(),
@@ -688,6 +843,7 @@ const expenseSchema = z.object({
   paymentMethod: z.enum(["EFECTIVO", "QR_LLAVE", "DATAFONO"], {
     required_error: "Método de pago requerido",
   }),
+  category: z.enum(ExpenseCategories).default("LOCAL"),
 });
 
 app.post("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
@@ -701,7 +857,7 @@ app.post("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   const d = parsed.data;
   const e = await prisma.expense.create({
     data: {
-      category: "GASTO",
+      category: d.category, // "MERCANCIA" | "LOCAL" | "FUERA_DEL_LOCAL"
       description: d.description.toUpperCase(),
       amount: d.amount,
       paymentMethod: d.paymentMethod,
@@ -726,12 +882,57 @@ app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
     const { to } = parseLocalDateRange(toParam, toParam);
     where.createdAt = { lte: to };
   }
+  const category = req.query.category
+    ? String(req.query.category).toUpperCase()
+    : "";
+  if (category && ExpenseCategories.includes(category as ExpenseCategory)) {
+    where.category = category;
+  }
 
   const rows = await prisma.expense.findMany({
     where,
     orderBy: { createdAt: "desc" },
   });
   res.json(rows);
+});
+
+// PUT (reemplazo completo) o PATCH (parcial)
+const expenseUpdateSchema = expenseSchema.partial();
+
+app.patch("/expenses/:id", requireRole("ADMIN"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
+  const parsed = expenseUpdateSchema.safeParse(req.body);
+  if (!parsed.success)
+    return res
+      .status(400)
+      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+  try {
+    const row = await prisma.expense.update({
+      where: { id },
+      data: parsed.data,
+    });
+    res.json(row);
+  } catch (e: any) {
+    if (e?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
+    res.status(400).json({ error: e?.message || "No se pudo actualizar" });
+  }
+});
+
+app.delete("/expenses/:id", requireRole("ADMIN"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
+  try {
+    await prisma.expense.delete({ where: { id } });
+    res.json({ ok: true, id });
+  } catch (e: any) {
+    if (e?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
+    res.status(400).json({ error: e?.message || "No se pudo eliminar" });
+  }
 });
 
 // ==================== REPORTES (EMPLOYEE) ====================
@@ -778,16 +979,16 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
 
   const expenses = (await prisma.expense.findMany({
     where: { createdAt: { gte: from, lte: to } },
-    select: { amount: true },
-  })) as Array<{ amount: unknown }>;
+    select: { amount: true, category: true },
+  })) as Array<{ amount: unknown; category?: string | null }>;
 
-  const gastos = expenses.reduce(
-    (a: number, r: { amount: unknown }) => a + Number(r.amount),
-    0
-  );
+  const gastos_total = expenses.reduce((a, r) => a + Number(r.amount), 0);
+  const gastos_operativos = expenses
+    .filter((e) => String(e.category ?? "").toUpperCase() !== "MERCANCIA")
+    .reduce((a, r) => a + Number(r.amount), 0);
 
   const ventas = sum("total");
-  const utilidad = ventas - costo - gastos;
+  const utilidad = ventas - costo - gastos_operativos;
 
   res.json({
     from,
@@ -797,7 +998,8 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
     iva: sum("tax"),
     descuentos: sum("discount"),
     costo_vendido: costo,
-    gastos,
+    gastos_total,
+    gastos_operativos,
     utilidad,
   });
 });
@@ -927,7 +1129,48 @@ app.get("/reports/payments", requireRole("EMPLOYEE"), async (req, res) => {
   const DATAFONO = sum("DATAFONO");
   const total = EFECTIVO + QR_LLAVE + DATAFONO;
 
-  res.json({ EFECTIVO, QR_LLAVE, DATAFONO, total });
+  // gastos por método
+  const exp = await prisma.expense.groupBy({
+    by: ["paymentMethod"],
+    where: { createdAt: { gte: from, lte: to } },
+    _sum: { amount: true },
+  });
+
+  const expSum = (m: string) =>
+    Number(exp.find((e) => e.paymentMethod === m)?._sum.amount ?? 0);
+
+  const G_EFECTIVO = expSum("EFECTIVO");
+  const G_QR = expSum("QR_LLAVE");
+  const G_DATAFONO = expSum("DATAFONO");
+  const G_TOTAL = G_EFECTIVO + G_QR + G_DATAFONO;
+
+  // neto por método (caja actual por método)
+  const N_EFECTIVO = EFECTIVO - G_EFECTIVO;
+  const N_QR = QR_LLAVE - G_QR;
+  const N_DATAFONO = DATAFONO - G_DATAFONO;
+  const N_TOTAL = N_EFECTIVO + N_QR + N_DATAFONO;
+
+  res.json({
+    // bruto
+    EFECTIVO,
+    QR_LLAVE,
+    DATAFONO,
+    total,
+    // gastos por método
+    gastos: {
+      EFECTIVO: G_EFECTIVO,
+      QR_LLAVE: G_QR,
+      DATAFONO: G_DATAFONO,
+      total: G_TOTAL,
+    },
+    // neto
+    neto: {
+      EFECTIVO: N_EFECTIVO,
+      QR_LLAVE: N_QR,
+      DATAFONO: N_DATAFONO,
+      total: N_TOTAL,
+    },
+  });
 });
 
 // Total Papelería (categoría SERVICIOS)
@@ -993,7 +1236,9 @@ const workUpdateSchema = z.object({
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
   reviewPaid: z.coerce.boolean().optional(),
-  status: z.enum(["RECEIVED", "IN_PROGRESS", "FINISHED", "DELIVERED"]).optional(),
+  status: z
+    .enum(["RECEIVED", "IN_PROGRESS", "FINISHED", "DELIVERED"])
+    .optional(),
   location: z.enum(["LOCAL", "BOGOTA"]).optional(),
   quote: z.coerce.number().nullable().optional(),
   total: z.coerce.number().nullable().optional(),
@@ -1034,7 +1279,9 @@ app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
 app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const parsed = workCreateSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
   }
   const code = await getNextWorkCode();
   const d = parsed.data;
@@ -1056,11 +1303,14 @@ app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
 
 app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
 
   const parsed = workUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
   }
   const d = parsed.data;
   try {
@@ -1068,32 +1318,43 @@ app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
       where: { id },
       data: {
         ...(d.item !== undefined ? { item: d.item.toUpperCase() } : {}),
-        ...(d.description !== undefined ? { description: d.description.toUpperCase() } : {}),
-        ...(d.customerName !== undefined ? { customerName: d.customerName.toUpperCase() } : {}),
-        ...(d.customerPhone !== undefined ? { customerPhone: d.customerPhone } : {}),
+        ...(d.description !== undefined
+          ? { description: d.description.toUpperCase() }
+          : {}),
+        ...(d.customerName !== undefined
+          ? { customerName: d.customerName.toUpperCase() }
+          : {}),
+        ...(d.customerPhone !== undefined
+          ? { customerPhone: d.customerPhone }
+          : {}),
         ...(d.reviewPaid !== undefined ? { reviewPaid: d.reviewPaid } : {}),
         ...(d.status !== undefined ? { status: d.status } : {}),
         ...(d.location !== undefined ? { location: d.location } : {}),
         ...(d.quote !== undefined ? { quote: d.quote } : {}),
         ...(d.total !== undefined ? { total: d.total } : {}),
-        ...(d.notes !== undefined ? { notes: d.notes ? d.notes.toUpperCase() : null } : {}),
+        ...(d.notes !== undefined
+          ? { notes: d.notes ? d.notes.toUpperCase() : null }
+          : {}),
       },
     });
     res.json(row);
   } catch (e: any) {
-    if (e?.code === "P2025") return res.status(404).json({ error: "No encontrado" });
+    if (e?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
     res.status(400).json({ error: e?.message || "No se pudo actualizar" });
   }
 });
 
 app.delete("/works/:id", requireRole("ADMIN"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
   try {
     await prisma.workOrder.delete({ where: { id } });
     res.json({ ok: true, id });
   } catch (e: any) {
-    if (e?.code === "P2025") return res.status(404).json({ error: "No encontrado" });
+    if (e?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
     res.status(400).json({ error: e?.message || "No se pudo eliminar" });
   }
 });

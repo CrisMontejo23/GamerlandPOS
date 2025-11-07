@@ -65,7 +65,7 @@ export default function POSPage() {
     setQ(""); setFound([]);
   };
   const remove = (id: number) => setCart(prev => prev.filter(i => i.product.id !== id));
-  const clearCart = () => setCart([]);
+  const clearCart = () => { setCart([]); setReceived(0); }
   const inc = (id: number) => setCart(prev => prev.map(i => i.product.id === id ? { ...i, qty: Math.min((i.product.stock ?? 0) as number, i.qty + 1) } : i));
   const dec = (id: number) => setCart(prev => prev.map(i => i.product.id === id ? { ...i, qty: Math.max(1, i.qty - 1) } : i));
   const setPrice = (id: number, val: string) => setCart(prev => prev.map(i => i.product.id === id ? { ...i, unitPrice: Number(val || 0) } : i));
