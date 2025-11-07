@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { useAuth } from "../auth/AuthProvider";
 
 type Payment = {
   method: "EFECTIVO" | "QR_LLAVE" | "DATAFONO" | string;
@@ -19,6 +20,12 @@ type Row = {
   cost: number;
   profit: number;
   paymentMethods: Payment[];
+};
+
+type SalePatch = {
+  customer?: string | null;
+  status?: "paid" | "void" | "return";
+  // (si luego agregas edición de items/pagos en UI, ampliamos aquí)
 };
 
 type Period = "day" | "month" | "year";
@@ -51,8 +58,7 @@ function rangeFrom(period: Period, baseISO: string) {
   const m = d.getMonth();
 
   if (period === "day") {
-    const s = baseISO,
-      e = baseISO;
+    const s = baseISO, e = baseISO;
     return { from: s, to: e };
   }
   if (period === "month") {
@@ -61,11 +67,13 @@ function rangeFrom(period: Period, baseISO: string) {
     const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
     return { from: start, to: end };
   }
-  // year
   return { from: `${y}-01-01`, to: `${y}-12-31` };
 }
 
 export default function SalesPage() {
+  const { role } = useAuth();
+  const isAdmin = role === "ADMIN";
+
   const [period, setPeriod] = useState<Period>("day");
   const [baseDate, setBaseDate] = useState<string>(todayISO());
   const [rows, setRows] = useState<Row[]>([]);
@@ -108,6 +116,36 @@ export default function SalesPage() {
     }
     return Array.from(acc.entries()).map(([method, amount]) => ({ method, amount }));
   }, [rows]);
+
+  // --- acciones admin sencillas ---
+  const patchSale = async (id: number, body: SalePatch) => {
+    const r = await apiFetch(`/sales/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      alert(`Error: ${e?.error || "No se pudo actualizar"}`);
+      return false;
+    }
+    return true;
+  };
+
+  const editCustomer = async (saleId: number) => {
+    const nuevo = window.prompt("Nuevo nombre de cliente (dejar vacío para quitar):", "");
+    if (nuevo === null) return;
+    const ok = await patchSale(saleId, { customer: nuevo.trim() || null });
+    if (ok) load();
+  };
+
+  const setStatus = async (saleId: number, status: "paid" | "void") => {
+    if (status === "void") {
+      const sure = window.confirm("¿Seguro que deseas ANULAR esta venta?");
+      if (!sure) return;
+    }
+    const ok = await patchSale(saleId, { status });
+    if (ok) load();
+  };
 
   return (
     <div className="max-w-7xl mx-auto text-gray-200 space-y-5">
@@ -157,7 +195,7 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Breakdown por método (opcional, útil en tienda) */}
+        {/* Breakdown por método */}
         {payBreakdown.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
             {payBreakdown.map((p) => (
@@ -194,19 +232,20 @@ export default function SalesPage() {
                 <Th className="text-right">Total costo</Th>
                 <Th className="text-right">Ganancia</Th>
                 <Th>Método(s)</Th>
+                {isAdmin && <Th>Acciones</Th>}
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={10}>
+                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
                     Cargando…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={10}>
+                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
                     Sin registros
                   </td>
                 </tr>
@@ -240,6 +279,37 @@ export default function SalesPage() {
                       ))}
                     </div>
                   </Td>
+
+                  {isAdmin && (
+                    <Td>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => editCustomer(r.saleId)}
+                          className="px-3 py-1 rounded text-sm font-medium"
+                          style={{ backgroundColor: "#374151" }}
+                          title="Editar cliente"
+                        >
+                          Cliente
+                        </button>
+                        <button
+                          onClick={() => setStatus(r.saleId, "void")}
+                          className="px-3 py-1 rounded text-sm font-semibold"
+                          style={{ backgroundColor: "#ef4444", color: "#001014" }}
+                          title="Anular venta"
+                        >
+                          Anular
+                        </button>
+                        <button
+                          onClick={() => setStatus(r.saleId, "paid")}
+                          className="px-3 py-1 rounded text-sm font-semibold"
+                          style={{ backgroundColor: "#0bd977", color: "#001014" }}
+                          title="Marcar pagada"
+                        >
+                          Pagada
+                        </button>
+                      </div>
+                    </Td>
+                  )}
                 </tr>
               ))}
             </tbody>
