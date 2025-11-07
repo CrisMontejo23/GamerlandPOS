@@ -159,7 +159,7 @@ function profitByRuleFromSale(s: SaleLine) {
     [
       "REFACIL - CARGA DE CUENTA",
       "TRANSACCION",
-      "TRANSACCION DATAFONO",      
+      "TRANSACCION DATAFONO",
     ].includes(name)
   )
     return 0;
@@ -683,6 +683,17 @@ export default function ReportsPage() {
     }
   };
 
+  const rangeWord =
+    rangeType === "day" ? "DÍA" : rangeType === "month" ? "MES" : "AÑO";
+  const resumenTitle =
+    rangeType === "day"
+      ? "Resumen diario"
+      : rangeType === "month"
+      ? "Resumen mes"
+      : "Resumen año";
+
+  const cajaPayTitle = `CAJA POR MÉTODO DE PAGO ${rangeWord} (NETO)`;
+
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
       <h1 className="text-2xl font-bold text-cyan-400">DASHBOARD / REPORTES</h1>
@@ -798,8 +809,16 @@ export default function ReportsPage() {
               value={toCOP(cashbox.efectivo || 0)}
               accent="cyan"
             />
-            <MiniStat label="QR / Llave" value={toCOP(cashbox.qr_llave || 0)} />
-            <MiniStat label="Datáfono" value={toCOP(cashbox.datafono || 0)} />
+            <MiniStat
+              label="QR / Llave"
+              value={toCOP(cashbox.qr_llave || 0)}
+              accent="cyan"
+            />
+            <MiniStat
+              label="Datáfono"
+              value={toCOP(cashbox.datafono || 0)}
+              accent="cyan"
+            />
           </div>
 
           <div className="text-xs text-gray-400 mt-2">
@@ -809,7 +828,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Resumen diario */}
-        <Card title="Resumen diario">
+        <Card title={resumenTitle}>
           <ChartBar data={dayChartData} />
           <div className="space-y-1 mt-2">
             <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
@@ -820,7 +839,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Caja por método de pago (NETO) */}
-        <Card title="CAJA POR MÉTODO DE PAGO DIARIO (NETO)">
+        <Card title={cajaPayTitle}>
           <ChartPie data={payChartData} />
           <div className="space-y-1 mt-2">
             <KV k="EFECTIVO NETO" v={toCOP(payForChart.EFECTIVO || 0)} />
@@ -937,8 +956,9 @@ function ChartBar({ data }: { data: { name: string; value: number }[] }) {
       <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke="#2C2E6D" />
         <XAxis dataKey="name" stroke="#aaa" />
-        <YAxis stroke="#aaa" />
+        <YAxis stroke="#aaa" tickFormatter={(v) => toCOP(Number(v))} />
         <Tooltip
+          formatter={(value: number) => [toCOP(Number(value)), "Valor"]}
           contentStyle={{ backgroundColor: "#1E1F4B", border: "none" }}
         />
         <Bar dataKey="value" radius={6}>
@@ -956,6 +976,10 @@ function ChartPie({ data }: { data: { name: string; value: number }[] }) {
     <ResponsiveContainer width="100%" height={220}>
       <PieChart>
         <Tooltip
+          formatter={(value: number, name: string) => [
+            toCOP(Number(value)),
+            name,
+          ]}
           contentStyle={{ backgroundColor: "#1E1F4B", border: "none" }}
         />
         <Pie
@@ -965,7 +989,7 @@ function ChartPie({ data }: { data: { name: string; value: number }[] }) {
           cx="50%"
           cy="50%"
           outerRadius={80}
-          label
+          label={(e) => `${e.name}: ${toCOP(Number(e.value))}`}
         >
           {data.map((_, i) => (
             <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -983,14 +1007,22 @@ type ChartLineData = {
   Utilidad: number;
 };
 
-function ChartLine({ data }: { data: ChartLineData[] }) {
+function ChartLine({
+  data,
+}: {
+  data: { name: string; Ventas: number; Gastos: number; Utilidad: number }[];
+}) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke="#2C2E6D" />
         <XAxis dataKey="name" stroke="#aaa" />
-        <YAxis stroke="#aaa" />
+        <YAxis stroke="#aaa" tickFormatter={(v) => toCOP(Number(v))} />
         <Tooltip
+          formatter={(value: number, name: string) => [
+            toCOP(Number(value)),
+            name,
+          ]}
           contentStyle={{ backgroundColor: "#1E1F4B", border: "none" }}
         />
         <Legend />
