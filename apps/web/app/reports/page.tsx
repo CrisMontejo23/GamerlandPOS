@@ -531,7 +531,7 @@ export default function ReportsPage() {
 
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
-      <h1 className="text-2xl font-bold text-cyan-400">Dashboard / Reportes</h1>
+      <h1 className="text-2xl font-bold text-cyan-400">DASHBOARD / REPORTES</h1>
 
       {/* Filtros + Botones */}
       <div
@@ -550,10 +550,10 @@ export default function ReportsPage() {
           value={rangeType}
           onChange={(e) => setRangeType(e.target.value as RangeType)}
         >
-          <option value="day">Día</option>
-          <option value="month">Mes</option>
-          <option value="year">Año</option>
-          <option value="custom">Personalizado</option>
+          <option value="day">DÍA</option>
+          <option value="month">MES</option>
+          <option value="year">AÑO</option>
+          <option value="custom">PERSONALIZADO</option>
         </select>
 
         <input
@@ -590,7 +590,7 @@ export default function ReportsPage() {
               "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
           }}
         >
-          Calcular
+          CALCULAR
         </button>
 
         <div className="ml-auto flex gap-2">
@@ -600,13 +600,13 @@ export default function ReportsPage() {
             style={{ borderColor: COLORS.border }}
             title="Exportar reporte en PDF (métricas + tablas)"
           >
-            Exportar PDF
+            EXPORTAR PDF
           </button>
         </div>
       </div>
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
-      {loading && <div>Cargando…</div>}
+      {loading && <div>CARGANDO...</div>}
 
       {/* Contenedor del dashboard */}
       <div ref={dashRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -615,22 +615,22 @@ export default function ReportsPage() {
           <ChartBar data={dayChartData} />
           <div className="space-y-1 mt-2">
             <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
-            <KV k="Gastos (operativos)" v={toCOP(sumDay?.gastos_operativos || 0)} />
+            <KV k="Gastos" v={toCOP(sumDay?.gastos_operativos || 0)} />
             <KV k="Utilidad" v={toCOP(sumDay?.utilidad || 0)} strong />
-            <KV k='PAPELERÍA (hoy)' v={toCOP(papTotal || 0)} />
+            <KV k='Papeleria' v={toCOP(papTotal || 0)} />
           </div>
         </Card>
 
         {/* Caja por método de pago (NETO) */}
-        <Card title="Caja por método de pago (Neto)">
+        <Card title="CAJA POR MÉTODO DE PAGO (NETO)">
           <ChartPie data={payChartData} />
           <div className="space-y-1 mt-2">
-            <KV k="Efectivo (neto)" v={toCOP(payForChart.EFECTIVO || 0)} />
-            <KV k="QR / Llave (neto)" v={toCOP(payForChart.QR_LLAVE || 0)} />
-            <KV k="Datáfono (neto)" v={toCOP(payForChart.DATAFONO || 0)} />
-            <KV k="Total neto" v={toCOP(payForChart.total || 0)} strong />
+            <KV k="EFECTIVO NETO" v={toCOP(payForChart.EFECTIVO || 0)} />
+            <KV k="QR / LLAVE (NETO)" v={toCOP(payForChart.QR_LLAVE || 0)} />
+            <KV k="DATÁFONO (NETO)" v={toCOP(payForChart.DATAFONO || 0)} />
+            <KV k="TOTAL NETO" v={toCOP(payForChart.total || 0)} strong />
             <div className="text-xs text-gray-400">
-              * Neto = Cobros - Gastos pagados con ese método.
+              * NETO = COBROS - GASTOS PAGADOS CON ESE MÉTODO.
             </div>
           </div>
         </Card>

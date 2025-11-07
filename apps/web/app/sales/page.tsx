@@ -25,7 +25,7 @@ type Row = {
 type SalePatch = {
   customer?: string | null;
   status?: "paid" | "void" | "return";
-  // (si luego agregas edición de items/pagos en UI, ampliamos aquí)
+  // si luego agregas edición de items, se amplía aquí
 };
 
 type Period = "day" | "month" | "year";
@@ -79,6 +79,13 @@ export default function SalesPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // UI edición pagos
+  const [editSaleId, setEditSaleId] = useState<number | null>(null);
+  const [editEfectivo, setEditEfectivo] = useState<number | "">("");
+  const [editQR, setEditQR] = useState<number | "">("");
+  const [editDatafono, setEditDatafono] = useState<number | "">("");
+  const [editMsg, setEditMsg] = useState<string>("");
+
   const { from, to } = useMemo(() => rangeFrom(period, baseDate), [period, baseDate]);
 
   const load = async () => {
@@ -100,6 +107,7 @@ export default function SalesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
+  // totales visibles
   const totals = useMemo(() => {
     const revenue = rows.reduce((a, r) => a + r.revenue, 0);
     const cost = rows.reduce((a, r) => a + r.cost, 0);
@@ -107,6 +115,7 @@ export default function SalesPage() {
     return { revenue, cost, profit };
   }, [rows]);
 
+  // breakdown métodos (visual)
   const payBreakdown = useMemo(() => {
     const acc = new Map<string, number>();
     for (const r of rows) {
@@ -117,14 +126,53 @@ export default function SalesPage() {
     return Array.from(acc.entries()).map(([method, amount]) => ({ method, amount }));
   }, [rows]);
 
-  // --- acciones admin sencillas ---
-  const patchSale = async (id: number, body: SalePatch) => {
+  // ---- helpers por venta ----
+  // total de la venta (suma de líneas por saleId)
+  const saleTotalById = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of rows) {
+      m.set(r.saleId, (m.get(r.saleId) || 0) + r.revenue);
+    }
+    return m;
+  }, [rows]);
+
+  // pagos agrupados por venta
+  const salePaysById = useMemo(() => {
+    const m = new Map<number, { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }>();
+    for (const r of rows) {
+      const prev = m.get(r.saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
+      for (const p of r.paymentMethods || []) {
+        if (p.method === "EFECTIVO") prev.EFECTIVO += p.amount;
+        else if (p.method === "QR_LLAVE") prev.QR_LLAVE += p.amount;
+        else if (p.method === "DATAFONO") prev.DATAFONO += p.amount;
+        else prev.otros += p.amount;
+      }
+      m.set(r.saleId, prev);
+    }
+    return m;
+  }, [rows]);
+
+  // primera fila por saleId (para no repetir acciones en todas las líneas de la misma venta)
+  const firstIndexBySale = useMemo(() => {
+    const seen = new Set<number>();
+    const idx = new Map<number, number>();
+    rows.forEach((r, i) => {
+      if (!seen.has(r.saleId)) {
+        seen.add(r.saleId);
+        idx.set(r.saleId, i);
+      }
+    });
+    return idx;
+  }, [rows]);
+
+  // --- acciones admin (genéricas ya existentes) ---
+  const patchSale = async (id: number, body: SalePatch | Record<string, unknown>) => {
     const r = await apiFetch(`/sales/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     });
     if (!r.ok) {
-      const e = await r.json().catch(() => ({}));
+      const e = await r.json().catch(() => ({} as { error?: string }));
       alert(`Error: ${e?.error || "No se pudo actualizar"}`);
       return false;
     }
@@ -138,13 +186,61 @@ export default function SalesPage() {
     if (ok) load();
   };
 
-  const setStatus = async (saleId: number, status: "paid" | "void") => {
-    if (status === "void") {
-      const sure = window.confirm("¿Seguro que deseas ANULAR esta venta?");
-      if (!sure) return;
+  // --- NUEVO: Editor de pagos por venta ---
+  const openEditPayments = (saleId: number) => {
+    const pays = salePaysById.get(saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
+    setEditSaleId(saleId);
+    setEditEfectivo(pays.EFECTIVO || "");
+    setEditQR(pays.QR_LLAVE || "");
+    setEditDatafono(pays.DATAFONO || "");
+    setEditMsg("");
+  };
+  const closeEditPayments = () => {
+    setEditSaleId(null);
+    setEditEfectivo("");
+    setEditQR("");
+    setEditDatafono("");
+    setEditMsg("");
+  };
+  const savePayments = async () => {
+    if (editSaleId == null) return;
+    const totalVenta = saleTotalById.get(editSaleId) || 0;
+    const EFECTIVO = Number(editEfectivo || 0);
+    const QR = Number(editQR || 0);
+    const DATAFONO = Number(editDatafono || 0);
+    const suma = EFECTIVO + QR + DATAFONO;
+
+    if (Math.abs(suma - totalVenta) > 0.5) {
+      setEditMsg(`La suma de pagos (${fmtCOP(suma)}) debe ser igual al total de la venta (${fmtCOP(totalVenta)}).`);
+      return;
     }
-    const ok = await patchSale(saleId, { status });
-    if (ok) load();
+
+    const body = {
+      payments: [
+        ...(EFECTIVO > 0 ? [{ method: "EFECTIVO", amount: EFECTIVO }] : []),
+        ...(QR > 0 ? [{ method: "QR_LLAVE", amount: QR }] : []),
+        ...(DATAFONO > 0 ? [{ method: "DATAFONO", amount: DATAFONO }] : []),
+      ],
+    };
+
+    const ok = await patchSale(editSaleId, body);
+    if (ok) {
+      closeEditPayments();
+      load();
+    }
+  };
+
+  // --- NUEVO: Eliminar venta (duro) ---
+  const deleteSale = async (saleId: number) => {
+    const sure = window.confirm("¿Eliminar definitivamente esta venta? Esta acción no se puede deshacer.");
+    if (!sure) return;
+    const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({} as { error?: string }));
+      alert(`Error: ${e?.error || "No se pudo eliminar. Asegúrate de tener el endpoint DELETE /sales/:id en el backend."}`);
+      return;
+    }
+    load();
   };
 
   return (
@@ -250,72 +346,135 @@ export default function SalesPage() {
                   </td>
                 </tr>
               )}
-              {rows.map((r, idx) => (
-                <tr
-                  key={`${r.saleId}-${idx}`}
-                  className="hover:bg-[#191B4B]"
-                  style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                >
-                  <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
-                  <Td className="font-mono">{r.sku}</Td>
-                  <Td>{r.name}</Td>
-                  <Td className="text-right">{fmtCOP(r.unitPrice)}</Td>
-                  <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
-                  <Td className="text-center">{r.qty}</Td>
-                  <Td className="text-right text-cyan-300">{fmtCOP(r.revenue)}</Td>
-                  <Td className="text-right">{fmtCOP(r.cost)}</Td>
-                  <Td className="text-right text-pink-300">{fmtCOP(r.profit)}</Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-1">
-                      {r.paymentMethods.map((p, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 rounded text-xs"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
-                          title={p.method}
-                        >
-                          {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}
-                        </span>
-                      ))}
-                    </div>
-                  </Td>
-
-                  {isAdmin && (
+              {rows.map((r, idx) => {
+                const isFirstOfSale = firstIndexBySale.get(r.saleId) === idx;
+                return (
+                  <tr
+                    key={`${r.saleId}-${idx}`}
+                    className="hover:bg-[#191B4B]"
+                    style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                  >
+                    <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
+                    <Td className="font-mono">{r.sku}</Td>
+                    <Td>{r.name}</Td>
+                    <Td className="text-right">{fmtCOP(r.unitPrice)}</Td>
+                    <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
+                    <Td className="text-center">{r.qty}</Td>
+                    <Td className="text-right text-cyan-300">{fmtCOP(r.revenue)}</Td>
+                    <Td className="text-right">{fmtCOP(r.cost)}</Td>
+                    <Td className="text-right text-pink-300">{fmtCOP(r.profit)}</Td>
                     <Td>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => editCustomer(r.saleId)}
-                          className="px-3 py-1 rounded text-sm font-medium"
-                          style={{ backgroundColor: "#374151" }}
-                          title="Editar cliente"
-                        >
-                          Cliente
-                        </button>
-                        <button
-                          onClick={() => setStatus(r.saleId, "void")}
-                          className="px-3 py-1 rounded text-sm font-semibold"
-                          style={{ backgroundColor: "#ef4444", color: "#001014" }}
-                          title="Anular venta"
-                        >
-                          Anular
-                        </button>
-                        <button
-                          onClick={() => setStatus(r.saleId, "paid")}
-                          className="px-3 py-1 rounded text-sm font-semibold"
-                          style={{ backgroundColor: "#0bd977", color: "#001014" }}
-                          title="Marcar pagada"
-                        >
-                          Pagada
-                        </button>
+                      <div className="flex flex-wrap gap-1">
+                        {r.paymentMethods.map((p, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 rounded text-xs"
+                            style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                            title={p.method}
+                          >
+                            {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}
+                          </span>
+                        ))}
                       </div>
                     </Td>
-                  )}
-                </tr>
-              ))}
+
+                    {isAdmin && (
+                      <Td>
+                        {isFirstOfSale ? (
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => editCustomer(r.saleId)}
+                              className="px-3 py-1 rounded text-sm font-medium"
+                              style={{ backgroundColor: "#374151" }}
+                              title="Editar cliente"
+                            >
+                              Cliente
+                            </button>
+
+                            <button
+                              onClick={() => openEditPayments(r.saleId)}
+                              className="px-3 py-1 rounded text-sm font-semibold"
+                              style={{ backgroundColor: "#0ea5e9" }}
+                              title="Editar pagos"
+                            >
+                              Pagos
+                            </button>
+
+                            <button
+                              onClick={() => deleteSale(r.saleId)}
+                              className="px-3 py-1 rounded text-sm font-semibold"
+                              style={{ backgroundColor: "#ef4444", color: "#001014" }}
+                              title="Eliminar venta"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">—</span>
+                        )}
+                      </Td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </section>
+
+      {/* Modal edición de pagos */}
+      {isAdmin && editSaleId != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={closeEditPayments} />
+          <div
+            className="relative w-full max-w-md rounded-xl p-4 space-y-3"
+            style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+          >
+            <h2 className="text-lg font-semibold text-cyan-300">Editar métodos de pago</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <NumberInput
+                label="Efectivo"
+                value={editEfectivo}
+                onChange={(v) => setEditEfectivo(v)}
+              />
+              <NumberInput
+                label="QR / Llave"
+                value={editQR}
+                onChange={(v) => setEditQR(v)}
+              />
+              <NumberInput
+                label="Datafono"
+                value={editDatafono}
+                onChange={(v) => setEditDatafono(v)}
+              />
+            </div>
+            {!!editMsg && <div className="text-sm text-pink-300">{editMsg}</div>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={closeEditPayments}
+                className="px-4 py-2 rounded font-medium"
+                style={{ backgroundColor: "#374151" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={savePayments}
+                className="px-4 py-2 rounded font-semibold"
+                style={{
+                  color: "#001014",
+                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
+                }}
+              >
+                Guardar
+              </button>
+            </div>
+            <div className="text-xs text-gray-400">
+              Total venta: {fmtCOP(saleTotalById.get(editSaleId) || 0)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -358,5 +517,30 @@ function Td({ children, className = "" }: { children: React.ReactNode; className
     <td className={`py-2 px-3 ${className}`} style={{}}>
       {children}
     </td>
+  );
+}
+
+// Input numérico reutilizable para el modal
+function NumberInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | "";
+  onChange: (v: number | "") => void;
+}) {
+  return (
+    <label className="text-sm">
+      <div className="mb-1 text-gray-300">{label}</div>
+      <input
+        className="w-full rounded px-3 py-2 text-right outline-none"
+        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+        type="number"
+        min={0}
+        value={value}
+        onChange={(e) => onChange(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+      />
+    </label>
   );
 }

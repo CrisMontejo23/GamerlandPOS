@@ -747,6 +747,21 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
+app.delete("/sales/:id", requireRole("ADMIN"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  try {
+    // borra en cascada (SaleItem/Payment si FK on delete cascade no está)
+    await prisma.payment.deleteMany({ where: { saleId: id } });
+    await prisma.saleItem.deleteMany({ where: { saleId: id } });
+    await prisma.sale.delete({ where: { id } });
+    res.json({ ok: true, id });
+  } catch (e: any) {
+    if (e?.code === "P2025") return res.status(404).json({ error: "No encontrado" });
+    res.status(400).json({ error: e?.message || "No se pudo eliminar" });
+  }
+});
+
 // ==================== STOCK IN (SOLO ADMIN) ====================
 const stockInSchema = z.object({
   productId: z.coerce.number().int().positive(),
