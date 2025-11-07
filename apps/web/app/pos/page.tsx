@@ -317,7 +317,7 @@ export default function POSPage() {
                 className="w-full py-3 rounded-lg text-lg font-semibold transition"
                 style={{ color: "#001014", background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))", boxShadow: "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)" }}
                 onClick={checkout}
-                disabled={cart.length === 0 || (payMethod === "EFECTIVO" && received < uiTotal)}
+                disabled={cart.length === 0 }
                 title={`Ctrl + Enter para cobrar ${uiTotal.toLocaleString("es-CO")}`}
               >
                 Cobrar

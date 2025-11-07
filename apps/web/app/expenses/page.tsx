@@ -97,9 +97,18 @@ export default function ExpensesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const qs = new URLSearchParams({ from, to }).toString();
+      const qs = new URLSearchParams({
+        from,
+        to,
+        _ts: String(Date.now()),
+      }).toString(); // cache-buster
       const r = await apiFetch(`/expenses?${qs}`);
       const data: Expense[] = await r.json();
+      // último primero
+      data.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
       setRows(data);
     } finally {
       setLoading(false);

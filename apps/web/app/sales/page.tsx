@@ -57,17 +57,11 @@ function rangeFrom(period: Period, baseISO: string) {
   const y = d.getFullYear();
   const m = d.getMonth();
 
-  if (period === "day") {
-    const s = baseISO,
-      e = baseISO;
-    return { from: s, to: e };
-  }
+  if (period === "day") return { from: baseISO, to: baseISO };
   if (period === "month") {
     const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
     const lastDay = new Date(y, m + 1, 0).getDate();
-    const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(
-      lastDay
-    ).padStart(2, "0")}`;
+    const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
     return { from: start, to: end };
   }
   return { from: `${y}-01-01`, to: `${y}-12-31` };
@@ -82,17 +76,14 @@ export default function SalesPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // UI edición pagos
+  // UI edición pagos (modal)
   const [editSaleId, setEditSaleId] = useState<number | null>(null);
   const [editEfectivo, setEditEfectivo] = useState<number | "">("");
   const [editQR, setEditQR] = useState<number | "">("");
   const [editDatafono, setEditDatafono] = useState<number | "">("");
   const [editMsg, setEditMsg] = useState<string>("");
 
-  const { from, to } = useMemo(
-    () => rangeFrom(period, baseDate),
-    [period, baseDate]
-  );
+  const { from, to } = useMemo(() => rangeFrom(period, baseDate), [period, baseDate]);
 
   const load = async () => {
     setLoading(true);
@@ -100,10 +91,10 @@ export default function SalesPage() {
       const url = new URL(`/reports/sales-lines`, window.location.origin);
       url.searchParams.set("from", from);
       url.searchParams.set("to", to);
-      const r = await apiFetch(
-        `/reports/sales-lines?${url.searchParams.toString()}`
-      );
+      const r = await apiFetch(`/reports/sales-lines?${url.searchParams.toString()}`);
       const data: Row[] = await r.json();
+      // último primero
+      data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setRows(data);
     } finally {
       setLoading(false);
@@ -131,14 +122,10 @@ export default function SalesPage() {
         acc.set(p.method, (acc.get(p.method) || 0) + p.amount);
       }
     }
-    return Array.from(acc.entries()).map(([method, amount]) => ({
-      method,
-      amount,
-    }));
+    return Array.from(acc.entries()).map(([method, amount]) => ({ method, amount }));
   }, [rows]);
 
   // ---- helpers por venta ----
-  // total de la venta (suma de líneas por saleId)
   const saleTotalById = useMemo(() => {
     const m = new Map<number, number>();
     for (const r of rows) {
@@ -147,19 +134,10 @@ export default function SalesPage() {
     return m;
   }, [rows]);
 
-  // pagos agrupados por venta
   const salePaysById = useMemo(() => {
-    const m = new Map<
-      number,
-      { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }
-    >();
+    const m = new Map<number, { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }>();
     for (const r of rows) {
-      const prev = m.get(r.saleId) || {
-        EFECTIVO: 0,
-        QR_LLAVE: 0,
-        DATAFONO: 0,
-        otros: 0,
-      };
+      const prev = m.get(r.saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
       for (const p of r.paymentMethods || []) {
         if (p.method === "EFECTIVO") prev.EFECTIVO += p.amount;
         else if (p.method === "QR_LLAVE") prev.QR_LLAVE += p.amount;
@@ -171,7 +149,6 @@ export default function SalesPage() {
     return m;
   }, [rows]);
 
-  // primera fila por saleId (para no repetir acciones en todas las líneas de la misma venta)
   const firstIndexBySale = useMemo(() => {
     const seen = new Set<number>();
     const idx = new Map<number, number>();
@@ -184,15 +161,9 @@ export default function SalesPage() {
     return idx;
   }, [rows]);
 
-  // --- acciones admin (genéricas ya existentes) ---
-  const patchSale = async (
-    id: number,
-    body: SalePatch | Record<string, unknown>
-  ) => {
-    const r = await apiFetch(`/sales/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
+  // --- acciones admin (genéricas) ---
+  const patchSale = async (id: number, body: SalePatch | Record<string, unknown>) => {
+    const r = await apiFetch(`/sales/${id}`, { method: "PATCH", body: JSON.stringify(body) });
     if (!r.ok) {
       const e = await r.json().catch(() => ({} as { error?: string }));
       alert(`Error: ${e?.error || "No se pudo actualizar"}`);
@@ -201,24 +172,9 @@ export default function SalesPage() {
     return true;
   };
 
-  const editCustomer = async (saleId: number) => {
-    const nuevo = window.prompt(
-      "Nuevo nombre de cliente (dejar vacío para quitar):",
-      ""
-    );
-    if (nuevo === null) return;
-    const ok = await patchSale(saleId, { customer: nuevo.trim() || null });
-    if (ok) load();
-  };
-
-  // --- NUEVO: Editor de pagos por venta ---
+  // modal edición de pagos
   const openEditPayments = (saleId: number) => {
-    const pays = salePaysById.get(saleId) || {
-      EFECTIVO: 0,
-      QR_LLAVE: 0,
-      DATAFONO: 0,
-      otros: 0,
-    };
+    const pays = salePaysById.get(saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
     setEditSaleId(saleId);
     setEditEfectivo(pays.EFECTIVO || "");
     setEditQR(pays.QR_LLAVE || "");
@@ -241,14 +197,9 @@ export default function SalesPage() {
     const suma = EFECTIVO + QR + DATAFONO;
 
     if (Math.abs(suma - totalVenta) > 0.5) {
-      setEditMsg(
-        `La suma de pagos (${fmtCOP(
-          suma
-        )}) debe ser igual al total de la venta (${fmtCOP(totalVenta)}).`
-      );
+      setEditMsg(`La suma de pagos (${fmtCOP(suma)}) debe ser igual al total de la venta (${fmtCOP(totalVenta)}).`);
       return;
     }
-
     const body = {
       payments: [
         ...(EFECTIVO > 0 ? [{ method: "EFECTIVO", amount: EFECTIVO }] : []),
@@ -256,7 +207,6 @@ export default function SalesPage() {
         ...(DATAFONO > 0 ? [{ method: "DATAFONO", amount: DATAFONO }] : []),
       ],
     };
-
     const ok = await patchSale(editSaleId, body);
     if (ok) {
       closeEditPayments();
@@ -264,21 +214,53 @@ export default function SalesPage() {
     }
   };
 
-  // --- NUEVO: Eliminar venta (duro) ---
+  // --- edición inline por línea ---
+  type LineKey = string; // `${saleId}-${idx}`
+  const [editKey, setEditKey] = useState<LineKey | null>(null);
+  const [editPrice, setEditPrice] = useState<number | "">("");
+  const [editCost, setEditCost] = useState<number | "">("");
+  const [editQty, setEditQty] = useState<number | "">("");
+
+  const startEditLine = (k: LineKey, r: Row) => {
+    if (!isAdmin) return;
+    setEditKey(k);
+    setEditPrice(r.unitPrice);
+    setEditCost(r.unitCost);
+    setEditQty(r.qty);
+  };
+  const cancelEditLine = () => {
+    setEditKey(null);
+    setEditPrice("");
+    setEditCost("");
+    setEditQty("");
+  };
+  const saveEditLine = async (r: Row) => {
+    if (editKey == null) return;
+    const body = {
+      items: [
+        {
+          sku: r.sku,
+          unitPrice: editPrice === "" ? r.unitPrice : Number(editPrice),
+          unitCost:  editCost  === "" ? r.unitCost  : Number(editCost),
+          qty:       editQty   === "" ? r.qty       : Number(editQty),
+        },
+      ],
+    };
+    const ok = await patchSale(r.saleId, body);
+    if (ok) {
+      cancelEditLine();
+      load();
+    }
+  };
+
+  // eliminar venta
   const deleteSale = async (saleId: number) => {
-    const sure = window.confirm(
-      "¿Eliminar definitivamente esta venta? Esta acción no se puede deshacer."
-    );
+    const sure = window.confirm("¿Eliminar definitivamente esta venta? Esta acción no se puede deshacer.");
     if (!sure) return;
     const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
     if (!r.ok) {
       const e = await r.json().catch(() => ({} as { error?: string }));
-      alert(
-        `Error: ${
-          e?.error ||
-          "No se pudo eliminar. Asegúrate de tener el endpoint DELETE /sales/:id en el backend."
-        }`
-      );
+      alert(`Error: ${e?.error || "No se pudo eliminar. Verifica el endpoint DELETE /sales/:id."}`);
       return;
     }
     load();
@@ -289,21 +271,12 @@ export default function SalesPage() {
       <h1 className="text-2xl font-bold text-cyan-400">Ventas</h1>
 
       {/* Filtros */}
-      <section
-        className="rounded-xl p-4"
-        style={{
-          backgroundColor: COLORS.bgCard,
-          border: `1px solid ${COLORS.border}`,
-        }}
-      >
+      <section className="rounded-xl p-4" style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}>
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex gap-2">
             <select
               className="rounded px-3 py-2 outline-none"
-              style={{
-                backgroundColor: COLORS.input,
-                border: `1px solid ${COLORS.border}`,
-              }}
+              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
               value={period}
               onChange={(e) => setPeriod(e.target.value as Period)}
             >
@@ -314,10 +287,7 @@ export default function SalesPage() {
             <input
               type="date"
               className="rounded px-3 py-2 outline-none"
-              style={{
-                backgroundColor: COLORS.input,
-                border: `1px solid ${COLORS.border}`,
-              }}
+              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
               value={baseDate}
               onChange={(e) => setBaseDate(e.target.value)}
             />
@@ -326,10 +296,8 @@ export default function SalesPage() {
               className="px-4 rounded font-medium"
               style={{
                 color: "#001014",
-                background:
-                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                boxShadow:
-                  "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
+                background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
               }}
             >
               Actualizar
@@ -341,46 +309,30 @@ export default function SalesPage() {
             <SummaryCard title="Costo" value={totals.cost} />
             <SummaryCard title="Ganancia" value={totals.profit} accent="pink" />
           </div>
-        </div>
 
-        {/* Breakdown por método */}
-        {payBreakdown.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            {payBreakdown.map((p) => (
-              <span
-                key={p.method}
-                className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
-                style={{
-                  backgroundColor: COLORS.input,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-                title={p.method}
-              >
-                <b className="text-cyan-300">
-                  {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:
-                </b>{" "}
-                {fmtCOP(p.amount)}
-              </span>
-            ))}
-          </div>
-        )}
+          {payBreakdown.length > 0 && (
+            <div className="md:ml-auto mt-2 md:mt-0 flex flex-wrap gap-2 text-sm">
+              {payBreakdown.map((p) => (
+                <span
+                  key={p.method}
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
+                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  title={p.method}
+                >
+                  <b className="text-cyan-300">{p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:</b> {fmtCOP(p.amount)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Tabla */}
-      <section
-        className="rounded-xl overflow-hidden"
-        style={{
-          backgroundColor: COLORS.bgCard,
-          border: `1px solid ${COLORS.border}`,
-        }}
-      >
+      <section className="rounded-xl overflow-hidden" style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr
-                className="text-left"
-                style={{ borderBottom: `1px solid ${COLORS.border}` }}
-              >
+              <tr className="text-left" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
                 <Th>Fecha</Th>
                 <Th>SKU</Th>
                 <Th>Producto</Th>
@@ -397,55 +349,88 @@ export default function SalesPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td
-                    className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 11 : 10}
-                  >
+                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
                     Cargando…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td
-                    className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 11 : 10}
-                  >
+                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
                     Sin registros
                   </td>
                 </tr>
               )}
               {rows.map((r, idx) => {
+                const k = `${r.saleId}-${idx}`;
+                const isEditing = editKey === k;
                 const isFirstOfSale = firstIndexBySale.get(r.saleId) === idx;
+
                 return (
-                  <tr
-                    key={`${r.saleId}-${idx}`}
-                    className="hover:bg-[#191B4B]"
-                    style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                  >
+                  <tr key={k} className="hover:bg-[#191B4B]" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
                     <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
                     <Td className="font-mono">{r.sku}</Td>
                     <Td>{r.name}</Td>
-                    <Td className="text-right">{fmtCOP(r.unitPrice)}</Td>
-                    <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
-                    <Td className="text-center">{r.qty}</Td>
-                    <Td className="text-right text-cyan-300">
-                      {fmtCOP(r.revenue)}
+
+                    {/* Precio */}
+                    <Td className="text-right">
+                      {isEditing ? (
+                        <input
+                          className="rounded px-2 py-1 w-28 text-right outline-none"
+                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          type="number"
+                          min={0}
+                          value={editPrice}
+                          onChange={(e) => setEditPrice(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+                        />
+                      ) : (
+                        fmtCOP(r.unitPrice)
+                      )}
                     </Td>
+
+                    {/* Costo */}
+                    <Td className="text-right">
+                      {isEditing ? (
+                        <input
+                          className="rounded px-2 py-1 w-28 text-right outline-none"
+                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          type="number"
+                          min={0}
+                          value={editCost}
+                          onChange={(e) => setEditCost(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+                        />
+                      ) : (
+                        fmtCOP(r.unitCost)
+                      )}
+                    </Td>
+
+                    {/* Cantidad */}
+                    <Td className="text-center">
+                      {isEditing ? (
+                        <input
+                          className="rounded px-2 py-1 w-20 text-center outline-none"
+                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          type="number"
+                          min={1}
+                          value={editQty}
+                          onChange={(e) => setEditQty(e.target.value === "" ? "" : Math.max(1, Number(e.target.value)))}
+                        />
+                      ) : (
+                        r.qty
+                      )}
+                    </Td>
+
+                    <Td className="text-right text-cyan-300">{fmtCOP(r.revenue)}</Td>
                     <Td className="text-right">{fmtCOP(r.cost)}</Td>
-                    <Td className="text-right text-pink-300">
-                      {fmtCOP(r.profit)}
-                    </Td>
+                    <Td className="text-right text-pink-300">{fmtCOP(r.profit)}</Td>
+
                     <Td>
                       <div className="flex flex-wrap gap-1">
                         {r.paymentMethods.map((p, i) => (
                           <span
                             key={i}
                             className="px-2 py-0.5 rounded text-xs"
-                            style={{
-                              backgroundColor: COLORS.input,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
+                            style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                             title={p.method}
                           >
                             {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}
@@ -456,32 +441,62 @@ export default function SalesPage() {
 
                     {isAdmin && (
                       <Td>
-                        {isFirstOfSale ? (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => openEditPayments(r.saleId)}
-                              className="px-3 py-1 rounded text-sm font-semibold"
-                              style={{ backgroundColor: "#0ea5e9" }}
-                              title="Editar venta (métodos de pago)"
-                            >
-                              Editar
-                            </button>
+                        <div className="flex flex-wrap gap-2">
+                          {!isEditing ? (
+                            <>
+                              <button
+                                onClick={() => startEditLine(k, r)}
+                                className="px-3 py-1 rounded text-sm font-semibold"
+                                style={{ backgroundColor: "#0ea5e9" }}
+                                title="Editar línea (precio/costo/cantidad)"
+                              >
+                                Editar
+                              </button>
 
-                            <button
-                              onClick={() => deleteSale(r.saleId)}
-                              className="px-3 py-1 rounded text-sm font-semibold"
-                              style={{
-                                backgroundColor: "#ef4444",
-                                color: "#001014",
-                              }}
-                              title="Eliminar venta"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-500">—</span>
-                        )}
+                              {/* Eliminar solo en la primera fila de la venta */}
+                              {isFirstOfSale && (
+                                <button
+                                  onClick={() => deleteSale(r.saleId)}
+                                  className="px-3 py-1 rounded text-sm font-semibold"
+                                  style={{ backgroundColor: "#ef4444", color: "#001014" }}
+                                  title="Eliminar venta"
+                                >
+                                  Eliminar
+                                </button>
+                              )}
+
+                              {/* Si quieres mantener el modal de pagos, puedes ofrecerlo aquí también */}
+                              {isFirstOfSale && (
+                                <button
+                                  onClick={() => openEditPayments(r.saleId)}
+                                  className="px-3 py-1 rounded text-sm font-medium"
+                                  style={{ backgroundColor: "#374151" }}
+                                  title="Editar métodos de pago"
+                                >
+                                  Pagos
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => saveEditLine(r)}
+                                className="px-3 py-1 rounded text-sm font-semibold"
+                                style={{ backgroundColor: "#0bd977", color: "#001014" }}
+                                disabled={editQty === "" || editPrice === "" || editCost === ""}
+                              >
+                                Guardar
+                              </button>
+                              <button
+                                onClick={cancelEditLine}
+                                className="px-3 py-1 rounded text-sm font-medium"
+                                style={{ backgroundColor: "#374151" }}
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </Td>
                     )}
                   </tr>
@@ -495,46 +510,20 @@ export default function SalesPage() {
       {/* Modal edición de pagos */}
       {isAdmin && editSaleId != null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={closeEditPayments}
-          />
+          <div className="absolute inset-0 bg-black/60" onClick={closeEditPayments} />
           <div
             className="relative w-full max-w-md rounded-xl p-4 space-y-3"
-            style={{
-              backgroundColor: COLORS.bgCard,
-              border: `1px solid ${COLORS.border}`,
-            }}
+            style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
           >
-            <h2 className="text-lg font-semibold text-cyan-300">
-              Editar métodos de pago
-            </h2>
+            <h2 className="text-lg font-semibold text-cyan-300">Editar métodos de pago</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <NumberInput
-                label="Efectivo"
-                value={editEfectivo}
-                onChange={(v) => setEditEfectivo(v)}
-              />
-              <NumberInput
-                label="QR / Llave"
-                value={editQR}
-                onChange={(v) => setEditQR(v)}
-              />
-              <NumberInput
-                label="Datafono"
-                value={editDatafono}
-                onChange={(v) => setEditDatafono(v)}
-              />
+              <NumberInput label="Efectivo" value={editEfectivo} onChange={(v) => setEditEfectivo(v)} />
+              <NumberInput label="QR / Llave" value={editQR} onChange={(v) => setEditQR(v)} />
+              <NumberInput label="Datafono" value={editDatafono} onChange={(v) => setEditDatafono(v)} />
             </div>
-            {!!editMsg && (
-              <div className="text-sm text-pink-300">{editMsg}</div>
-            )}
+            {!!editMsg && <div className="text-sm text-pink-300">{editMsg}</div>}
             <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={closeEditPayments}
-                className="px-4 py-2 rounded font-medium"
-                style={{ backgroundColor: "#374151" }}
-              >
+              <button onClick={closeEditPayments} className="px-4 py-2 rounded font-medium" style={{ backgroundColor: "#374151" }}>
                 Cancelar
               </button>
               <button
@@ -542,18 +531,14 @@ export default function SalesPage() {
                 className="px-4 py-2 rounded font-semibold"
                 style={{
                   color: "#001014",
-                  background:
-                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow:
-                    "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
+                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
                 }}
               >
                 Guardar
               </button>
             </div>
-            <div className="text-xs text-gray-400">
-              Total venta: {fmtCOP(saleTotalById.get(editSaleId) || 0)}
-            </div>
+            <div className="text-xs text-gray-400">Total venta: {fmtCOP(saleTotalById.get(editSaleId) || 0)}</div>
           </div>
         </div>
       )}
@@ -562,68 +547,31 @@ export default function SalesPage() {
 }
 
 /* ---------- UI helpers ---------- */
-function SummaryCard({
-  title,
-  value,
-  accent,
-}: {
-  title: string;
-  value: number;
-  accent?: "cyan" | "pink";
-}) {
+function SummaryCard({ title, value, accent }: { title: string; value: number; accent?: "cyan" | "pink" }) {
   const glow =
     accent === "cyan"
       ? "0 0 18px rgba(0,255,255,.25), inset 0 0 18px rgba(0,255,255,.08)"
       : accent === "pink"
       ? "0 0 18px rgba(255,0,255,.25), inset 0 0 18px rgba(255,0,255,.08)"
       : "inset 0 0 12px rgba(255,255,255,.04)";
-  const titleColor =
-    accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
+  const titleColor = accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
   const border = `1px solid ${COLORS.border}`;
 
   return (
-    <div
-      className="rounded-xl p-3"
-      style={{ backgroundColor: COLORS.bgCard, border, boxShadow: glow }}
-      role="status"
-      aria-label={title}
-    >
-      <div className="text-sm" style={{ color: titleColor }}>
-        {title}
-      </div>
+    <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.bgCard, border, boxShadow: glow }} role="status" aria-label={title}>
+      <div className="text-sm" style={{ color: titleColor }}>{title}</div>
       <div className="text-xl font-semibold">{fmtCOP(value)}</div>
     </div>
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`py-2 px-3 text-gray-300 ${className}`} style={{}}>
-      {children}
-    </th>
-  );
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <th className={`py-2 px-3 text-gray-300 ${className}`}>{children}</th>;
 }
-function Td({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <td className={`py-2 px-3 ${className}`} style={{}}>
-      {children}
-    </td>
-  );
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <td className={`py-2 px-3 ${className}`}>{children}</td>;
 }
 
-// Input numérico reutilizable para el modal
 function NumberInput({
   label,
   value,
@@ -638,18 +586,11 @@ function NumberInput({
       <div className="mb-1 text-gray-300">{label}</div>
       <input
         className="w-full rounded px-3 py-2 text-right outline-none"
-        style={{
-          backgroundColor: COLORS.input,
-          border: `1px solid ${COLORS.border}`,
-        }}
+        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
         type="number"
         min={0}
         value={value}
-        onChange={(e) =>
-          onChange(
-            e.target.value === "" ? "" : Math.max(0, Number(e.target.value))
-          )
-        }
+        onChange={(e) => onChange(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
       />
     </label>
   );
