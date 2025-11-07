@@ -3,6 +3,181 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
 
+/* ===== UI: GamerToast / GamerConfirm ===== */
+type ToastKind = "success" | "error" | "info";
+function GamerToast({
+  open,
+  kind,
+  title,
+  subtitle,
+  onClose,
+}: {
+  open: boolean;
+  kind: ToastKind;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  const borderGrad =
+    kind === "success"
+      ? "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))"
+      : kind === "error"
+      ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
+      : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.8))";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      <div
+        className="relative w-full max-w-md rounded-2xl p-4 text-center"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow:
+            kind === "success"
+              ? "0 0 22px rgba(0,255,255,.25), 0 0 34px rgba(255,0,255,.25)"
+              : kind === "error"
+              ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
+              : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
+        }}
+      >
+        <div
+          className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
+          style={{ background: borderGrad, filter: "blur(6px)", opacity: 0.45 }}
+        />
+        <div className="relative">
+          <div
+            className="mx-auto mb-2 h-12 w-12 rounded-full grid place-items-center"
+            style={{
+              backgroundColor: COLORS.input,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <span
+              className="text-2xl"
+              style={{
+                color:
+                  kind === "success"
+                    ? "#7CF9FF"
+                    : kind === "error"
+                    ? "#ff90b1"
+                    : "#c4b5fd",
+              }}
+            >
+              {kind === "success" ? "✔" : kind === "error" ? "!" : "i"}
+            </span>
+          </div>
+          <h3
+            className="text-xl font-extrabold"
+            style={{ color: kind === "success" ? "#7CF9FF" : COLORS.text }}
+          >
+            {title}
+          </h3>
+          {!!subtitle && (
+            <p className="mt-1 text-sm text-gray-300">{subtitle}</p>
+          )}
+          <button
+            onClick={onClose}
+            className="mt-4 px-4 py-2 rounded-lg text-sm font-semibold"
+            style={{
+              color: "#001014",
+              background:
+                kind === "success"
+                  ? "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))"
+                  : "linear-gradient(90deg, rgba(99,102,241,.95), rgba(168,85,247,.9))",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GamerConfirm({
+  open,
+  title = "¿Confirmar acción?",
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title?: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        onClick={onCancel}
+      />
+      <div
+        className="relative w-full max-w-md rounded-2xl p-5"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow:
+            "0 0 28px rgba(0,255,255,.18), 0 0 36px rgba(255,0,255,.18)",
+        }}
+      >
+        <div
+          className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))",
+            filter: "blur(6px)",
+            opacity: 0.35,
+          }}
+        />
+        <div className="relative">
+          <h3 className="text-xl font-extrabold text-cyan-300">{title}</h3>
+          <p className="mt-2 text-gray-200">{message}</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ backgroundColor: "#374151", color: "#E5E5E5" }}
+            >
+              {cancelText}
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 rounded-lg text-sm font-semibold"
+              style={{
+                color: "#001014",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
+              }}
+            >
+              {confirmText}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Payment = {
   method: "EFECTIVO" | "QR_LLAVE" | "DATAFONO" | string;
   amount: number;
@@ -61,7 +236,9 @@ function rangeFrom(period: Period, baseISO: string) {
   if (period === "month") {
     const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
     const lastDay = new Date(y, m + 1, 0).getDate();
-    const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(
+      lastDay
+    ).padStart(2, "0")}`;
     return { from: start, to: end };
   }
   return { from: `${y}-01-01`, to: `${y}-12-31` };
@@ -74,9 +251,12 @@ export default function SalesPage() {
   const [period, setPeriod] = useState<Period>("day");
   const [baseDate, setBaseDate] = useState<string>(todayISO());
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(false);  
+  const [loading, setLoading] = useState(false);
 
-  const { from, to } = useMemo(() => rangeFrom(period, baseDate), [period, baseDate]);
+  const { from, to } = useMemo(
+    () => rangeFrom(period, baseDate),
+    [period, baseDate]
+  );
 
   const load = async () => {
     setLoading(true);
@@ -84,10 +264,15 @@ export default function SalesPage() {
       const url = new URL(`/reports/sales-lines`, window.location.origin);
       url.searchParams.set("from", from);
       url.searchParams.set("to", to);
-      const r = await apiFetch(`/reports/sales-lines?${url.searchParams.toString()}`);
+      const r = await apiFetch(
+        `/reports/sales-lines?${url.searchParams.toString()}`
+      );
       const data: Row[] = await r.json();
       // último primero
-      data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      data.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
       setRows(data);
     } finally {
       setLoading(false);
@@ -115,7 +300,10 @@ export default function SalesPage() {
         acc.set(p.method, (acc.get(p.method) || 0) + p.amount);
       }
     }
-    return Array.from(acc.entries()).map(([method, amount]) => ({ method, amount }));
+    return Array.from(acc.entries()).map(([method, amount]) => ({
+      method,
+      amount,
+    }));
   }, [rows]);
 
   // ---- helpers por venta ----
@@ -128,9 +316,17 @@ export default function SalesPage() {
   }, [rows]);
 
   const salePaysById = useMemo(() => {
-    const m = new Map<number, { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }>();
+    const m = new Map<
+      number,
+      { EFECTIVO: number; QR_LLAVE: number; DATAFONO: number; otros: number }
+    >();
     for (const r of rows) {
-      const prev = m.get(r.saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
+      const prev = m.get(r.saleId) || {
+        EFECTIVO: 0,
+        QR_LLAVE: 0,
+        DATAFONO: 0,
+        otros: 0,
+      };
       for (const p of r.paymentMethods || []) {
         if (p.method === "EFECTIVO") prev.EFECTIVO += p.amount;
         else if (p.method === "QR_LLAVE") prev.QR_LLAVE += p.amount;
@@ -155,15 +351,21 @@ export default function SalesPage() {
   }, [rows]);
 
   // --- acciones admin (genéricas) ---
-  const patchSale = async (id: number, body: SalePatch | Record<string, unknown>) => {
-    const r = await apiFetch(`/sales/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+  const patchSale = async (
+    id: number,
+    body: SalePatch | Record<string, unknown>
+  ) => {
+    const r = await apiFetch(`/sales/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
     if (!r.ok) {
       const e = await r.json().catch(() => ({} as { error?: string }));
       alert(`Error: ${e?.error || "No se pudo actualizar"}`);
       return false;
     }
     return true;
-  };  
+  };
 
   // --- edición inline por línea ---
   type LineKey = string; // `${saleId}-${idx}`
@@ -192,8 +394,8 @@ export default function SalesPage() {
         {
           sku: r.sku,
           unitPrice: editPrice === "" ? r.unitPrice : Number(editPrice),
-          unitCost:  editCost  === "" ? r.unitCost  : Number(editCost),
-          qty:       editQty   === "" ? r.qty       : Number(editQty),
+          unitCost: editCost === "" ? r.unitCost : Number(editCost),
+          qty: editQty === "" ? r.qty : Number(editQty),
         },
       ],
     };
@@ -206,28 +408,65 @@ export default function SalesPage() {
 
   // eliminar venta
   const deleteSale = async (saleId: number) => {
-    const sure = window.confirm("¿Eliminar definitivamente esta venta? Esta acción no se puede deshacer.");
-    if (!sure) return;
-    const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({} as { error?: string }));
-      alert(`Error: ${e?.error || "No se pudo eliminar. Verifica el endpoint DELETE /sales/:id."}`);
-      return;
-    }
-    load();
+    setConfirmOpen(true);
+    setConfirmAction(() => async () => {
+      setConfirmOpen(false);
+      const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as { error?: string }));
+        setToast({
+          open: true,
+          kind: "error",
+          title: "Error al eliminar",
+          subtitle: String(
+            e?.error || "No se pudo eliminar. Verifica el DELETE /sales/:id"
+          ),
+        });
+        setTimeout(hideToast, 2000);
+        return;
+      }
+      setToast({
+        open: true,
+        kind: "success",
+        title: "¡Venta eliminada!",
+        subtitle: "La venta fue eliminada correctamente.",
+      });
+      setTimeout(hideToast, 2000);
+      load();
+    });
   };
+
+  const [toast, setToast] = useState<{
+    open: boolean;
+    kind: "success" | "error" | "info";
+    title: string;
+    subtitle?: string;
+  }>({ open: false, kind: "success", title: "" });
+  const hideToast = () => setToast((t) => ({ ...t, open: false }));
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<null | (() => void)>(null);
 
   return (
     <div className="max-w-7xl mx-auto text-gray-200 space-y-5">
       <h1 className="text-2xl font-bold text-cyan-400">Ventas</h1>
 
       {/* Filtros */}
-      <section className="rounded-xl p-4" style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}>
+      <section
+        className="rounded-xl p-4"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
+      >
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex gap-2">
             <select
               className="rounded px-3 py-2 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={period}
               onChange={(e) => setPeriod(e.target.value as Period)}
             >
@@ -238,7 +477,10 @@ export default function SalesPage() {
             <input
               type="date"
               className="rounded px-3 py-2 outline-none"
-              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
               value={baseDate}
               onChange={(e) => setBaseDate(e.target.value)}
             />
@@ -247,8 +489,10 @@ export default function SalesPage() {
               className="px-4 rounded font-medium"
               style={{
                 color: "#001014",
-                background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow:
+                  "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
               }}
             >
               Actualizar
@@ -267,10 +511,16 @@ export default function SalesPage() {
                 <span
                   key={p.method}
                   className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   title={p.method}
                 >
-                  <b className="text-cyan-300">{p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:</b> {fmtCOP(p.amount)}
+                  <b className="text-cyan-300">
+                    {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:
+                  </b>{" "}
+                  {fmtCOP(p.amount)}
                 </span>
               ))}
             </div>
@@ -279,11 +529,20 @@ export default function SalesPage() {
       </section>
 
       {/* Tabla */}
-      <section className="rounded-xl overflow-hidden" style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}>
+      <section
+        className="rounded-xl overflow-hidden"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
+      >
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="text-left" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+              <tr
+                className="text-left"
+                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+              >
                 <Th>Fecha</Th>
                 <Th>SKU</Th>
                 <Th>Producto</Th>
@@ -300,14 +559,20 @@ export default function SalesPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
+                  <td
+                    className="py-3 px-3 text-gray-400"
+                    colSpan={isAdmin ? 11 : 10}
+                  >
                     Cargando…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td className="py-3 px-3 text-gray-400" colSpan={isAdmin ? 11 : 10}>
+                  <td
+                    className="py-3 px-3 text-gray-400"
+                    colSpan={isAdmin ? 11 : 10}
+                  >
                     Sin registros
                   </td>
                 </tr>
@@ -318,7 +583,11 @@ export default function SalesPage() {
                 const isFirstOfSale = firstIndexBySale.get(r.saleId) === idx;
 
                 return (
-                  <tr key={k} className="hover:bg-[#191B4B]" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                  <tr
+                    key={k}
+                    className="hover:bg-[#191B4B]"
+                    style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                  >
                     <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
                     <Td className="font-mono">{r.sku}</Td>
                     <Td>{r.name}</Td>
@@ -328,11 +597,20 @@ export default function SalesPage() {
                       {isEditing ? (
                         <input
                           className="rounded px-2 py-1 w-28 text-right outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           type="number"
                           min={0}
                           value={editPrice}
-                          onChange={(e) => setEditPrice(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+                          onChange={(e) =>
+                            setEditPrice(
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(0, Number(e.target.value))
+                            )
+                          }
                         />
                       ) : (
                         fmtCOP(r.unitPrice)
@@ -344,11 +622,20 @@ export default function SalesPage() {
                       {isEditing ? (
                         <input
                           className="rounded px-2 py-1 w-28 text-right outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           type="number"
                           min={0}
                           value={editCost}
-                          onChange={(e) => setEditCost(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+                          onChange={(e) =>
+                            setEditCost(
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(0, Number(e.target.value))
+                            )
+                          }
                         />
                       ) : (
                         fmtCOP(r.unitCost)
@@ -360,20 +647,33 @@ export default function SalesPage() {
                       {isEditing ? (
                         <input
                           className="rounded px-2 py-1 w-20 text-center outline-none"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           type="number"
                           min={1}
                           value={editQty}
-                          onChange={(e) => setEditQty(e.target.value === "" ? "" : Math.max(1, Number(e.target.value)))}
+                          onChange={(e) =>
+                            setEditQty(
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(1, Number(e.target.value))
+                            )
+                          }
                         />
                       ) : (
                         r.qty
                       )}
                     </Td>
 
-                    <Td className="text-right text-cyan-300">{fmtCOP(r.revenue)}</Td>
+                    <Td className="text-right text-cyan-300">
+                      {fmtCOP(r.revenue)}
+                    </Td>
                     <Td className="text-right">{fmtCOP(r.cost)}</Td>
-                    <Td className="text-right text-pink-300">{fmtCOP(r.profit)}</Td>
+                    <Td className="text-right text-pink-300">
+                      {fmtCOP(r.profit)}
+                    </Td>
 
                     <Td>
                       <div className="flex flex-wrap gap-1">
@@ -381,7 +681,10 @@ export default function SalesPage() {
                           <span
                             key={i}
                             className="px-2 py-0.5 rounded text-xs"
-                            style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
                             title={p.method}
                           >
                             {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}
@@ -409,20 +712,30 @@ export default function SalesPage() {
                                 <button
                                   onClick={() => deleteSale(r.saleId)}
                                   className="px-3 py-1 rounded text-sm font-semibold"
-                                  style={{ backgroundColor: "#ef4444", color: "#001014" }}
+                                  style={{
+                                    backgroundColor: "#ef4444",
+                                    color: "#001014",
+                                  }}
                                   title="Eliminar venta"
                                 >
                                   Eliminar
                                 </button>
-                              )}                                                         
+                              )}
                             </>
                           ) : (
                             <>
                               <button
                                 onClick={() => saveEditLine(r)}
                                 className="px-3 py-1 rounded text-sm font-semibold"
-                                style={{ backgroundColor: "#0bd977", color: "#001014" }}
-                                disabled={editQty === "" || editPrice === "" || editCost === ""}
+                                style={{
+                                  backgroundColor: "#0bd977",
+                                  color: "#001014",
+                                }}
+                                disabled={
+                                  editQty === "" ||
+                                  editPrice === "" ||
+                                  editCost === ""
+                                }
                               >
                                 Guardar
                               </button>
@@ -444,33 +757,81 @@ export default function SalesPage() {
             </tbody>
           </table>
         </div>
-      </section>      
+      </section>
+      <GamerConfirm
+        open={confirmOpen}
+        title="¿Eliminar venta?"
+        message="Esta acción no se puede deshacer."
+        confirmText="Sí, eliminar"
+        cancelText="Cancelar"
+        onConfirm={() => confirmAction?.()}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setConfirmAction(null);
+        }}
+      />
+
+      <GamerToast
+        open={toast.open}
+        kind={toast.kind}
+        title={toast.title}
+        subtitle={toast.subtitle}
+        onClose={hideToast}
+      />
     </div>
   );
 }
 
 /* ---------- UI helpers ---------- */
-function SummaryCard({ title, value, accent }: { title: string; value: number; accent?: "cyan" | "pink" }) {
+function SummaryCard({
+  title,
+  value,
+  accent,
+}: {
+  title: string;
+  value: number;
+  accent?: "cyan" | "pink";
+}) {
   const glow =
     accent === "cyan"
       ? "0 0 18px rgba(0,255,255,.25), inset 0 0 18px rgba(0,255,255,.08)"
       : accent === "pink"
       ? "0 0 18px rgba(255,0,255,.25), inset 0 0 18px rgba(255,0,255,.08)"
       : "inset 0 0 12px rgba(255,255,255,.04)";
-  const titleColor = accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
+  const titleColor =
+    accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
   const border = `1px solid ${COLORS.border}`;
 
   return (
-    <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.bgCard, border, boxShadow: glow }} role="status" aria-label={title}>
-      <div className="text-sm" style={{ color: titleColor }}>{title}</div>
+    <div
+      className="rounded-xl p-3"
+      style={{ backgroundColor: COLORS.bgCard, border, boxShadow: glow }}
+      role="status"
+      aria-label={title}
+    >
+      <div className="text-sm" style={{ color: titleColor }}>
+        {title}
+      </div>
       <div className="text-xl font-semibold">{fmtCOP(value)}</div>
     </div>
   );
 }
 
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Th({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return <th className={`py-2 px-3 text-gray-300 ${className}`}>{children}</th>;
 }
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Td({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return <td className={`py-2 px-3 ${className}`}>{children}</td>;
 }

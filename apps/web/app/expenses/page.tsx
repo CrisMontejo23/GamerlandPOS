@@ -3,6 +3,181 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
 
+/* ===== UI: GamerToast / GamerConfirm ===== */
+type ToastKind = "success" | "error" | "info";
+function GamerToast({
+  open,
+  kind,
+  title,
+  subtitle,
+  onClose,
+}: {
+  open: boolean;
+  kind: ToastKind;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  const borderGrad =
+    kind === "success"
+      ? "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))"
+      : kind === "error"
+      ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
+      : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.8))";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      <div
+        className="relative w-full max-w-md rounded-2xl p-4 text-center"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow:
+            kind === "success"
+              ? "0 0 22px rgba(0,255,255,.25), 0 0 34px rgba(255,0,255,.25)"
+              : kind === "error"
+              ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
+              : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
+        }}
+      >
+        <div
+          className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
+          style={{ background: borderGrad, filter: "blur(6px)", opacity: 0.45 }}
+        />
+        <div className="relative">
+          <div
+            className="mx-auto mb-2 h-12 w-12 rounded-full grid place-items-center"
+            style={{
+              backgroundColor: COLORS.input,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <span
+              className="text-2xl"
+              style={{
+                color:
+                  kind === "success"
+                    ? "#7CF9FF"
+                    : kind === "error"
+                    ? "#ff90b1"
+                    : "#c4b5fd",
+              }}
+            >
+              {kind === "success" ? "✔" : kind === "error" ? "!" : "i"}
+            </span>
+          </div>
+          <h3
+            className="text-xl font-extrabold"
+            style={{ color: kind === "success" ? "#7CF9FF" : COLORS.text }}
+          >
+            {title}
+          </h3>
+          {!!subtitle && (
+            <p className="mt-1 text-sm text-gray-300">{subtitle}</p>
+          )}
+          <button
+            onClick={onClose}
+            className="mt-4 px-4 py-2 rounded-lg text-sm font-semibold"
+            style={{
+              color: "#001014",
+              background:
+                kind === "success"
+                  ? "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))"
+                  : "linear-gradient(90deg, rgba(99,102,241,.95), rgba(168,85,247,.9))",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GamerConfirm({
+  open,
+  title = "¿Confirmar acción?",
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title?: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        onClick={onCancel}
+      />
+      <div
+        className="relative w-full max-w-md rounded-2xl p-5"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow:
+            "0 0 28px rgba(0,255,255,.18), 0 0 36px rgba(255,0,255,.18)",
+        }}
+      >
+        <div
+          className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))",
+            filter: "blur(6px)",
+            opacity: 0.35,
+          }}
+        />
+        <div className="relative">
+          <h3 className="text-xl font-extrabold text-cyan-300">{title}</h3>
+          <p className="mt-2 text-gray-200">{message}</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ backgroundColor: "#374151", color: "#E5E5E5" }}
+            >
+              {cancelText}
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 rounded-lg text-sm font-semibold"
+              style={{
+                color: "#001014",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
+              }}
+            >
+              {confirmText}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Expense = {
   id: number;
   description?: string | null;
@@ -207,25 +382,51 @@ export default function ExpensesPage() {
 
   const deleteExpense = async (id: number) => {
     if (!isAdmin) return;
-    const sure = window.confirm("¿Eliminar definitivamente este gasto?");
-    if (!sure) return;
-
-    const r = await apiFetch(`/expenses/${id}`, { method: "DELETE" });
-    if (r.ok) {
-      setMsg("Gasto eliminado ✅");
-      setTimeout(() => setMsg(""), 2000);
-      load();
-    } else {
-      const e = await r.json().catch(() => ({} as { error?: string }));
-      setMsg(`Error: ${e?.error || "No se pudo eliminar"}`);
-      setTimeout(() => setMsg(""), 3000);
-    }
+    setConfirmOpen(true);
+    setConfirmAction(() => async () => {
+      setConfirmOpen(false);
+      const r = await apiFetch(`/expenses/${id}`, { method: "DELETE" });
+      if (r.ok) {
+        setMsg("Gasto eliminado ✅");
+        setToast({
+          open: true,
+          kind: "success",
+          title: "¡Eliminado!",
+          subtitle: "El gasto fue eliminado correctamente.",
+        });
+        setTimeout(hideToast, 2000);
+        setTimeout(() => setMsg(""), 2000);
+        load();
+      } else {
+        const e = await r.json().catch(() => ({} as { error?: string }));
+        setMsg(`Error: ${e?.error || "No se pudo eliminar"}`);
+        setToast({
+          open: true,
+          kind: "error",
+          title: "Error al eliminar",
+          subtitle: String(e?.error || "Inténtalo de nuevo"),
+        });
+        setTimeout(hideToast, 2000);
+        setTimeout(() => setMsg(""), 3000);
+      }
+    });
   };
 
   const total = useMemo(
     () => rows.reduce((a, r) => a + Number(r.amount || 0), 0),
     [rows]
   );
+
+  const [toast, setToast] = useState<{
+    open: boolean;
+    kind: ToastKind;
+    title: string;
+    subtitle?: string;
+  }>({ open: false, kind: "success", title: "" });
+  const hideToast = () => setToast((t) => ({ ...t, open: false }));
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<null | (() => void)>(null);
 
   return (
     <div className="max-w-5xl mx-auto text-gray-200 space-y-6">
@@ -595,6 +796,26 @@ export default function ExpensesPage() {
           </table>
         </div>
       </section>
+      <GamerConfirm
+        open={confirmOpen}
+        title="¿Eliminar gasto?"
+        message="Esta acción no se puede deshacer."
+        confirmText="Sí, eliminar"
+        cancelText="Cancelar"
+        onConfirm={() => confirmAction?.()}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setConfirmAction(null);
+        }}
+      />
+
+      <GamerToast
+        open={toast.open}
+        kind={toast.kind}
+        title={toast.title}
+        subtitle={toast.subtitle}
+        onClose={hideToast}
+      />
     </div>
   );
 }
