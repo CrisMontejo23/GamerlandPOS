@@ -49,8 +49,11 @@ const STATUS_STYLES: Record<
   DELIVERED:   { badge: "bg-gray-200 text-gray-700",       card: "border-gray-300 opacity-85" },
 };
 
-// === Util: MAYÚSCULAS “oficiales” ===
-const U = (v: unknown) => (v == null ? "" : String(v).toUpperCase().trim());
+// === Helpers de mayúsculas ===
+// UI: mayúsculas SIN recortar (no rompe los espacios mientras escribes)
+const UU = (v: unknown) => (v == null ? "" : String(v).toUpperCase());
+// DATA: mayúsculas + trim SOLO para enviar/normalizar
+const UDATA = (v: unknown) => (v == null ? "" : String(v).toUpperCase().trim());
 
 // Fecha “Ingresó”
 function fmt(d: string | Date) {
@@ -96,7 +99,7 @@ export default function WorksPage() {
       const p = new URLSearchParams();
       if (status) p.set("status", status);
       if (location) p.set("location", location);
-      if (q.trim()) p.set("q", U(q)); // Buscar en upper para consistencia
+      if (q.trim()) p.set("q", UDATA(q)); // aquí sí trim para consulta
       const r = await apiFetch(`/works?${p.toString()}`);
       const data: WorkOrder[] = await r.json();
       setRows(data);
@@ -121,10 +124,10 @@ export default function WorksPage() {
       return;
     }
     const payload = {
-      item: U(item),
-      description: U(description),
-      customerName: U(customerName),
-      customerPhone: U(customerPhone),
+      item: UDATA(item),
+      description: UDATA(description),
+      customerName: UDATA(customerName),
+      customerPhone: UDATA(customerPhone),
       reviewPaid,
       location: newLocation,
     };
@@ -139,20 +142,19 @@ export default function WorksPage() {
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("ERROR: " + U(e?.error || "NO SE PUDO CREAR"));
+      setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR"));
       setTimeout(() => setMsg(""), 2500);
     }
   };
 
-  // Nota: este update se usa para cambios de estado/ubicación/reviewPaid;
-  // si en el futuro mandas strings, aquí mismo te los subimos a upper.
+  // Normaliza parches antes de enviar (usa UDATA para limpiar)
   const normalizePatch = (patch: Partial<WorkOrder>) => {
     const out: Partial<WorkOrder> = { ...patch };
-    if (out.item != null) out.item = U(out.item);
-    if (out.description != null) out.description = U(out.description);
-    if (out.customerName != null) out.customerName = U(out.customerName);
-    if (out.customerPhone != null) out.customerPhone = U(out.customerPhone);
-    if (out.notes != null) out.notes = U(out.notes);
+    if (out.item != null) out.item = UDATA(out.item);
+    if (out.description != null) out.description = UDATA(out.description);
+    if (out.customerName != null) out.customerName = UDATA(out.customerName);
+    if (out.customerPhone != null) out.customerPhone = UDATA(out.customerPhone);
+    if (out.notes != null) out.notes = UDATA(out.notes);
     return out;
   };
 
@@ -166,7 +168,7 @@ export default function WorksPage() {
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("ERROR: " + U(e?.error || "NO SE PUDO ACTUALIZAR"));
+      setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO ACTUALIZAR"));
       setTimeout(() => setMsg(""), 2500);
     }
   };
@@ -180,7 +182,7 @@ export default function WorksPage() {
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR"));
+      setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO ELIMINAR"));
       setTimeout(() => setMsg(""), 2500);
     }
   };
@@ -216,7 +218,7 @@ export default function WorksPage() {
             className="rounded px-3 py-2 text-gray-100 w-full sm:w-64 uppercase"
             style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
             value={q}
-            onChange={(e) => setQ(U(e.target.value))}
+            onChange={(e) => setQ(UU(e.target.value))}
             onKeyDown={(e) => e.key === "Enter" && load()}
           />
 
@@ -285,7 +287,7 @@ export default function WorksPage() {
               style={{ backgroundColor: COLORS.bgCard }}
             >
               <header className="flex items-center justify-between">
-                <div className="font-semibold text-cyan-300 uppercase">{U(w.code)}</div>
+                <div className="font-semibold text-cyan-300 uppercase">{UU(w.code)}</div>
                 <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
                   {niceStatus[w.status]}
                 </span>
@@ -297,10 +299,10 @@ export default function WorksPage() {
               </div>
 
               <div className="text-sm uppercase">
-                <div><b>EQUIPO:</b> {U(w.item)}</div>
-                <div><b>DESCRIPCIÓN:</b> {U(w.description)}</div>
+                <div><b>EQUIPO:</b> {UU(w.item)}</div>
+                <div><b>DESCRIPCIÓN:</b> {UU(w.description)}</div>
                 <div>
-                  <b>CLIENTE:</b> {U(w.customerName)} • {U(w.customerPhone)}
+                  <b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}
                 </div>
                 <div><b>REVISIÓN:</b> {w.reviewPaid ? "PAGADA ($20.000)" : "PENDIENTE"}</div>
 
@@ -311,7 +313,7 @@ export default function WorksPage() {
                   <div><b>TOTAL FINAL:</b> ${Number(w.total).toLocaleString("es-CO")}</div>
                 )}
                 {!!w.notes && (
-                  <div><b>NOTAS:</b> {U(w.notes)}</div>
+                  <div><b>NOTAS:</b> {UU(w.notes)}</div>
                 )}
               </div>
 
@@ -407,7 +409,7 @@ export default function WorksPage() {
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   placeholder="EJ: XBOX 360, CONTROL"
                   value={item}
-                  onChange={(e) => setItem(U(e.target.value))}
+                  onChange={(e) => setItem(UU(e.target.value))}
                 />
               </div>
               <div>
@@ -429,7 +431,7 @@ export default function WorksPage() {
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   placeholder="NO PRENDE / MANTENIMIENTO / ACTUALIZACIÓN / JOYSTICK DERECHO..."
                   value={description}
-                  onChange={(e) => setDescription(U(e.target.value))}
+                  onChange={(e) => setDescription(UU(e.target.value))}
                 />
               </div>
               <div>
@@ -438,7 +440,7 @@ export default function WorksPage() {
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   value={customerName}
-                  onChange={(e) => setCustomerName(U(e.target.value))}
+                  onChange={(e) => setCustomerName(UU(e.target.value))}
                 />
               </div>
               <div>
@@ -447,7 +449,7 @@ export default function WorksPage() {
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(U(e.target.value))}
+                  onChange={(e) => setCustomerPhone(UU(e.target.value))}
                 />
               </div>
               <div className="md:col-span-2 flex items-center gap-2">
