@@ -49,13 +49,11 @@ const STATUS_STYLES: Record<
   DELIVERED:   { badge: "bg-gray-200 text-gray-700",       card: "border-gray-300 opacity-85" },
 };
 
-// === Helpers de mayúsculas ===
-// UI: mayúsculas SIN recortar (no rompe los espacios mientras escribes)
+// === Helpers mayúsculas ===
 const UU = (v: unknown) => (v == null ? "" : String(v).toUpperCase());
-// DATA: mayúsculas + trim SOLO para enviar/normalizar
 const UDATA = (v: unknown) => (v == null ? "" : String(v).toUpperCase().trim());
 
-// Fecha “Ingresó”
+// Fecha legible
 function fmt(d: string | Date) {
   const date = new Date(d);
   return date.toLocaleString();
@@ -84,6 +82,11 @@ export default function WorksPage() {
   const [reviewPaid, setReviewPaid] = useState(false);
   const [newLocation, setNewLocation] = useState<WorkLocation>("LOCAL");
 
+  // Modal FINALIZAR (ingresar valor)
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
+  const [finishAmount, setFinishAmount] = useState<string>("");
+  const [finishTarget, setFinishTarget] = useState<WorkOrder | null>(null);
+
   const resetForm = () => {
     setItem("");
     setDescription("");
@@ -99,7 +102,7 @@ export default function WorksPage() {
       const p = new URLSearchParams();
       if (status) p.set("status", status);
       if (location) p.set("location", location);
-      if (q.trim()) p.set("q", UDATA(q)); // aquí sí trim para consulta
+      if (q.trim()) p.set("q", UDATA(q));
       const r = await apiFetch(`/works?${p.toString()}`);
       const data: WorkOrder[] = await r.json();
       setRows(data);
@@ -117,37 +120,7 @@ export default function WorksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, status, location]);
 
-  const onCreate = async () => {
-    if (!item.trim() || !description.trim() || !customerName.trim() || !customerPhone.trim()) {
-      setMsg("FALTAN CAMPOS OBLIGATORIOS");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-    const payload = {
-      item: UDATA(item),
-      description: UDATA(description),
-      customerName: UDATA(customerName),
-      customerPhone: UDATA(customerPhone),
-      reviewPaid,
-      location: newLocation,
-    };
-    const r = await apiFetch("/works", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    if (r.ok) {
-      setMsg("TRABAJO CREADO ✅");
-      resetForm();
-      setOpenForm(false);
-      load();
-    } else {
-      const e = await r.json().catch(() => ({}));
-      setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR"));
-      setTimeout(() => setMsg(""), 2500);
-    }
-  };
-
-  // Normaliza parches antes de enviar (usa UDATA para limpiar)
+  // Normaliza parches antes de enviar
   const normalizePatch = (patch: Partial<WorkOrder>) => {
     const out: Partial<WorkOrder> = { ...patch };
     if (out.item != null) out.item = UDATA(out.item);
@@ -185,6 +158,39 @@ export default function WorksPage() {
       setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO ELIMINAR"));
       setTimeout(() => setMsg(""), 2500);
     }
+  };
+
+  // Abrir modal de FINALIZAR
+  const openFinish = (w: WorkOrder) => {
+    setFinishTarget(w);
+    setFinishAmount(w.total != null ? String(Number(w.total)) : "");
+    setFinishModalOpen(true);
+  };
+
+  // Confirmar FINALIZAR
+  const confirmFinish = async () => {
+    if (!finishTarget) return;
+    // Validación simple
+    const val = Number(finishAmount);
+    if (!isFinite(val) || val < 0) {
+      setMsg("VALOR INVÁLIDO");
+      setTimeout(() => setMsg(""), 2000);
+      return;
+    }
+    await update(finishTarget.id, { status: "FINISHED", total: val });
+    setFinishModalOpen(false);
+    setFinishTarget(null);
+    setFinishAmount("");
+  };
+
+  // Pasar a ENTREGADO (luego de finalizado). Aquí no se puede volver.
+  const deliver = async (w: WorkOrder) => {
+    // Si por alguna razón no tiene total, se permite pero mostramos aviso suave
+    if (w.total == null) {
+      const ok = confirm("Este trabajo no tiene valor registrado. ¿Marcar como ENTREGADO de todas formas?");
+      if (!ok) return;
+    }
+    await update(w.id, { status: "DELIVERED" });
   };
 
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
@@ -273,13 +279,15 @@ export default function WorksPage() {
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
 
-      {/* Lista de tarjetas */}
+      {/* Lista */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading && <div className="col-span-full text-gray-400">CARGANDO…</div>}
         {!loading && rows.length === 0 && <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>}
 
         {rows.map((w) => {
           const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
+          const delivered = w.status === "DELIVERED";
+
           return (
             <article
               key={w.id}
@@ -309,84 +317,98 @@ export default function WorksPage() {
                 {w.quote != null && (
                   <div><b>COTIZACIÓN:</b> ${Number(w.quote).toLocaleString("es-CO")}</div>
                 )}
-                {w.total != null && (
-                  <div><b>TOTAL FINAL:</b> ${Number(w.total).toLocaleString("es-CO")}</div>
+
+                {/* Etiquetas de dinero según estado */}
+                {w.status === "FINISHED" && w.total != null && (
+                  <div className="text-emerald-300"><b>VALOR A PAGAR:</b> ${Number(w.total).toLocaleString("es-CO")}</div>
                 )}
-                {!!w.notes && (
-                  <div><b>NOTAS:</b> {UU(w.notes)}</div>
+                {w.status === "DELIVERED" && (
+                  <div className="text-pink-300">
+                    <b>PAGO:</b>{" "}
+                    {w.total != null ? `$${Number(w.total).toLocaleString("es-CO")}` : "—"}
+                  </div>
                 )}
+
+                {!!w.notes && <div><b>NOTAS:</b> {UU(w.notes)}</div>}
               </div>
 
-              {/* Acciones rápidas */}
-              <div className="flex flex-wrap gap-2 pt-2">
-                {w.status !== "RECEIVED" && (
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() => update(w.id, { status: "RECEIVED" })}
-                  >
-                    RECIBIDO
-                  </button>
-                )}
-                {w.status !== "IN_PROGRESS" && (
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() => update(w.id, { status: "IN_PROGRESS" })}
-                  >
-                    EN PROCESO
-                  </button>
-                )}
-                {w.status !== "FINISHED" && (
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() => update(w.id, { status: "FINISHED" })}
-                  >
-                    FINALIZADO
-                  </button>
-                )}
-                {w.status !== "DELIVERED" && (
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() => update(w.id, { status: "DELIVERED" })}
-                  >
-                    ENTREGADO
-                  </button>
-                )}
+              {/* Acciones (se ocultan todas si ENTREGADO) */}
+              {!delivered && (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {w.status !== "RECEIVED" && (
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => update(w.id, { status: "RECEIVED" })}
+                    >
+                      RECIBIDO
+                    </button>
+                  )}
 
-                {/* Toggle ubicación */}
-                <button
-                  className="px-3 py-1 rounded border text-xs uppercase"
-                  style={{ borderColor: COLORS.border }}
-                  onClick={() =>
-                    update(w.id, { location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL" })
-                  }
-                >
-                  {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
-                </button>
+                  {w.status !== "IN_PROGRESS" && (
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => update(w.id, { status: "IN_PROGRESS" })}
+                    >
+                      EN PROCESO
+                    </button>
+                  )}
 
-                {/* Toggle revisión pagada */}
-                <button
-                  className="px-3 py-1 rounded border text-xs uppercase"
-                  style={{ borderColor: COLORS.border }}
-                  onClick={() => update(w.id, { reviewPaid: !w.reviewPaid })}
-                >
-                  {w.reviewPaid ? "QUITAR REVISIÓN PAGADA" : "MARCAR REVISIÓN PAGADA"}
-                </button>
+                  {/* FINALIZAR -> abre modal para ingresar valor */}
+                  {w.status !== "FINISHED" && (
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => openFinish(w)}
+                    >
+                      FINALIZADO
+                    </button>
+                  )}
 
-                {/* Eliminar (solo ADMIN) */}
-                {canDelete && (
+                  {/* ENTREGAR: solo disponible si ya está finalizado */}
+                  {w.status === "FINISHED" && (
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => deliver(w)}
+                    >
+                      ENTREGADO
+                    </button>
+                  )}
+
+                  {/* Toggle ubicación */}
                   <button
-                    className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+                    className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
-                    onClick={() => onDelete(w.id)}
+                    onClick={() =>
+                      update(w.id, { location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL" })
+                    }
                   >
-                    ELIMINAR
+                    {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
                   </button>
-                )}
-              </div>
+
+                  {/* Toggle revisión pagada */}
+                  <button
+                    className="px-3 py-1 rounded border text-xs uppercase"
+                    style={{ borderColor: COLORS.border }}
+                    onClick={() => update(w.id, { reviewPaid: !w.reviewPaid })}
+                  >
+                    {w.reviewPaid ? "QUITAR REVISIÓN PAGADA" : "MARCAR REVISIÓN PAGADA"}
+                  </button>
+
+                  {/* Eliminar (solo ADMIN) */}
+                  {canDelete && (
+                    <button
+                      className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => onDelete(w.id)}
+                    >
+                      ELIMINAR
+                    </button>
+                  )}
+                </div>
+              )}
             </article>
           );
         })}
@@ -482,9 +504,85 @@ export default function WorksPage() {
                   background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
                   boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
-                onClick={onCreate}
+                onClick={async () => {
+                  if (!item.trim() || !description.trim() || !customerName.trim() || !customerPhone.trim()) {
+                    setMsg("FALTAN CAMPOS OBLIGATORIOS");
+                    setTimeout(() => setMsg(""), 2200);
+                    return;
+                  }
+                  const payload = {
+                    item: UDATA(item),
+                    description: UDATA(description),
+                    customerName: UDATA(customerName),
+                    customerPhone: UDATA(customerPhone),
+                    reviewPaid,
+                    location: newLocation,
+                  };
+                  const r = await apiFetch("/works", {
+                    method: "POST",
+                    body: JSON.stringify(payload),
+                  });
+                  if (r.ok) {
+                    setMsg("TRABAJO CREADO ✅");
+                    resetForm();
+                    setOpenForm(false);
+                    load();
+                  } else {
+                    const e = await r.json().catch(() => ({}));
+                    setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR"));
+                    setTimeout(() => setMsg(""), 2500);
+                  }
+                }}
               >
                 CREAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal FINALIZAR */}
+      {finishModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-md rounded-xl p-4 space-y-3"
+            style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+          >
+            <h3 className="text-lg font-semibold text-cyan-300 uppercase">
+              FINALIZAR TRABAJO {finishTarget ? UU(finishTarget.code) : ""}
+            </h3>
+            <p className="text-sm text-gray-300">
+              Ingresa el <b>valor a pagar</b> del trabajo (ej: 15000).
+            </p>
+            <input
+              type="number"
+              min={0}
+              step="1"
+              value={finishAmount}
+              onChange={(e) => setFinishAmount(e.target.value)}
+              className="w-full rounded px-3 py-2 text-gray-100"
+              style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+              placeholder="0"
+              autoFocus
+            />
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-1">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => { setFinishModalOpen(false); setFinishTarget(null); setFinishAmount(""); }}
+              >
+                CANCELAR
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                style={{
+                  color: "#001014",
+                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={confirmFinish}
+              >
+                GUARDAR Y FINALIZAR
               </button>
             </div>
           </div>
