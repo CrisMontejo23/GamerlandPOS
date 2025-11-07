@@ -37,7 +37,7 @@ function parseLocalDateRange(fromStr: string, toStr: string) {
   // America/Bogota (sin DST). Si luego quieres, hazlo configurable por ENV.
   const TZ = "-05:00";
   const from = new Date(`${fromStr}T00:00:00.000${TZ}`);
-  const to   = new Date(`${toStr}T23:59:59.999${TZ}`);
+  const to = new Date(`${toStr}T23:59:59.999${TZ}`);
   return { from, to };
 }
 
@@ -277,12 +277,16 @@ const productCreateSchema = z.object({
 });
 const productUpdateSchema = productCreateSchema.partial();
 
-// Leer productos (EMPLOYEE)
+// Leer productos (EMPLOYEE) — ahora con paginación server-side
 app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
   const q = String(req.query.q || "").trim();
   const includeInactive =
     String(req.query.includeInactive || "").toLowerCase() === "true";
   const withStock = String(req.query.withStock || "").toLowerCase() === "true";
+
+  // NEW: page & pageSize
+  const page = Math.max(1, Number(req.query.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize || 10))); // cap anti-abuso
 
   const where = {
     ...(q
@@ -297,18 +301,33 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     ...(includeInactive ? {} : { active: true }),
   };
 
-  const products = await prisma.product.findMany({
+  // NEW: total para todas las páginas
+  const total = await prisma.product.count({ where });
+
+  // NEW: página solicitada
+  const list = await prisma.product.findMany({
     where,
-    take: 100,
-    orderBy: { id: "asc" },
+    orderBy: { id: "asc" }, // o "desc" si prefieres últimos primero
+    skip: (page - 1) * pageSize, // << clave
+    take: pageSize, // << clave
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+      category: true,
+      price: true,
+      cost: true,
+      active: true,
+      // stock lo añadimos aparte si withStock=true
+    },
   });
 
-  if (!withStock) return res.json(products);
+  if (!withStock || list.length === 0) {
+    return res.json({ rows: list, total, page, pageSize });
+  }
 
-  // Adjuntar stock actual
-  const ids = products.map((p: { id: number }) => p.id);
-  if (ids.length === 0) return res.json(products);
-
+  // Adjuntar stock actual SOLO para los ids de la página actual
+  const ids = list.map((p) => p.id);
   const rows = (await prisma.stockMovement.groupBy({
     by: ["productId", "type"] as const,
     where: { productId: { in: ids } },
@@ -319,14 +338,19 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     _sum: { qty: number | null };
   }>;
 
-  const map = new Map<number, number>();
+  const stockById = new Map<number, number>();
   for (const r of rows) {
     const sign = r.type === "out" ? -1 : 1;
-    const prev = map.get(r.productId) || 0;
-    map.set(r.productId, prev + sign * Number(r._sum.qty || 0));
+    const prev = stockById.get(r.productId) || 0;
+    stockById.set(r.productId, prev + sign * Number(r._sum.qty || 0));
   }
 
-  res.json(products.map((p: any) => ({ ...p, stock: map.get(p.id) ?? 0 })));
+  const rowsWithStock = list.map((p) => ({
+    ...p,
+    stock: stockById.get(p.id) ?? 0,
+  }));
+
+  res.json({ rows: rowsWithStock, total, page, pageSize });
 });
 
 app.get("/products/next-sku", requireRole("EMPLOYEE"), async (req, res) => {
@@ -751,7 +775,8 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
 
 app.delete("/sales/:id", requireRole("ADMIN"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
   try {
     // borra en cascada (SaleItem/Payment si FK on delete cascade no está)
     await prisma.payment.deleteMany({ where: { saleId: id } });
@@ -759,7 +784,8 @@ app.delete("/sales/:id", requireRole("ADMIN"), async (req, res) => {
     await prisma.sale.delete({ where: { id } });
     res.json({ ok: true, id });
   } catch (e: any) {
-    if (e?.code === "P2025") return res.status(404).json({ error: "No encontrado" });
+    if (e?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
     res.status(400).json({ error: e?.message || "No se pudo eliminar" });
   }
 });
