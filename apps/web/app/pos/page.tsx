@@ -12,8 +12,84 @@ type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
 const parseMoneyInput = (v: string) => Number(v.replace(/[^\d]/g, "")) || 0;
 
-// Paleta local (si usas las utilidades del tema puedes quitar esto)
+// Paleta local
 const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030", cyan: "#00FFFF", pink: "#FF00FF", text: "#E5E5E5" };
+
+/* ===== Toast Gamer reutilizable ===== */
+type ToastKind = "success" | "error" | "info";
+type ToastState = { open: boolean; kind: ToastKind; title: string; subtitle?: string };
+
+function GamerToast({ open, kind, title, subtitle, onClose }: { open: boolean; kind: ToastKind; title: string; subtitle?: string; onClose: () => void }) {
+  if (!open) return null;
+  const borderGrad =
+    kind === "success"
+      ? "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))"
+      : kind === "error"
+      ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
+      : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.8))";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="status"
+      aria-live="polite"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" />
+      <div
+        className="relative w-full max-w-md rounded-2xl p-4 text-center select-none"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow:
+            kind === "success"
+              ? "0 0 22px rgba(0,255,255,.25), 0 0 34px rgba(255,0,255,.25)"
+              : kind === "error"
+              ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
+              : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
+        }}
+      >
+        <div
+          className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
+          style={{ background: borderGrad, filter: "blur(6px)", opacity: 0.45 }}
+        />
+        <div className="relative">
+          <div className="mx-auto mb-2 h-12 w-12 rounded-full grid place-items-center"
+               style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}>
+            {/* Icono simple con CSS (✔ / ! / i) */}
+            <span
+              className="text-2xl"
+              style={{ color: kind === "success" ? "#7CF9FF" : kind === "error" ? "#ff90b1" : "#c4b5fd" }}
+            >
+              {kind === "success" ? "✔" : kind === "error" ? "!" : "i"}
+            </span>
+          </div>
+          <h3 className="text-xl font-extrabold"
+              style={{ color: kind === "success" ? "#7CF9FF" : kind === "error" ? "#ff90b1" : COLORS.text }}>
+            {title}
+          </h3>
+          {!!subtitle && <p className="mt-1 text-sm text-gray-300">{subtitle}</p>}
+          <button
+            onClick={onClose}
+            className="mt-4 px-4 py-2 rounded-lg text-sm font-semibold"
+            style={{
+              color: "#001014",
+              background:
+                kind === "success"
+                  ? "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))"
+                  : kind === "error"
+                  ? "linear-gradient(90deg, rgba(255,99,132,.95), rgba(255,0,128,.9))"
+                  : "linear-gradient(90deg, rgba(99,102,241,.95), rgba(168,85,247,.9))",
+              boxShadow: "0 0 14px rgba(255,255,255,.15)",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function POSPage() {
   const [q, setQ] = useState("");
@@ -23,6 +99,10 @@ export default function POSPage() {
   const [msg, setMsg] = useState<string>("");
   const [payMethod, setPayMethod] = useState<PayMethod>("EFECTIVO");
   const [received, setReceived] = useState<number>(0);
+
+  // Toast global de esta pantalla
+  const [toast, setToast] = useState<ToastState>({ open: false, kind: "success", title: "" });
+  const hideToast = () => setToast((t) => ({ ...t, open: false }));
 
   const searchRef = useRef<HTMLInputElement>(null);
   const receivedRef = useRef<HTMLInputElement>(null);
@@ -88,8 +168,23 @@ export default function POSPage() {
       payments: [{ method: payMethod, amount: subtotal }],
     };
     const r = await apiFetch(`/sales`, { method: "POST", body: JSON.stringify(payload) });
-    if (r.ok) { setCart([]); setMsg("Venta creada ✅"); setReceived(0); }
-    else { const e = await r.json().catch(() => ({})); setMsg("Error: " + (e?.error || "No se pudo crear la venta")); }
+
+    if (r.ok) {
+      setCart([]);
+      setMsg("Venta creada ✅");
+      setReceived(0);
+
+      // === MOSTRAR TOAST ÉXITO 2s ===
+      setToast({ open: true, kind: "success", title: "¡Venta cobrada!", subtitle: `Total ${fmt(uiTotal)}` });
+      setTimeout(() => hideToast(), 2000);
+    } else {
+      const e = await r.json().catch(() => ({}));
+      setMsg("Error: " + (e?.error || "No se pudo crear la venta"));
+      // (opcional) toast de error
+      setToast({ open: true, kind: "error", title: "Error al cobrar", subtitle: String(e?.error || "Intenta de nuevo") });
+      setTimeout(() => hideToast(), 2000);
+    }
+
     setTimeout(() => setMsg(""), 2500);
   }, [cart, payMethod, subtotal, received, uiTotal]);
 
@@ -333,6 +428,9 @@ export default function POSPage() {
           </div>
         </aside>
       </div>
+
+      {/* Toast Gamer */}
+      <GamerToast open={toast.open} kind={toast.kind} title={toast.title} subtitle={toast.subtitle} onClose={hideToast} />
     </div>
   );
 }
