@@ -34,8 +34,10 @@ const U = (s: unknown) =>
   (typeof s === "string" ? s.trim().toUpperCase() : s) as string;
 
 function parseLocalDateRange(fromStr: string, toStr: string) {
-  const from = new Date(`${fromStr}T00:00:00`);
-  const to = new Date(`${toStr}T23:59:59.999`);
+  // America/Bogota (sin DST). Si luego quieres, hazlo configurable por ENV.
+  const TZ = "-05:00";
+  const from = new Date(`${fromStr}T00:00:00.000${TZ}`);
+  const to   = new Date(`${toStr}T23:59:59.999${TZ}`);
   return { from, to };
 }
 
@@ -1034,7 +1036,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       items: { include: { product: true } },
       payments: true,
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
   })) as Array<{
     id: number;
     createdAt: Date;
@@ -1126,8 +1128,7 @@ app.get("/reports/payments", requireRole("EMPLOYEE"), async (req, res) => {
   if (!fromParam || !toParam)
     return res.status(400).json({ error: "from/to requeridos" });
 
-  const from = new Date(`${fromParam}T00:00:00`);
-  const to = new Date(`${toParam}T23:59:59.999`);
+  const { from, to } = parseLocalDateRange(fromParam, toParam);
 
   const rows = (await prisma.payment.groupBy({
     by: ["method"] as const,
@@ -1195,8 +1196,7 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
   if (!fromParam || !toParam)
     return res.status(400).json({ error: "from/to requeridos" });
 
-  const from = new Date(`${fromParam}T00:00:00`);
-  const to = new Date(`${toParam}T23:59:59.999`);
+  const { from, to } = parseLocalDateRange(fromParam, toParam);
 
   const items = (await prisma.saleItem.findMany({
     where: { sale: { createdAt: { gte: from, lte: to }, status: "paid" } },
