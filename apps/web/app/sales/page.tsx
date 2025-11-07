@@ -74,14 +74,7 @@ export default function SalesPage() {
   const [period, setPeriod] = useState<Period>("day");
   const [baseDate, setBaseDate] = useState<string>(todayISO());
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  // UI edición pagos (modal)
-  const [editSaleId, setEditSaleId] = useState<number | null>(null);
-  const [editEfectivo, setEditEfectivo] = useState<number | "">("");
-  const [editQR, setEditQR] = useState<number | "">("");
-  const [editDatafono, setEditDatafono] = useState<number | "">("");
-  const [editMsg, setEditMsg] = useState<string>("");
+  const [loading, setLoading] = useState(false);  
 
   const { from, to } = useMemo(() => rangeFrom(period, baseDate), [period, baseDate]);
 
@@ -170,49 +163,7 @@ export default function SalesPage() {
       return false;
     }
     return true;
-  };
-
-  // modal edición de pagos
-  const openEditPayments = (saleId: number) => {
-    const pays = salePaysById.get(saleId) || { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, otros: 0 };
-    setEditSaleId(saleId);
-    setEditEfectivo(pays.EFECTIVO || "");
-    setEditQR(pays.QR_LLAVE || "");
-    setEditDatafono(pays.DATAFONO || "");
-    setEditMsg("");
-  };
-  const closeEditPayments = () => {
-    setEditSaleId(null);
-    setEditEfectivo("");
-    setEditQR("");
-    setEditDatafono("");
-    setEditMsg("");
-  };
-  const savePayments = async () => {
-    if (editSaleId == null) return;
-    const totalVenta = saleTotalById.get(editSaleId) || 0;
-    const EFECTIVO = Number(editEfectivo || 0);
-    const QR = Number(editQR || 0);
-    const DATAFONO = Number(editDatafono || 0);
-    const suma = EFECTIVO + QR + DATAFONO;
-
-    if (Math.abs(suma - totalVenta) > 0.5) {
-      setEditMsg(`La suma de pagos (${fmtCOP(suma)}) debe ser igual al total de la venta (${fmtCOP(totalVenta)}).`);
-      return;
-    }
-    const body = {
-      payments: [
-        ...(EFECTIVO > 0 ? [{ method: "EFECTIVO", amount: EFECTIVO }] : []),
-        ...(QR > 0 ? [{ method: "QR_LLAVE", amount: QR }] : []),
-        ...(DATAFONO > 0 ? [{ method: "DATAFONO", amount: DATAFONO }] : []),
-      ],
-    };
-    const ok = await patchSale(editSaleId, body);
-    if (ok) {
-      closeEditPayments();
-      load();
-    }
-  };
+  };  
 
   // --- edición inline por línea ---
   type LineKey = string; // `${saleId}-${idx}`
@@ -463,19 +414,7 @@ export default function SalesPage() {
                                 >
                                   Eliminar
                                 </button>
-                              )}
-
-                              {/* Si quieres mantener el modal de pagos, puedes ofrecerlo aquí también */}
-                              {isFirstOfSale && (
-                                <button
-                                  onClick={() => openEditPayments(r.saleId)}
-                                  className="px-3 py-1 rounded text-sm font-medium"
-                                  style={{ backgroundColor: "#374151" }}
-                                  title="Editar métodos de pago"
-                                >
-                                  Pagos
-                                </button>
-                              )}
+                              )}                                                         
                             </>
                           ) : (
                             <>
@@ -505,43 +444,7 @@ export default function SalesPage() {
             </tbody>
           </table>
         </div>
-      </section>
-
-      {/* Modal edición de pagos */}
-      {isAdmin && editSaleId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={closeEditPayments} />
-          <div
-            className="relative w-full max-w-md rounded-xl p-4 space-y-3"
-            style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
-          >
-            <h2 className="text-lg font-semibold text-cyan-300">Editar métodos de pago</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <NumberInput label="Efectivo" value={editEfectivo} onChange={(v) => setEditEfectivo(v)} />
-              <NumberInput label="QR / Llave" value={editQR} onChange={(v) => setEditQR(v)} />
-              <NumberInput label="Datafono" value={editDatafono} onChange={(v) => setEditDatafono(v)} />
-            </div>
-            {!!editMsg && <div className="text-sm text-pink-300">{editMsg}</div>}
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={closeEditPayments} className="px-4 py-2 rounded font-medium" style={{ backgroundColor: "#374151" }}>
-                Cancelar
-              </button>
-              <button
-                onClick={savePayments}
-                className="px-4 py-2 rounded font-semibold"
-                style={{
-                  color: "#001014",
-                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.25)",
-                }}
-              >
-                Guardar
-              </button>
-            </div>
-            <div className="text-xs text-gray-400">Total venta: {fmtCOP(saleTotalById.get(editSaleId) || 0)}</div>
-          </div>
-        </div>
-      )}
+      </section>      
     </div>
   );
 }
@@ -570,28 +473,4 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
 }
 function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`py-2 px-3 ${className}`}>{children}</td>;
-}
-
-function NumberInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | "";
-  onChange: (v: number | "") => void;
-}) {
-  return (
-    <label className="text-sm">
-      <div className="mb-1 text-gray-300">{label}</div>
-      <input
-        className="w-full rounded px-3 py-2 text-right outline-none"
-        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
-        type="number"
-        min={0}
-        value={value}
-        onChange={(e) => onChange(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
-      />
-    </label>
-  );
 }
