@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { apiFetch } from "../lib/api";
 
@@ -16,21 +16,17 @@ type WorkOrder = {
   customerPhone: string;
   status: WorkStatus;
   location: WorkLocation;
-  quote?: number | null;
-  deposit?: number | null;
-  total?: number | null;
+  quote?: number | null; // BACKEND
+  total?: number | null; // BACKEND
+  // 'deposit' NO existe en backend. Lo usamos solo en UI (inyectado).
+  deposit?: number | null; // UI ONLY
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-const COLORS = {
-  bgCard: "#14163A",
-  border: "#1E1F4B",
-  input: "#0F1030",
-};
+const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030" };
 
-// Etiquetas “bonitas”
 const niceStatus: Record<WorkStatus, string> = {
   RECEIVED: "RECIBIDO",
   IN_PROGRESS: "EN PROCESO",
@@ -38,7 +34,6 @@ const niceStatus: Record<WorkStatus, string> = {
   DELIVERED: "ENTREGADO",
 };
 
-// Estilos por estado
 const STATUS_STYLES: Record<
   "RECEIVED" | "IN_PROGRESS" | "FINISHED" | "DELIVERED",
   { badge: string; card: string }
@@ -58,56 +53,42 @@ const STATUS_STYLES: Record<
 // === Utils ===
 const UU = (v: unknown) => (v == null ? "" : String(v).toUpperCase());
 const UDATA = (v: unknown) => (v == null ? "" : String(v).toUpperCase().trim());
-
-/** Convierte unknown → number|null de forma segura */
-function toNum(v: unknown): number | null {
+const toNum = (v: unknown): number | null => {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
   if (typeof v === "string" && v.trim() !== "") {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
   return null;
-}
+};
+const fmt = (d: string | Date) => new Date(d).toLocaleString();
 
-function fmt(d: string | Date) {
-  const date = new Date(d);
-  return date.toLocaleString();
-}
-
+// Lo que llega del backend (no tiene deposit/advance)
 type AnyRow = Partial<WorkOrder> & {
   id: number;
   code: string;
-  quotation?: unknown; // alias de quote
-  advance?: unknown; // alias de deposit (PRIORIDAD)
-  abono?: unknown; // alias de deposit
+  quotation?: unknown; // alias razonable si tu API ya lo expone
 };
 
 function normalizeRows(rows: AnyRow[]): WorkOrder[] {
-  return rows.map((r) => {
-    // 👇 Damos prioridad a 'advance' porque suele ser como lo guarda el backend
-    const quoteRaw = r.quote ?? r.quotation;
-    const depositRaw = r.advance ?? r.deposit ?? r.abono;
-
-    return {
-      id: r.id,
-      code: r.code,
-      item: r.item ?? "",
-      description: r.description ?? "",
-      customerName: r.customerName ?? "",
-      customerPhone: r.customerPhone ?? "",
-      status: (r.status ?? "RECEIVED") as WorkStatus,
-      location: (r.location ?? "LOCAL") as WorkLocation,
-      quote: toNum(quoteRaw),
-      deposit: toNum(depositRaw),
-      total: toNum(r.total),
-      notes: r.notes ?? null,
-      createdAt: r.createdAt ?? new Date().toISOString(),
-      updatedAt: r.updatedAt ?? new Date().toISOString(),
-    };
-  });
+  return rows.map((r) => ({
+    id: r.id,
+    code: r.code,
+    item: r.item ?? "",
+    description: r.description ?? "",
+    customerName: r.customerName ?? "",
+    customerPhone: r.customerPhone ?? "",
+    status: (r.status ?? "RECEIVED") as WorkStatus,
+    location: (r.location ?? "LOCAL") as WorkLocation,
+    quote: toNum(r.quote ?? r.quotation),
+    total: toNum(r.total),
+    // deposit NO viene del backend
+    notes: r.notes ?? null,
+    createdAt: r.createdAt ?? new Date().toISOString(),
+    updatedAt: r.updatedAt ?? new Date().toISOString(),
+  }));
 }
 
-/** Patch que admite alias para máxima compatibilidad con tu API */
 type Patch = {
   item?: string;
   description?: string;
@@ -116,14 +97,11 @@ type Patch = {
   notes?: string | null;
   status?: WorkStatus;
   location?: WorkLocation;
-  quote?: number | null;
-  deposit?: number | null;
   total?: number | null;
 
-  // ALIAS opcionales:
-  advance?: number | null; // = deposit
-  abono?: number | null; // = deposit
-  quotation?: number | null; // = quote
+  // El backend solo entiende 'quote' (o 'quotation' si tu endpoint lo mapea).
+  quote?: number | null;
+  quotation?: number | null;
 };
 
 export default function WorksPage() {
@@ -135,37 +113,46 @@ export default function WorksPage() {
   const [location, setLocation] = useState<WorkLocation | "">("");
   const [q, setQ] = useState("");
 
-  // Lista
+  // Datos
   const [rows, setRows] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  // Form crear
+  // Sidecar de abonos (solo front)
+  const [deposits, setDeposits] = useState<Record<number, number>>({});
+
+  // Crear
   const [openForm, setOpenForm] = useState(false);
   const [item, setItem] = useState("");
   const [description, setDescription] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [newLocation, setNewLocation] = useState<WorkLocation>("LOCAL");
-
-  // Cotización (crear)
   const [hasQuote, setHasQuote] = useState<"YES" | "NO">("NO");
   const [quoteValue, setQuoteValue] = useState<string>("");
   const [hasDeposit, setHasDeposit] = useState<"YES" | "NO">("NO");
   const [depositValue, setDepositValue] = useState<string>("");
 
-  // Modal FINALIZAR
+  // Finalizar (solo se usa cuando NO hay cotización)
   const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [finishAmount, setFinishAmount] = useState<string>("");
   const [finishTarget, setFinishTarget] = useState<WorkOrder | null>(null);
 
-  // Modal EDITAR/AGREGAR COT/ABONO
+  // Editar COT/ABONO (abono solo front)
   const [editQDOpen, setEditQDOpen] = useState(false);
   const [editQDTarget, setEditQDTarget] = useState<WorkOrder | null>(null);
   const [editHasQuote, setEditHasQuote] = useState<"YES" | "NO">("NO");
   const [editQuoteValue, setEditQuoteValue] = useState<string>("");
   const [editHasDeposit, setEditHasDeposit] = useState<"YES" | "NO">("NO");
   const [editDepositValue, setEditDepositValue] = useState<string>("");
+
+  // Helpers sidecar
+  const getDeposit = (id: number) => deposits[id] ?? 0;
+
+  const rowsWithDeposits = useMemo(() => {
+    // inyecta el abono local a cada row
+    return rows.map((r) => ({ ...r, deposit: getDeposit(r.id) }));
+  }, [rows, deposits]);
 
   function resetForm() {
     setItem("");
@@ -178,7 +165,6 @@ export default function WorksPage() {
     setHasDeposit("NO");
     setDepositValue("");
   }
-
   function resetEditQD() {
     setEditQDTarget(null);
     setEditHasQuote("NO");
@@ -197,7 +183,7 @@ export default function WorksPage() {
 
       const r = await apiFetch(`/works?${p.toString()}`);
       const data = (await r.json()) as AnyRow[];
-      setRows(normalizeRows(data));
+      setRows(normalizeRows(data)); // deposit se inyecta vía rowsWithDeposits
     } catch {
       setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
       setTimeout(() => setMsg(""), 2200);
@@ -248,6 +234,12 @@ export default function WorksPage() {
     if (!confirm("¿ELIMINAR ESTE TRABAJO? ESTA ACCIÓN ES PERMANENTE.")) return;
     const r = await apiFetch(`/works/${id}`, { method: "DELETE" });
     if (r.ok) {
+      // limpia sidecar también
+      setDeposits((m) => {
+        const n = { ...m };
+        delete n[id];
+        return n;
+      });
       setMsg("TRABAJO ELIMINADO ✅");
       load();
     } else {
@@ -260,36 +252,24 @@ export default function WorksPage() {
     }
   };
 
-  // Abrir modal de FINALIZAR
-  const openFinish = (w: WorkOrder) => {
-    setFinishTarget(w);
+  // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
+  const openFinish = async (w: WorkOrder) => {
     if (w.quote != null) {
-      const saldo = Math.max(Number(w.quote) - Number(w.deposit || 0), 0);
-      setFinishAmount(String(saldo)); // mostramos el saldo
-    } else {
-      setFinishAmount(w.total != null ? String(Number(w.total)) : "");
+      const saldo = Math.max(
+        Number(w.quote) - Number(getDeposit(w.id) || 0),
+        0
+      );
+      await update(w.id, { status: "FINISHED", total: saldo });
+      setMsg("TRABAJO FINALIZADO ✅");
+      return;
     }
+    setFinishTarget(w);
+    setFinishAmount(w.total != null ? String(Number(w.total)) : "");
     setFinishModalOpen(true);
   };
 
-  // Confirmar FINALIZAR
   const confirmFinish = async () => {
     if (!finishTarget) return;
-
-    // Con cotización: total = saldo
-    if (finishTarget.quote != null) {
-      const saldo = Math.max(
-        Number(finishTarget.quote) - Number(finishTarget.deposit || 0),
-        0
-      );
-      await update(finishTarget.id, { status: "FINISHED", total: saldo });
-      setFinishModalOpen(false);
-      setFinishTarget(null);
-      setFinishAmount("");
-      return;
-    }
-
-    // Sin cotización: pedir valor
     const val = Number(finishAmount);
     if (!Number.isFinite(val) || val < 0) {
       setMsg("VALOR INVÁLIDO");
@@ -302,7 +282,6 @@ export default function WorksPage() {
     setFinishAmount("");
   };
 
-  // ENTREGADO
   const deliver = async (w: WorkOrder) => {
     if (w.total == null) {
       const ok = confirm(
@@ -313,13 +292,13 @@ export default function WorksPage() {
     await update(w.id, { status: "DELIVERED" });
   };
 
-  // Abrir/Guardar modal EDITAR COT/ABONO
+  // Editar/Agregar COT y ABONO (abono solo front)
   function openEditQuoteDeposit(w: WorkOrder) {
     setEditQDTarget(w);
+    const dep = getDeposit(w.id);
     if (w.quote != null && Number(w.quote) > 0) {
       setEditHasQuote("YES");
       setEditQuoteValue(String(Number(w.quote)));
-      const dep = Number(w.deposit || 0);
       setEditHasDeposit(dep > 0 ? "YES" : "NO");
       setEditDepositValue(dep > 0 ? String(dep) : "");
     } else {
@@ -334,23 +313,22 @@ export default function WorksPage() {
   async function saveEditQuoteDeposit() {
     if (!editQDTarget) return;
 
-    // Sin cotización -> limpiar
+    // Sin cotización -> limpiar quote en backend y abono local
     if (editHasQuote === "NO") {
       const ok = await update(editQDTarget.id, {
         quotation: null,
-        advance: null,
-        // compat:
         quote: null,
-        deposit: null,
-        abono: null,
       });
-      if (ok !== false) setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
+      if (ok !== false) {
+        setDeposits((m) => ({ ...m, [editQDTarget.id]: 0 }));
+        setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
+      }
       setEditQDOpen(false);
       resetEditQD();
       return;
     }
 
-    // Con cotización: validar
+    // Con cotización
     const q = Number(editQuoteValue);
     if (!Number.isFinite(q) || q <= 0) {
       setMsg("COTIZACIÓN INVÁLIDA");
@@ -358,7 +336,7 @@ export default function WorksPage() {
       return;
     }
 
-    let d: number | null = 0;
+    let d = 0;
     if (editHasDeposit === "YES") {
       d = Number(editDepositValue);
       if (!Number.isFinite(d) || d < 0 || d > q) {
@@ -368,15 +346,12 @@ export default function WorksPage() {
       }
     }
 
-    const ok = await update(editQDTarget.id, {
-      quotation: q, // <- clave
-      advance: d, // <- clave
-      // compat:
-      quote: q,
-      deposit: d,
-      abono: d,
-    });
-    if (ok !== false) setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
+    const ok = await update(editQDTarget.id, { quotation: q, quote: q });
+    if (ok !== false) {
+      // Guardar abono solo en front
+      setDeposits((m) => ({ ...m, [editQDTarget.id]: d }));
+      setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
+    }
     setEditQDOpen(false);
     resetEditQD();
   }
@@ -483,13 +458,16 @@ export default function WorksPage() {
         {loading && (
           <div className="col-span-full text-gray-400">CARGANDO…</div>
         )}
-        {!loading && rows.length === 0 && (
+        {!loading && rowsWithDeposits.length === 0 && (
           <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>
         )}
 
-        {rows.map((w) => {
+        {rowsWithDeposits.map((w) => {
           const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
           const delivered = w.status === "DELIVERED";
+          const dep = Number(w.deposit || 0);
+          const quote = Number(w.quote ?? 0);
+          const saldo = Math.max(quote - dep, 0);
 
           return (
             <article
@@ -529,28 +507,21 @@ export default function WorksPage() {
                   <b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}
                 </div>
 
-                {/* Dinero por cotización */}
                 {w.quote != null && (
                   <>
                     <div>
                       <b>COTIZACIÓN:</b> $
-                      {Number(w.quote).toLocaleString("es-CO")}
+                      {Number(quote).toLocaleString("es-CO")}
                     </div>
                     <div>
-                      <b>ABONO:</b> $
-                      {Number(w.deposit || 0).toLocaleString("es-CO")}
+                      <b>ABONO:</b> ${Number(dep).toLocaleString("es-CO")}
                     </div>
                     <div className="text-pink-300">
-                      <b>SALDO:</b> $
-                      {Math.max(
-                        Number(w.quote) - Number(w.deposit || 0),
-                        0
-                      ).toLocaleString("es-CO")}
+                      <b>SALDO:</b> ${saldo.toLocaleString("es-CO")}
                     </div>
                   </>
                 )}
 
-                {/* Dinero por estado */}
                 {w.status === "FINISHED" && w.total != null && (
                   <div className="text-emerald-300">
                     <b>VALOR A PAGAR:</b> $
@@ -595,7 +566,6 @@ export default function WorksPage() {
                     </button>
                   )}
 
-                  {/* Editar/Agregar Cotización/Abono */}
                   <button
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
@@ -609,7 +579,6 @@ export default function WorksPage() {
                     {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
                   </button>
 
-                  {/* FINALIZAR */}
                   {w.status !== "FINISHED" && (
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
@@ -620,7 +589,6 @@ export default function WorksPage() {
                     </button>
                   )}
 
-                  {/* ENTREGADO */}
                   {w.status === "FINISHED" && (
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
@@ -631,7 +599,6 @@ export default function WorksPage() {
                     </button>
                   )}
 
-                  {/* Toggle ubicación */}
                   <button
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
@@ -644,7 +611,6 @@ export default function WorksPage() {
                     {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
                   </button>
 
-                  {/* Eliminar (solo ADMIN) */}
                   {canDelete && (
                     <button
                       className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
@@ -884,9 +850,8 @@ export default function WorksPage() {
                     return;
                   }
 
-                  // Si hay cotización, validar
                   let quoteNum: number | null = null;
-                  let depositNum: number | null = null;
+                  let depositNum = 0;
 
                   if (hasQuote === "YES") {
                     const qn = Number(quoteValue);
@@ -905,27 +870,18 @@ export default function WorksPage() {
                         return;
                       }
                       depositNum = dn;
-                    } else {
-                      depositNum = 0;
                     }
                   }
 
-                  // dentro del onClick del botón CREAR
                   const payload: Patch = {
                     item: UDATA(item),
                     description: UDATA(description),
                     customerName: UDATA(customerName),
                     customerPhone: UDATA(customerPhone),
                     location: newLocation,
-
-                    // Mantengo ambos por compatibilidad, pero el backend seguramente usa estos dos:
-                    quotation: quoteNum, // <- clave para cotización
-                    advance: depositNum, // <- clave para abono
-
-                    // Extra (backends que sí aceptan estos):
+                    // Enviamos SOLO la cotización al backend
+                    quotation: quoteNum,
                     quote: quoteNum,
-                    deposit: depositNum,
-                    abono: depositNum,
                   };
 
                   const r = await apiFetch("/works", {
@@ -934,6 +890,16 @@ export default function WorksPage() {
                   });
 
                   if (r.ok) {
+                    // intenta leer el row creado para guardar abono localmente
+                    const created = await r.json().catch(() => null);
+                    if (created && typeof created.id === "number") {
+                      if (depositNum > 0) {
+                        setDeposits((m) => ({
+                          ...m,
+                          [created.id]: depositNum,
+                        }));
+                      }
+                    }
                     setMsg("TRABAJO CREADO ✅");
                     resetForm();
                     setOpenForm(false);
@@ -954,7 +920,7 @@ export default function WorksPage() {
         </div>
       )}
 
-      {/* Modal FINALIZAR */}
+      {/* Modal FINALIZAR (solo sin cotización) */}
       {finishModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
@@ -974,64 +940,23 @@ export default function WorksPage() {
               FINALIZAR TRABAJO {finishTarget ? UU(finishTarget.code) : ""}
             </h3>
 
-            {/* Caso con cotización */}
-            {finishTarget?.quote != null ? (
-              <>
-                <div className="text-sm text-gray-300 space-y-1">
-                  <div>
-                    <b>Cotización:</b> $
-                    {Number(finishTarget.quote).toLocaleString("es-CO")}
-                  </div>
-                  <div>
-                    <b>Abono:</b> $
-                    {Number(finishTarget.deposit || 0).toLocaleString("es-CO")}
-                  </div>
-                  <div className="text-pink-300">
-                    <b>Saldo a pagar:</b> $
-                    {Math.max(
-                      Number(finishTarget.quote) -
-                        Number(finishTarget.deposit || 0),
-                      0
-                    ).toLocaleString("es-CO")}
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    * Se finalizará usando el <b>saldo</b> como valor a pagar.
-                  </div>
-                </div>
-
-                <input
-                  type="number"
-                  value={finishAmount}
-                  disabled
-                  className="w-full rounded px-3 py-2 text-gray-100 opacity-70"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                />
-              </>
-            ) : (
-              // Caso SIN cotización
-              <>
-                <p className="text-sm text-gray-300">
-                  Ingresa el <b>valor a pagar</b> del trabajo (ej: 15000).
-                </p>
-                <input
-                  type="number"
-                  min={0}
-                  step="1"
-                  value={finishAmount}
-                  onChange={(e) => setFinishAmount(e.target.value)}
-                  className="w-full rounded px-3 py-2 text-gray-100"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  placeholder="0"
-                  autoFocus
-                />
-              </>
-            )}
+            <p className="text-sm text-gray-300">
+              Ingresa el <b>valor a pagar</b> del trabajo (ej: 15000).
+            </p>
+            <input
+              type="number"
+              min={0}
+              step="1"
+              value={finishAmount}
+              onChange={(e) => setFinishAmount(e.target.value)}
+              className="w-full rounded px-3 py-2 text-gray-100"
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
+              placeholder="0"
+              autoFocus
+            />
 
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-1">
               <button
