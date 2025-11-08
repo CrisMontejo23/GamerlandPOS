@@ -45,8 +45,14 @@ const STATUS_STYLES: Record<
 > = {
   RECEIVED: { badge: "bg-amber-100 text-amber-800", card: "border-amber-300" },
   IN_PROGRESS: { badge: "bg-blue-100 text-blue-800", card: "border-blue-300" },
-  FINISHED: { badge: "bg-emerald-100 text-emerald-800", card: "border-emerald-300" },
-  DELIVERED: { badge: "bg-gray-200 text-gray-700", card: "border-gray-300 opacity-85" },
+  FINISHED: {
+    badge: "bg-emerald-100 text-emerald-800",
+    card: "border-emerald-300",
+  },
+  DELIVERED: {
+    badge: "bg-gray-200 text-gray-700",
+    card: "border-gray-300 opacity-85",
+  },
 };
 
 // === Utils ===
@@ -68,20 +74,19 @@ function fmt(d: string | Date) {
   return date.toLocaleString();
 }
 
-/** Respuesta del backend con posibles alias */
 type AnyRow = Partial<WorkOrder> & {
-  id: number;            // aseguramos id
-  code: string;          // y code
-  quotation?: unknown;   // alias de quote
-  advance?: unknown;     // alias de deposit
-  abono?: unknown;       // alias de deposit
+  id: number;
+  code: string;
+  quotation?: unknown; // alias de quote
+  advance?: unknown; // alias de deposit (PRIORIDAD)
+  abono?: unknown; // alias de deposit
 };
 
-/** Normaliza filas del backend → WorkOrder (quote/deposit como number|null) */
 function normalizeRows(rows: AnyRow[]): WorkOrder[] {
   return rows.map((r) => {
-    const quote = r.quote ?? r.quotation;
-    const deposit = r.deposit ?? r.advance ?? r.abono;
+    // 👇 Damos prioridad a 'advance' porque suele ser como lo guarda el backend
+    const quoteRaw = r.quote ?? r.quotation;
+    const depositRaw = r.advance ?? r.deposit ?? r.abono;
 
     return {
       id: r.id,
@@ -92,8 +97,8 @@ function normalizeRows(rows: AnyRow[]): WorkOrder[] {
       customerPhone: r.customerPhone ?? "",
       status: (r.status ?? "RECEIVED") as WorkStatus,
       location: (r.location ?? "LOCAL") as WorkLocation,
-      quote: toNum(quote),
-      deposit: toNum(deposit),
+      quote: toNum(quoteRaw),
+      deposit: toNum(depositRaw),
       total: toNum(r.total),
       notes: r.notes ?? null,
       createdAt: r.createdAt ?? new Date().toISOString(),
@@ -116,9 +121,9 @@ type Patch = {
   total?: number | null;
 
   // ALIAS opcionales:
-  advance?: number | null;    // = deposit
-  abono?: number | null;      // = deposit
-  quotation?: number | null;  // = quote
+  advance?: number | null; // = deposit
+  abono?: number | null; // = deposit
+  quotation?: number | null; // = quote
 };
 
 export default function WorksPage() {
@@ -213,7 +218,8 @@ export default function WorksPage() {
     if (out.description != null) out.description = UDATA(out.description);
     if (out.customerName != null) out.customerName = UDATA(out.customerName);
     if (out.customerPhone != null) out.customerPhone = UDATA(out.customerPhone);
-    if (out.notes != null && typeof out.notes === "string") out.notes = UDATA(out.notes);
+    if (out.notes != null && typeof out.notes === "string")
+      out.notes = UDATA(out.notes);
     return out;
   };
 
@@ -228,7 +234,10 @@ export default function WorksPage() {
       return true;
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("ERROR: " + UDATA((e as { error?: string })?.error || "NO SE PUDO ACTUALIZAR"));
+      setMsg(
+        "ERROR: " +
+          UDATA((e as { error?: string })?.error || "NO SE PUDO ACTUALIZAR")
+      );
       setTimeout(() => setMsg(""), 2500);
       return false;
     }
@@ -243,7 +252,10 @@ export default function WorksPage() {
       load();
     } else {
       const e = await r.json().catch(() => ({}));
-      setMsg("ERROR: " + UDATA((e as { error?: string })?.error || "NO SE PUDO ELIMINAR"));
+      setMsg(
+        "ERROR: " +
+          UDATA((e as { error?: string })?.error || "NO SE PUDO ELIMINAR")
+      );
       setTimeout(() => setMsg(""), 2500);
     }
   };
@@ -266,7 +278,10 @@ export default function WorksPage() {
 
     // Con cotización: total = saldo
     if (finishTarget.quote != null) {
-      const saldo = Math.max(Number(finishTarget.quote) - Number(finishTarget.deposit || 0), 0);
+      const saldo = Math.max(
+        Number(finishTarget.quote) - Number(finishTarget.deposit || 0),
+        0
+      );
       await update(finishTarget.id, { status: "FINISHED", total: saldo });
       setFinishModalOpen(false);
       setFinishTarget(null);
@@ -290,7 +305,9 @@ export default function WorksPage() {
   // ENTREGADO
   const deliver = async (w: WorkOrder) => {
     if (w.total == null) {
-      const ok = confirm("Este trabajo no tiene valor registrado. ¿Marcar como ENTREGADO de todas formas?");
+      const ok = confirm(
+        "Este trabajo no tiene valor registrado. ¿Marcar como ENTREGADO de todas formas?"
+      );
       if (!ok) return;
     }
     await update(w.id, { status: "DELIVERED" });
@@ -320,11 +337,12 @@ export default function WorksPage() {
     // Sin cotización -> limpiar
     if (editHasQuote === "NO") {
       const ok = await update(editQDTarget.id, {
+        quotation: null,
+        advance: null,
+        // compat:
         quote: null,
         deposit: null,
-        advance: null,
         abono: null,
-        quotation: null,
       });
       if (ok !== false) setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
       setEditQDOpen(false);
@@ -351,11 +369,12 @@ export default function WorksPage() {
     }
 
     const ok = await update(editQDTarget.id, {
+      quotation: q, // <- clave
+      advance: d, // <- clave
+      // compat:
       quote: q,
       deposit: d,
-      advance: d,
       abono: d,
-      quotation: q,
     });
     if (ok !== false) setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
     setEditQDOpen(false);
@@ -379,7 +398,10 @@ export default function WorksPage() {
         <div className="flex flex-col w-full gap-2 sm:flex-row sm:w-auto sm:items-center">
           <select
             className="rounded px-3 py-2 text-gray-100 w-full sm:w-auto"
-            style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+            style={{
+              backgroundColor: COLORS.input,
+              border: `1px solid ${COLORS.border}`,
+            }}
             value={location}
             onChange={(e) => setLocation(e.target.value as WorkLocation | "")}
           >
@@ -391,7 +413,10 @@ export default function WorksPage() {
           <input
             placeholder="BUSCAR POR CÓDIGO, CLIENTE, EQUIPO..."
             className="rounded px-3 py-2 text-gray-100 w-full sm:w-64 uppercase"
-            style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+            style={{
+              backgroundColor: COLORS.input,
+              border: `1px solid ${COLORS.border}`,
+            }}
             value={q}
             onChange={(e) => setQ(UU(e.target.value))}
             onKeyDown={(e) => e.key === "Enter" && load()}
@@ -403,8 +428,10 @@ export default function WorksPage() {
               className="px-4 py-2 rounded-lg font-semibold w-full sm:w-auto"
               style={{
                 color: "#001014",
-                background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow:
+                  "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
               }}
             >
               BUSCAR
@@ -440,73 +467,130 @@ export default function WorksPage() {
       {/* Aviso informativo */}
       <div
         className="rounded-lg p-3 text-sm uppercase"
-        style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
       >
-        💡 <b>REVISIÓN $20.000:</b> SI EL CLIENTE <b>ACEPTA EL ARREGLO</b>, LA REVISIÓN <b>NO SE COBRA</b>. SOLO SE COBRA EL VALOR DEL ARREGLO.
+        💡 <b>REVISIÓN $20.000:</b> SI EL CLIENTE <b>ACEPTA EL ARREGLO</b>, LA
+        REVISIÓN <b>NO SE COBRA</b>. SOLO SE COBRA EL VALOR DEL ARREGLO.
       </div>
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
 
       {/* Lista */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading && <div className="col-span-full text-gray-400">CARGANDO…</div>}
-        {!loading && rows.length === 0 && <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>}
+        {loading && (
+          <div className="col-span-full text-gray-400">CARGANDO…</div>
+        )}
+        {!loading && rows.length === 0 && (
+          <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>
+        )}
 
         {rows.map((w) => {
           const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
           const delivered = w.status === "DELIVERED";
 
           return (
-            <article key={w.id} className={`rounded-xl p-4 space-y-2 border ${s.card}`} style={{ backgroundColor: COLORS.bgCard }}>
+            <article
+              key={w.id}
+              className={`rounded-xl p-4 space-y-2 border ${s.card}`}
+              style={{ backgroundColor: COLORS.bgCard }}
+            >
               <header className="flex items-center justify-between">
-                <div className="font-semibold text-cyan-300 uppercase">{UU(w.code)}</div>
-                <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>{niceStatus[w.status]}</span>
+                <div className="font-semibold text-cyan-300 uppercase">
+                  {UU(w.code)}
+                </div>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}
+                >
+                  {niceStatus[w.status]}
+                </span>
               </header>
 
               <div className="text-sm text-gray-300">
-                <div><b>INGRESÓ:</b> {fmt(w.createdAt)}</div>
-                <div><b>UBICACIÓN:</b> {w.location === "LOCAL" ? "EN LOCAL" : "EN BOGOTÁ"}</div>
+                <div>
+                  <b>INGRESÓ:</b> {fmt(w.createdAt)}
+                </div>
+                <div>
+                  <b>UBICACIÓN:</b>{" "}
+                  {w.location === "LOCAL" ? "EN LOCAL" : "EN BOGOTÁ"}
+                </div>
               </div>
 
               <div className="text-sm uppercase">
-                <div><b>EQUIPO:</b> {UU(w.item)}</div>
-                <div><b>DESCRIPCIÓN:</b> {UU(w.description)}</div>
-                <div><b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}</div>
+                <div>
+                  <b>EQUIPO:</b> {UU(w.item)}
+                </div>
+                <div>
+                  <b>DESCRIPCIÓN:</b> {UU(w.description)}
+                </div>
+                <div>
+                  <b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}
+                </div>
 
                 {/* Dinero por cotización */}
                 {w.quote != null && (
                   <>
-                    <div><b>COTIZACIÓN:</b> ${Number(w.quote).toLocaleString("es-CO")}</div>
-                    <div><b>ABONO:</b> ${Number(w.deposit || 0).toLocaleString("es-CO")}</div>
+                    <div>
+                      <b>COTIZACIÓN:</b> $
+                      {Number(w.quote).toLocaleString("es-CO")}
+                    </div>
+                    <div>
+                      <b>ABONO:</b> $
+                      {Number(w.deposit || 0).toLocaleString("es-CO")}
+                    </div>
                     <div className="text-pink-300">
-                      <b>SALDO:</b> ${Math.max(Number(w.quote) - Number(w.deposit || 0), 0).toLocaleString("es-CO")}
+                      <b>SALDO:</b> $
+                      {Math.max(
+                        Number(w.quote) - Number(w.deposit || 0),
+                        0
+                      ).toLocaleString("es-CO")}
                     </div>
                   </>
                 )}
 
                 {/* Dinero por estado */}
                 {w.status === "FINISHED" && w.total != null && (
-                  <div className="text-emerald-300"><b>VALOR A PAGAR:</b> ${Number(w.total).toLocaleString("es-CO")}</div>
+                  <div className="text-emerald-300">
+                    <b>VALOR A PAGAR:</b> $
+                    {Number(w.total).toLocaleString("es-CO")}
+                  </div>
                 )}
                 {w.status === "DELIVERED" && (
                   <div className="text-pink-300">
-                    <b>PAGO:</b> {w.total != null ? `$${Number(w.total).toLocaleString("es-CO")}` : "—"}
+                    <b>PAGO:</b>{" "}
+                    {w.total != null
+                      ? `$${Number(w.total).toLocaleString("es-CO")}`
+                      : "—"}
                   </div>
                 )}
 
-                {!!w.notes && <div><b>NOTAS:</b> {UU(w.notes)}</div>}
+                {!!w.notes && (
+                  <div>
+                    <b>NOTAS:</b> {UU(w.notes)}
+                  </div>
+                )}
               </div>
 
               {!delivered && (
                 <div className="flex flex-wrap gap-2 pt-2">
                   {w.status !== "RECEIVED" && (
-                    <button className="px-3 py-1 rounded border text-xs uppercase" style={{ borderColor: COLORS.border }} onClick={() => update(w.id, { status: "RECEIVED" })}>
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => update(w.id, { status: "RECEIVED" })}
+                    >
                       RECIBIDO
                     </button>
                   )}
 
                   {w.status !== "IN_PROGRESS" && (
-                    <button className="px-3 py-1 rounded border text-xs uppercase" style={{ borderColor: COLORS.border }} onClick={() => update(w.id, { status: "IN_PROGRESS" })}>
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => update(w.id, { status: "IN_PROGRESS" })}
+                    >
                       EN PROCESO
                     </button>
                   )}
@@ -516,21 +600,33 @@ export default function WorksPage() {
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => openEditQuoteDeposit(w)}
-                    title={w.quote != null ? "Editar cotización/abono" : "Agregar cotización/abono"}
+                    title={
+                      w.quote != null
+                        ? "Editar cotización/abono"
+                        : "Agregar cotización/abono"
+                    }
                   >
                     {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
                   </button>
 
                   {/* FINALIZAR */}
                   {w.status !== "FINISHED" && (
-                    <button className="px-3 py-1 rounded border text-xs uppercase" style={{ borderColor: COLORS.border }} onClick={() => openFinish(w)}>
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => openFinish(w)}
+                    >
                       FINALIZADO
                     </button>
                   )}
 
                   {/* ENTREGADO */}
                   {w.status === "FINISHED" && (
-                    <button className="px-3 py-1 rounded border text-xs uppercase" style={{ borderColor: COLORS.border }} onClick={() => deliver(w)}>
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => deliver(w)}
+                    >
                       ENTREGADO
                     </button>
                   )}
@@ -539,14 +635,22 @@ export default function WorksPage() {
                   <button
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
-                    onClick={() => update(w.id, { location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL" })}
+                    onClick={() =>
+                      update(w.id, {
+                        location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL",
+                      })
+                    }
                   >
                     {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
                   </button>
 
                   {/* Eliminar (solo ADMIN) */}
                   {canDelete && (
-                    <button className="px-3 py-1 rounded border text-xs text-pink-400 uppercase" style={{ borderColor: COLORS.border }} onClick={() => onDelete(w.id)}>
+                    <button
+                      className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => onDelete(w.id)}
+                    >
                       ELIMINAR
                     </button>
                   )}
@@ -560,27 +664,47 @@ export default function WorksPage() {
       {/* Modal Crear */}
       {openForm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
-          <div className="w-full max-w-xl rounded-xl p-4" style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}>
-            <h2 className="text-lg font-semibold text-cyan-300 mb-3 uppercase">NUEVO TRABAJO</h2>
+          <div
+            className="w-full max-w-xl rounded-xl p-4"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <h2 className="text-lg font-semibold text-cyan-300 mb-3 uppercase">
+              NUEVO TRABAJO
+            </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm mb-1 uppercase">¿QUÉ SE RECIBE? *</label>
+                <label className="block text-sm mb-1 uppercase">
+                  ¿QUÉ SE RECIBE? *
+                </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   placeholder="EJ: XBOX 360, CONTROL"
                   value={item}
                   onChange={(e) => setItem(UU(e.target.value))}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">UBICACIÓN *</label>
+                <label className="block text-sm mb-1 uppercase">
+                  UBICACIÓN *
+                </label>
                 <select
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   value={newLocation}
-                  onChange={(e) => setNewLocation(e.target.value as WorkLocation)}
+                  onChange={(e) =>
+                    setNewLocation(e.target.value as WorkLocation)
+                  }
                 >
                   <option value="LOCAL">EN LOCAL</option>
                   <option value="BOGOTA">EN BOGOTÁ</option>
@@ -590,12 +714,19 @@ export default function WorksPage() {
               {/* COTIZACIÓN (crear) */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm mb-1 uppercase">¿HAY COTIZACIÓN? *</label>
+                  <label className="block text-sm mb-1 uppercase">
+                    ¿HAY COTIZACIÓN? *
+                  </label>
                   <select
                     className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                    style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
                     value={hasQuote}
-                    onChange={(e) => setHasQuote(e.target.value as "YES" | "NO")}
+                    onChange={(e) =>
+                      setHasQuote(e.target.value as "YES" | "NO")
+                    }
                   >
                     <option value="NO">NO</option>
                     <option value="YES">SÍ</option>
@@ -605,13 +736,18 @@ export default function WorksPage() {
                 {hasQuote === "YES" && (
                   <>
                     <div>
-                      <label className="block text-sm mb-1 uppercase">VALOR COTIZACIÓN *</label>
+                      <label className="block text-sm mb-1 uppercase">
+                        VALOR COTIZACIÓN *
+                      </label>
                       <input
                         type="number"
                         min={0}
                         step="1"
                         className="w-full rounded px-3 py-2 text-gray-100"
-                        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
                         value={quoteValue}
                         onChange={(e) => setQuoteValue(e.target.value)}
                         placeholder="0"
@@ -619,12 +755,19 @@ export default function WorksPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm mb-1 uppercase">¿ABONA AHORA?</label>
+                      <label className="block text-sm mb-1 uppercase">
+                        ¿ABONA AHORA?
+                      </label>
                       <select
                         className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
                         value={hasDeposit}
-                        onChange={(e) => setHasDeposit(e.target.value as "YES" | "NO")}
+                        onChange={(e) =>
+                          setHasDeposit(e.target.value as "YES" | "NO")
+                        }
                       >
                         <option value="NO">NO</option>
                         <option value="YES">SÍ</option>
@@ -633,13 +776,18 @@ export default function WorksPage() {
 
                     {hasDeposit === "YES" && (
                       <div className="md:col-span-3">
-                        <label className="block text-sm mb-1 uppercase">VALOR ABONO</label>
+                        <label className="block text-sm mb-1 uppercase">
+                          VALOR ABONO
+                        </label>
                         <input
                           type="number"
                           min={0}
                           step="1"
                           className="w-full rounded px-3 py-2 text-gray-100"
-                          style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
                           value={depositValue}
                           onChange={(e) => setDepositValue(e.target.value)}
                           placeholder="0"
@@ -651,36 +799,55 @@ export default function WorksPage() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm mb-1 uppercase">DESCRIPCIÓN DEL CASO *</label>
+                <label className="block text-sm mb-1 uppercase">
+                  DESCRIPCIÓN DEL CASO *
+                </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   placeholder="NO PRENDE / MANTENIMIENTO / ACTUALIZACIÓN / JOYSTICK DERECHO..."
                   value={description}
                   onChange={(e) => setDescription(UU(e.target.value))}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">NOMBRE CLIENTE *</label>
+                <label className="block text-sm mb-1 uppercase">
+                  NOMBRE CLIENTE *
+                </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   value={customerName}
                   onChange={(e) => setCustomerName(UU(e.target.value))}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">WHATSAPP CLIENTE *</label>
+                <label className="block text-sm mb-1 uppercase">
+                  WHATSAPP CLIENTE *
+                </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(UU(e.target.value))}
                 />
               </div>
 
               <div className="md:col-span-2 text-xs text-gray-300 uppercase">
-                💬 SE INFORMA AL CLIENTE: <i>“LA REVISIÓN TIENE UN COSTO DE $20.000; SI REALIZA EL ARREGLO, NO SE COBRA LA REVISIÓN, SOLO EL VALOR DEL ARREGLO.”</i>
+                💬 SE INFORMA AL CLIENTE:{" "}
+                <i>
+                  “LA REVISIÓN TIENE UN COSTO DE $20.000; SI REALIZA EL ARREGLO,
+                  NO SE COBRA LA REVISIÓN, SOLO EL VALOR DEL ARREGLO.”
+                </i>
               </div>
             </div>
 
@@ -699,12 +866,19 @@ export default function WorksPage() {
                 className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
                 style={{
                   color: "#001014",
-                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={async () => {
                   // Validación básica
-                  if (!item.trim() || !description.trim() || !customerName.trim() || !customerPhone.trim()) {
+                  if (
+                    !item.trim() ||
+                    !description.trim() ||
+                    !customerName.trim() ||
+                    !customerPhone.trim()
+                  ) {
                     setMsg("FALTAN CAMPOS OBLIGATORIOS");
                     setTimeout(() => setMsg(""), 2200);
                     return;
@@ -736,18 +910,22 @@ export default function WorksPage() {
                     }
                   }
 
+                  // dentro del onClick del botón CREAR
                   const payload: Patch = {
                     item: UDATA(item),
                     description: UDATA(description),
                     customerName: UDATA(customerName),
                     customerPhone: UDATA(customerPhone),
                     location: newLocation,
+
+                    // Mantengo ambos por compatibilidad, pero el backend seguramente usa estos dos:
+                    quotation: quoteNum, // <- clave para cotización
+                    advance: depositNum, // <- clave para abono
+
+                    // Extra (backends que sí aceptan estos):
                     quote: quoteNum,
                     deposit: depositNum,
-                    // Alias por compatibilidad con tu API actual
-                    advance: depositNum,
                     abono: depositNum,
-                    quotation: quoteNum,
                   };
 
                   const r = await apiFetch("/works", {
@@ -761,7 +939,9 @@ export default function WorksPage() {
                     setOpenForm(false);
                     load();
                   } else {
-                    const e = (await r.json().catch(() => ({}))) as { error?: string };
+                    const e = (await r.json().catch(() => ({}))) as {
+                      error?: string;
+                    };
                     setMsg("ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR"));
                     setTimeout(() => setMsg(""), 2500);
                   }
@@ -779,12 +959,18 @@ export default function WorksPage() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
             className="w-full max-w-md rounded-xl p-4 space-y-3"
-            style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="finish-title"
           >
-            <h3 id="finish-title" className="text-lg font-semibold text-cyan-300 uppercase">
+            <h3
+              id="finish-title"
+              className="text-lg font-semibold text-cyan-300 uppercase"
+            >
               FINALIZAR TRABAJO {finishTarget ? UU(finishTarget.code) : ""}
             </h3>
 
@@ -792,12 +978,25 @@ export default function WorksPage() {
             {finishTarget?.quote != null ? (
               <>
                 <div className="text-sm text-gray-300 space-y-1">
-                  <div><b>Cotización:</b> ${Number(finishTarget.quote).toLocaleString("es-CO")}</div>
-                  <div><b>Abono:</b> ${Number(finishTarget.deposit || 0).toLocaleString("es-CO")}</div>
-                  <div className="text-pink-300">
-                    <b>Saldo a pagar:</b> ${Math.max(Number(finishTarget.quote) - Number(finishTarget.deposit || 0), 0).toLocaleString("es-CO")}
+                  <div>
+                    <b>Cotización:</b> $
+                    {Number(finishTarget.quote).toLocaleString("es-CO")}
                   </div>
-                  <div className="text-xs text-gray-400">* Se finalizará usando el <b>saldo</b> como valor a pagar.</div>
+                  <div>
+                    <b>Abono:</b> $
+                    {Number(finishTarget.deposit || 0).toLocaleString("es-CO")}
+                  </div>
+                  <div className="text-pink-300">
+                    <b>Saldo a pagar:</b> $
+                    {Math.max(
+                      Number(finishTarget.quote) -
+                        Number(finishTarget.deposit || 0),
+                      0
+                    ).toLocaleString("es-CO")}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    * Se finalizará usando el <b>saldo</b> como valor a pagar.
+                  </div>
                 </div>
 
                 <input
@@ -805,7 +1004,10 @@ export default function WorksPage() {
                   value={finishAmount}
                   disabled
                   className="w-full rounded px-3 py-2 text-gray-100 opacity-70"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                 />
               </>
             ) : (
@@ -821,7 +1023,10 @@ export default function WorksPage() {
                   value={finishAmount}
                   onChange={(e) => setFinishAmount(e.target.value)}
                   className="w-full rounded px-3 py-2 text-gray-100"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   placeholder="0"
                   autoFocus
                 />
@@ -844,8 +1049,10 @@ export default function WorksPage() {
                 className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
                 style={{
                   color: "#001014",
-                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={confirmFinish}
               >
@@ -859,19 +1066,34 @@ export default function WorksPage() {
       {/* Modal EDITAR COT/ABONO */}
       {editQDOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
-          <div className="w-full max-w-xl rounded-xl p-4 space-y-3" style={{ backgroundColor: COLORS.bgCard, border: `1px solid ${COLORS.border}` }}>
+          <div
+            className="w-full max-w-xl rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
             <h3 className="text-lg font-semibold text-cyan-300 uppercase">
-              {editQDTarget?.code ? `EDITAR COT/ABONO — ${UU(editQDTarget.code)}` : "EDITAR COT/ABONO"}
+              {editQDTarget?.code
+                ? `EDITAR COT/ABONO — ${UU(editQDTarget.code)}`
+                : "EDITAR COT/ABONO"}
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="block text-sm mb-1 uppercase">¿HAY COTIZACIÓN? *</label>
+                <label className="block text-sm mb-1 uppercase">
+                  ¿HAY COTIZACIÓN? *
+                </label>
                 <select
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
                   value={editHasQuote}
-                  onChange={(e) => setEditHasQuote(e.target.value as "YES" | "NO")}
+                  onChange={(e) =>
+                    setEditHasQuote(e.target.value as "YES" | "NO")
+                  }
                 >
                   <option value="NO">NO</option>
                   <option value="YES">SÍ</option>
@@ -881,13 +1103,18 @@ export default function WorksPage() {
               {editHasQuote === "YES" && (
                 <>
                   <div>
-                    <label className="block text-sm mb-1 uppercase">VALOR COTIZACIÓN *</label>
+                    <label className="block text-sm mb-1 uppercase">
+                      VALOR COTIZACIÓN *
+                    </label>
                     <input
                       type="number"
                       min={0}
                       step="1"
                       className="w-full rounded px-3 py-2 text-gray-100"
-                      style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
                       value={editQuoteValue}
                       onChange={(e) => setEditQuoteValue(e.target.value)}
                       placeholder="0"
@@ -895,12 +1122,19 @@ export default function WorksPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm mb-1 uppercase">¿ABONO?</label>
+                    <label className="block text-sm mb-1 uppercase">
+                      ¿ABONO?
+                    </label>
                     <select
                       className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                      style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
                       value={editHasDeposit}
-                      onChange={(e) => setEditHasDeposit(e.target.value as "YES" | "NO")}
+                      onChange={(e) =>
+                        setEditHasDeposit(e.target.value as "YES" | "NO")
+                      }
                     >
                       <option value="NO">NO</option>
                       <option value="YES">SÍ</option>
@@ -909,13 +1143,18 @@ export default function WorksPage() {
 
                   {editHasDeposit === "YES" && (
                     <div className="md:col-span-3">
-                      <label className="block text-sm mb-1 uppercase">VALOR ABONO</label>
+                      <label className="block text-sm mb-1 uppercase">
+                        VALOR ABONO
+                      </label>
                       <input
                         type="number"
                         min={0}
                         step="1"
                         className="w-full rounded px-3 py-2 text-gray-100"
-                        style={{ backgroundColor: COLORS.input, border: `1px solid ${COLORS.border}` }}
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
                         value={editDepositValue}
                         onChange={(e) => setEditDepositValue(e.target.value)}
                         placeholder="0"
@@ -928,7 +1167,8 @@ export default function WorksPage() {
 
             {editHasQuote === "YES" && (
               <div className="text-xs text-gray-300">
-                Saldo = Cotización – Abono. Se mostrará en la tarjeta y se usará al “FINALIZAR”.
+                Saldo = Cotización – Abono. Se mostrará en la tarjeta y se usará
+                al “FINALIZAR”.
               </div>
             )}
 
@@ -947,8 +1187,10 @@ export default function WorksPage() {
                 className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
                 style={{
                   color: "#001014",
-                  background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={saveEditQuoteDeposit}
               >
