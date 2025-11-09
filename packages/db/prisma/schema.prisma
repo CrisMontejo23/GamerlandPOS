@@ -6,20 +6,22 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // si alguna vez usas pooling (pgbouncer) en DATABASE_URL, Prisma migrará por DIRECT_URL
+  directUrl = env("DIRECT_URL") // opcional
 }
 
 model Product {
-  id        Int             @id @default(autoincrement())
-  sku       String          @unique
-  barcode   String?         @unique
+  id        Int              @id @default(autoincrement())
+  sku       String           @unique
+  barcode   String?          @unique
   name      String
   category  String?
-  cost      Decimal         @default(0)
-  price     Decimal         @default(0)
-  taxRate   Decimal         @default(0)
-  minStock  Int             @default(0)
-  active    Boolean         @default(true)
-  createdAt DateTime        @default(now())
+  cost      Decimal          @db.Decimal(12, 2) @default(0)
+  price     Decimal          @db.Decimal(12, 2) @default(0)
+  taxRate   Decimal          @db.Decimal(5, 2)  @default(0)
+  minStock  Int              @default(0)
+  active    Boolean          @default(true)
+  createdAt DateTime         @default(now())
   SaleItem  SaleItem[]
   StockMove StockMovement[]
 
@@ -33,10 +35,10 @@ model Sale {
   userId    Int?
   storeId   Int?
   customer  String?
-  subtotal  Decimal    @default(0)
-  tax       Decimal    @default(0)
-  discount  Decimal    @default(0)
-  total     Decimal    @default(0)
+  subtotal  Decimal    @db.Decimal(12, 2) @default(0)
+  tax       Decimal    @db.Decimal(12, 2) @default(0)
+  discount  Decimal    @db.Decimal(12, 2) @default(0)
+  total     Decimal    @db.Decimal(12, 2) @default(0)
   status    String     @default("paid") // paid|void|return
   createdAt DateTime   @default(now())
   items     SaleItem[]
@@ -50,10 +52,10 @@ model SaleItem {
   product   Product @relation(fields: [productId], references: [id])
   productId Int
   qty       Int
-  unitPrice Decimal @default(0)
-  taxRate   Decimal @default(0)
-  discount  Decimal @default(0)
-  total     Decimal @default(0)
+  unitPrice Decimal @db.Decimal(12, 2) @default(0)
+  taxRate   Decimal @db.Decimal(5, 2)  @default(0)
+  discount  Decimal @db.Decimal(12, 2) @default(0)
+  total     Decimal @db.Decimal(12, 2) @default(0)
 }
 
 model Payment {
@@ -61,7 +63,7 @@ model Payment {
   sale      Sale     @relation(fields: [saleId], references: [id])
   saleId    Int
   method    String   // EFECTIVO | QR_LLAVE | DATAFONO
-  amount    Decimal  @default(0)
+  amount    Decimal  @db.Decimal(12, 2) @default(0)
   reference String?
   createdAt DateTime @default(now())
 }
@@ -72,7 +74,7 @@ model StockMovement {
   productId Int
   type      String   // in|out|adj|return
   qty       Int
-  unitCost  Decimal  @default(0)
+  unitCost  Decimal  @db.Decimal(12, 2) @default(0)
   reference String?
   userId    Int?
   storeId   Int?
@@ -88,7 +90,7 @@ model Expense {
   userId        Int?
   category      String
   description   String?
-  amount        Decimal  @default(0)
+  amount        Decimal  @db.Decimal(12, 2) @default(0)
   paymentMethod String?  // EFECTIVO | QR_LLAVE | DATAFONO
   createdAt     DateTime @default(now())
 
@@ -109,10 +111,10 @@ enum Role {
 }
 
 enum WorkStatus {
-  RECEIVED   // Recibido
-  IN_PROGRESS // En proceso
-  FINISHED   // Finalizado (listo para entrega)
-  DELIVERED  // Entregado
+  RECEIVED     // Recibido
+  IN_PROGRESS  // En proceso
+  FINISHED     // Finalizado (listo para entrega)
+  DELIVERED    // Entregado
 }
 
 enum WorkLocation {
@@ -121,21 +123,36 @@ enum WorkLocation {
 }
 
 model WorkOrder {
-  id            Int          @id @default(autoincrement())
-  code          String       @unique            // WK-00001
-  item          String                           // qué se recibe
-  description   String                           // descripción del caso
+  id            Int           @id @default(autoincrement())
+  code          String        @unique                // WK-00001
+  item          String                               // qué se recibe
+  description   String                               // descripción del caso
   customerName  String
   customerPhone String
-  reviewPaid    Boolean      @default(false)     // pagó $20.000 revisión
-  status        WorkStatus   @default(RECEIVED)
-  location      WorkLocation @default(LOCAL)
-  quote         Decimal?                          // cotización (opcional)
-  total         Decimal?                          // total final (opcional)
-  notes         String?                           // notas internas
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  reviewPaid    Boolean       @default(false)        // pagó $20.000 revisión
+  status        WorkStatus    @default(RECEIVED)
+  location      WorkLocation  @default(LOCAL)
+  quote         Decimal?      @db.Decimal(12, 2)     // cotización (opcional)
+  deposit       Decimal?      @db.Decimal(12, 2)     // acumulado de abonos (si decides mantenerlo)
+  total         Decimal?      @db.Decimal(12, 2)     // total final (opcional)
+  notes         String?                             // notas internas
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  payments      WorkOrderPayment[]                   // 👈 inversa para pagos
 
   @@index([status, location, createdAt])
   @@index([code])
+}
+
+model WorkOrderPayment {
+  id          Int        @id @default(autoincrement())
+  workOrder   WorkOrder  @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrderId Int
+  amount      Decimal    @db.Decimal(12, 2)         // > 0 pago del cliente (abono o liquidación)
+  method      String?                                // CASH/CARD/NEQUI/etc
+  note        String?
+  createdAt   DateTime   @default(now())
+  createdBy   String?                                // usuario que registró
+
+  @@index([workOrderId, createdAt])
 }

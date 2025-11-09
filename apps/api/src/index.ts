@@ -1260,6 +1260,13 @@ const workUpdateSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
+const workPaymentSchema = z.object({
+  amount: z.coerce.number().positive("Monto inválido"),
+  method: z.enum(["EFECTIVO", "QR_LLAVE", "DATAFONO"]).default("EFECTIVO"),
+  note: z.string().optional(),
+  createdBy: z.string().optional(),
+});
+
 // ==================== WORK ORDERS (EMPLOYEE puede gestionar, solo ADMIN elimina) ====================
 app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const q = String(req.query.q || "").trim();
@@ -1283,13 +1290,114 @@ app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
     where.location = location;
   }
 
+  // Traemos pagos para poder sumar en el servidor
   const rows = await prisma.workOrder.findMany({
     where,
     orderBy: { createdAt: "desc" },
     take: 200,
+    include: {
+      payments: { select: { amount: true } },
+    },
   });
-  res.json(rows);
+
+  const out = rows.map((r) => {
+    const deposit = (r.payments || []).reduce(
+      (a, p) => a + Number(p.amount || 0),
+      0
+    );
+    // opcional: si quieres mantener sincronizado el campo deposit en WorkOrder
+    return {
+      id: r.id,
+      code: r.code,
+      item: r.item,
+      description: r.description,
+      customerName: r.customerName,
+      customerPhone: r.customerPhone,
+      reviewPaid: r.reviewPaid,
+      status: r.status,
+      location: r.location,
+      quote: r.quote,
+      total: r.total,
+      notes: r.notes,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      // 👇 campo calculado que el front usará directamente
+      deposit,
+    };
+  });
+
+  res.json(out);
 });
+
+// Registrar abono (pago) a una orden
+app.post("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  const parsed = workPaymentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+  }
+  const { amount, method, note, createdBy } = parsed.data;
+
+  // Verificar orden
+  const wo = await prisma.workOrder.findUnique({ where: { id } });
+  if (!wo) return res.status(404).json({ error: "Orden no encontrada" });
+
+  // Si hay cotización, no permitir abonar más que el saldo
+  if (wo.quote != null) {
+    const agg = await prisma.workOrderPayment.aggregate({
+      where: { workOrderId: id },
+      _sum: { amount: true },
+    });
+    const paid = Number(agg._sum.amount ?? 0);
+    const saldo = Math.max(Number(wo.quote) - paid, 0);
+    if (amount > saldo + 0.0001) {
+      return res.status(400).json({ error: "El abono excede el saldo pendiente" });
+    }
+  }
+
+  // Crear pago
+  const pay = await prisma.workOrderPayment.create({
+    data: {
+      workOrderId: id,
+      amount,
+      method,
+      note: note ? note.toUpperCase() : undefined,
+      createdBy: createdBy ? createdBy.toUpperCase() : undefined,
+    },
+  });
+
+  // (Opcional) sincronizar WorkOrder.deposit acumulado
+  try {
+    const agg2 = await prisma.workOrderPayment.aggregate({
+      where: { workOrderId: id },
+      _sum: { amount: true },
+    });
+    await prisma.workOrder.update({
+      where: { id },
+      data: { deposit: Number(agg2._sum.amount ?? 0) },
+    });
+  } catch { /* noop */ }
+
+  res.status(201).json(pay);
+});
+
+// Listar abonos de una orden (útil si luego quieres “ver historial de pagos”)
+app.get("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  const exists = await prisma.workOrder.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) return res.status(404).json({ error: "Orden no encontrada" });
+
+  const pays = await prisma.workOrderPayment.findMany({
+    where: { workOrderId: id },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(pays);
+});
+
 
 app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const parsed = workCreateSchema.safeParse(req.body);

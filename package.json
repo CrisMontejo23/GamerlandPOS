@@ -7,17 +7,22 @@
     "dev:api": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
     "dev": "concurrently -n API,WEB -c blue,green \"pnpm dev:api\" \"pnpm dev:web\"",
-    "db:generate": "pnpm --filter db prisma generate",
-    "db:migrate": "pnpm --filter db prisma migrate dev"
+    "prisma:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
+    "prisma:migrate:dev": "prisma migrate dev --schema packages/db/prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema packages/db/prisma/schema.prisma",
+    "postinstall": "prisma generate --schema packages/db/prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.20.0",
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "prisma": "5.22.0"
   },
   "dependencies": {
+    "@prisma/client": "5.22.0",
     "dom-to-image-more": "^3.7.2",
     "html2canvas": "^1.4.1",
     "recharts": "^3.3.0"

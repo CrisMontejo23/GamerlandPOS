@@ -1,11 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { apiFetch } from "../lib/api";
 
-type Role = "ADMIN" | "EMPLOYEE";
 type WorkStatus = "RECEIVED" | "IN_PROGRESS" | "FINISHED" | "DELIVERED";
 type WorkLocation = "LOCAL" | "BOGOTA";
+type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 
 type WorkOrder = {
   id: number;
@@ -16,10 +16,9 @@ type WorkOrder = {
   customerPhone: string;
   status: WorkStatus;
   location: WorkLocation;
-  quote?: number | null; // BACKEND
-  total?: number | null; // BACKEND
-  // 'deposit' NO existe en backend. Lo usamos solo en UI (inyectado).
-  deposit?: number | null; // UI ONLY
+  quote?: number | null; // BD
+  total?: number | null; // BD
+  deposit?: number | null; // 👈 viene calculado desde el backend
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -63,13 +62,7 @@ const toNum = (v: unknown): number | null => {
 };
 const fmt = (d: string | Date) => new Date(d).toLocaleString();
 
-// Lo que llega del backend (no tiene deposit/advance)
-type AnyRow = Partial<WorkOrder> & {
-  id: number;
-  code: string;
-  quotation?: unknown; // alias razonable si tu API ya lo expone
-};
-
+type AnyRow = Partial<WorkOrder> & { id: number; code: string };
 function normalizeRows(rows: AnyRow[]): WorkOrder[] {
   return rows.map((r) => ({
     id: r.id,
@@ -80,9 +73,9 @@ function normalizeRows(rows: AnyRow[]): WorkOrder[] {
     customerPhone: r.customerPhone ?? "",
     status: (r.status ?? "RECEIVED") as WorkStatus,
     location: (r.location ?? "LOCAL") as WorkLocation,
-    quote: toNum(r.quote ?? r.quotation),
+    quote: toNum(r.quote),
     total: toNum(r.total),
-    // deposit NO viene del backend
+    deposit: toNum(r.deposit ?? 0), // 👈 del backend
     notes: r.notes ?? null,
     createdAt: r.createdAt ?? new Date().toISOString(),
     updatedAt: r.updatedAt ?? new Date().toISOString(),
@@ -98,14 +91,12 @@ type Patch = {
   status?: WorkStatus;
   location?: WorkLocation;
   total?: number | null;
-
-  // El backend solo entiende 'quote' (o 'quotation' si tu endpoint lo mapea).
   quote?: number | null;
   quotation?: number | null;
 };
 
 export default function WorksPage() {
-  const { role, ready } = useAuth();
+  const { role, ready, username } = useAuth();
   const canDelete = role === "ADMIN";
 
   // Filtros
@@ -118,9 +109,6 @@ export default function WorksPage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  // Sidecar de abonos (solo front)
-  const [deposits, setDeposits] = useState<Record<number, number>>({});
-
   // Crear
   const [openForm, setOpenForm] = useState(false);
   const [item, setItem] = useState("");
@@ -132,27 +120,23 @@ export default function WorksPage() {
   const [quoteValue, setQuoteValue] = useState<string>("");
   const [hasDeposit, setHasDeposit] = useState<"YES" | "NO">("NO");
   const [depositValue, setDepositValue] = useState<string>("");
+  const [depositMethod, setDepositMethod] = useState<PayMethod>("EFECTIVO");
 
   // Finalizar (solo se usa cuando NO hay cotización)
   const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [finishAmount, setFinishAmount] = useState<string>("");
   const [finishTarget, setFinishTarget] = useState<WorkOrder | null>(null);
 
-  // Editar COT/ABONO (abono solo front)
+  // Editar COT/ABONO (abono persistente)
   const [editQDOpen, setEditQDOpen] = useState(false);
   const [editQDTarget, setEditQDTarget] = useState<WorkOrder | null>(null);
   const [editHasQuote, setEditHasQuote] = useState<"YES" | "NO">("NO");
   const [editQuoteValue, setEditQuoteValue] = useState<string>("");
   const [editHasDeposit, setEditHasDeposit] = useState<"YES" | "NO">("NO");
   const [editDepositValue, setEditDepositValue] = useState<string>("");
-
-  // Helpers sidecar
-  const getDeposit = (id: number) => deposits[id] ?? 0;
-
-  const rowsWithDeposits = useMemo(() => {
-    // inyecta el abono local a cada row
-    return rows.map((r) => ({ ...r, deposit: getDeposit(r.id) }));
-  }, [rows, deposits]);
+  const [editDepositMethod, setEditDepositMethod] =
+    useState<PayMethod>("EFECTIVO");
+  const [editDepositNote, setEditDepositNote] = useState<string>("");
 
   function resetForm() {
     setItem("");
@@ -164,6 +148,7 @@ export default function WorksPage() {
     setQuoteValue("");
     setHasDeposit("NO");
     setDepositValue("");
+    setDepositMethod("EFECTIVO");
   }
   function resetEditQD() {
     setEditQDTarget(null);
@@ -171,6 +156,8 @@ export default function WorksPage() {
     setEditQuoteValue("");
     setEditHasDeposit("NO");
     setEditDepositValue("");
+    setEditDepositMethod("EFECTIVO");
+    setEditDepositNote("");
   }
 
   const load = async () => {
@@ -183,7 +170,7 @@ export default function WorksPage() {
 
       const r = await apiFetch(`/works?${p.toString()}`);
       const data = (await r.json()) as AnyRow[];
-      setRows(normalizeRows(data)); // deposit se inyecta vía rowsWithDeposits
+      setRows(normalizeRows(data));
     } catch {
       setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
       setTimeout(() => setMsg(""), 2200);
@@ -234,12 +221,6 @@ export default function WorksPage() {
     if (!confirm("¿ELIMINAR ESTE TRABAJO? ESTA ACCIÓN ES PERMANENTE.")) return;
     const r = await apiFetch(`/works/${id}`, { method: "DELETE" });
     if (r.ok) {
-      // limpia sidecar también
-      setDeposits((m) => {
-        const n = { ...m };
-        delete n[id];
-        return n;
-      });
       setMsg("TRABAJO ELIMINADO ✅");
       load();
     } else {
@@ -255,10 +236,8 @@ export default function WorksPage() {
   // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
   const openFinish = async (w: WorkOrder) => {
     if (w.quote != null) {
-      const saldo = Math.max(
-        Number(w.quote) - Number(getDeposit(w.id) || 0),
-        0
-      );
+      const dep = Number(w.deposit || 0);
+      const saldo = Math.max(Number(w.quote) - dep, 0);
       await update(w.id, { status: "FINISHED", total: saldo });
       setMsg("TRABAJO FINALIZADO ✅");
       return;
@@ -292,68 +271,77 @@ export default function WorksPage() {
     await update(w.id, { status: "DELIVERED" });
   };
 
-  // Editar/Agregar COT y ABONO (abono solo front)
+  // Editar/Agregar COT y ABONO (abono se persiste via /works/:id/payments)
   function openEditQuoteDeposit(w: WorkOrder) {
     setEditQDTarget(w);
-    const dep = getDeposit(w.id);
+
     if (w.quote != null && Number(w.quote) > 0) {
       setEditHasQuote("YES");
       setEditQuoteValue(String(Number(w.quote)));
-      setEditHasDeposit(dep > 0 ? "YES" : "NO");
-      setEditDepositValue(dep > 0 ? String(dep) : "");
     } else {
       setEditHasQuote("NO");
       setEditQuoteValue("");
-      setEditHasDeposit("NO");
-      setEditDepositValue("");
     }
+    // por defecto no obliga abono
+    setEditHasDeposit("NO");
+    setEditDepositValue("");
+    setEditDepositMethod("EFECTIVO");
+    setEditDepositNote("");
+
     setEditQDOpen(true);
   }
 
   async function saveEditQuoteDeposit() {
     if (!editQDTarget) return;
 
-    // Sin cotización -> limpiar quote en backend y abono local
+    // 1) Actualizar/limpiar cotización en WorkOrder
     if (editHasQuote === "NO") {
-      const ok = await update(editQDTarget.id, {
-        quotation: null,
-        quote: null,
-      });
-      if (ok !== false) {
-        setDeposits((m) => ({ ...m, [editQDTarget.id]: 0 }));
-        setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
-      }
+      const ok = await update(editQDTarget.id, { quotation: null, quote: null });
+      if (ok !== false) setMsg("COTIZACIÓN ACTUALIZADA ✅");
+      // si no hay cotización, ignoramos abono
       setEditQDOpen(false);
       resetEditQD();
       return;
     }
 
-    // Con cotización
     const q = Number(editQuoteValue);
     if (!Number.isFinite(q) || q <= 0) {
       setMsg("COTIZACIÓN INVÁLIDA");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
+    const ok = await update(editQDTarget.id, { quotation: q, quote: q });
+    if (ok === false) return;
 
-    let d = 0;
+    // 2) (Opcional) Registrar abono como pago real
     if (editHasDeposit === "YES") {
-      d = Number(editDepositValue);
+      const d = Number(editDepositValue);
       if (!Number.isFinite(d) || d < 0 || d > q) {
-        setMsg("ABONO INVÁLIDO (debe ser ≥ 0 y ≤ cotización)");
+        setMsg("ABONO INVÁLIDO (≥ 0 y ≤ cotización)");
         setTimeout(() => setMsg(""), 2200);
+        return;
+      }
+      const pr = await apiFetch(`/works/${editQDTarget.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount: d,
+          method: editDepositMethod,
+          note: editDepositNote,
+          createdBy: username || undefined,
+        }),
+      });
+      if (!pr.ok) {
+        const e = await pr.json().catch(() => ({}));
+        setMsg("ERROR AL REGISTRAR ABONO: " + UDATA(e?.error || ""));
+        setTimeout(() => setMsg(""), 2500);
         return;
       }
     }
 
-    const ok = await update(editQDTarget.id, { quotation: q, quote: q });
-    if (ok !== false) {
-      // Guardar abono solo en front
-      setDeposits((m) => ({ ...m, [editQDTarget.id]: d }));
-      setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
-    }
+    setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
     setEditQDOpen(false);
     resetEditQD();
+    load();
   }
 
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
@@ -458,11 +446,11 @@ export default function WorksPage() {
         {loading && (
           <div className="col-span-full text-gray-400">CARGANDO…</div>
         )}
-        {!loading && rowsWithDeposits.length === 0 && (
+        {!loading && rows.length === 0 && (
           <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>
         )}
 
-        {rowsWithDeposits.map((w) => {
+        {rows.map((w) => {
           const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
           const delivered = w.status === "DELIVERED";
           const dep = Number(w.deposit || 0);
@@ -514,7 +502,7 @@ export default function WorksPage() {
                       {Number(quote).toLocaleString("es-CO")}
                     </div>
                     <div>
-                      <b>ABONO:</b> ${Number(dep).toLocaleString("es-CO")}
+                      <b>ABONOS:</b> ${Number(dep).toLocaleString("es-CO")}
                     </div>
                     <div className="text-pink-300">
                       <b>SALDO:</b> ${saldo.toLocaleString("es-CO")}
@@ -566,19 +554,21 @@ export default function WorksPage() {
                     </button>
                   )}
 
+                  {/* Editar/Agregar Cotización/Abono */}
                   <button
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => openEditQuoteDeposit(w)}
                     title={
                       w.quote != null
-                        ? "Editar cotización/abono"
-                        : "Agregar cotización/abono"
+                        ? "Editar cotización / agregar abono"
+                        : "Agregar cotización"
                     }
                   >
                     {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
                   </button>
 
+                  {/* FINALIZAR */}
                   {w.status !== "FINISHED" && (
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
@@ -589,6 +579,7 @@ export default function WorksPage() {
                     </button>
                   )}
 
+                  {/* ENTREGADO */}
                   {w.status === "FINISHED" && (
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
@@ -599,6 +590,7 @@ export default function WorksPage() {
                     </button>
                   )}
 
+                  {/* Toggle ubicación */}
                   <button
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}
@@ -611,6 +603,7 @@ export default function WorksPage() {
                     {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
                   </button>
 
+                  {/* Eliminar (solo ADMIN) */}
                   {canDelete && (
                     <button
                       className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
@@ -741,24 +734,46 @@ export default function WorksPage() {
                     </div>
 
                     {hasDeposit === "YES" && (
-                      <div className="md:col-span-3">
-                        <label className="block text-sm mb-1 uppercase">
-                          VALOR ABONO
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step="1"
-                          className="w-full rounded px-3 py-2 text-gray-100"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          value={depositValue}
-                          onChange={(e) => setDepositValue(e.target.value)}
-                          placeholder="0"
-                        />
-                      </div>
+                      <>
+                        <div>
+                          <label className="block text-sm mb-1 uppercase">
+                            VALOR ABONO
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="1"
+                            className="w-full rounded px-3 py-2 text-gray-100"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            value={depositValue}
+                            onChange={(e) => setDepositValue(e.target.value)}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm mb-1 uppercase">
+                            MÉTODO PAGO
+                          </label>
+                          <select
+                            className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            value={depositMethod}
+                            onChange={(e) =>
+                              setDepositMethod(e.target.value as PayMethod)
+                            }
+                          >
+                            <option value="EFECTIVO">EFECTIVO</option>
+                            <option value="QR_LLAVE">QR_LLAVE</option>
+                            <option value="DATAFONO">DATAFONO</option>
+                          </select>
+                        </div>
+                      </>
                     )}
                   </>
                 )}
@@ -873,13 +888,13 @@ export default function WorksPage() {
                     }
                   }
 
+                  // Crear orden
                   const payload: Patch = {
                     item: UDATA(item),
                     description: UDATA(description),
                     customerName: UDATA(customerName),
                     customerPhone: UDATA(customerPhone),
                     location: newLocation,
-                    // Enviamos SOLO la cotización al backend
                     quotation: quoteNum,
                     quote: quoteNum,
                   };
@@ -890,16 +905,23 @@ export default function WorksPage() {
                   });
 
                   if (r.ok) {
-                    // intenta leer el row creado para guardar abono localmente
-                    const created = await r.json().catch(() => null);
-                    if (created && typeof created.id === "number") {
-                      if (depositNum > 0) {
-                        setDeposits((m) => ({
-                          ...m,
-                          [created.id]: depositNum,
-                        }));
-                      }
+                    const created = (await r.json().catch(() => null)) as
+                      | { id: number }
+                      | null;
+
+                    // Si hay abono inicial, registrar pago real
+                    if (created && typeof created.id === "number" && depositNum > 0) {
+                      await apiFetch(`/works/${created.id}/payments`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          amount: depositNum,
+                          method: depositMethod,
+                          note: "ABONO INICIAL",
+                          createdBy: username || undefined,
+                        }),
+                      }).catch(() => null);
                     }
+
                     setMsg("TRABAJO CREADO ✅");
                     resetForm();
                     setOpenForm(false);
@@ -1067,24 +1089,61 @@ export default function WorksPage() {
                   </div>
 
                   {editHasDeposit === "YES" && (
-                    <div className="md:col-span-3">
-                      <label className="block text-sm mb-1 uppercase">
-                        VALOR ABONO
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        step="1"
-                        className="w-full rounded px-3 py-2 text-gray-100"
-                        style={{
-                          backgroundColor: COLORS.input,
-                          border: `1px solid ${COLORS.border}`,
-                        }}
-                        value={editDepositValue}
-                        onChange={(e) => setEditDepositValue(e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
+                    <>
+                      <div className="md:col-span-3">
+                        <label className="block text-sm mb-1 uppercase">
+                          VALOR ABONO
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="1"
+                          className="w-full rounded px-3 py-2 text-gray-100"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={editDepositValue}
+                          onChange={(e) => setEditDepositValue(e.target.value)}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm mb-1 uppercase">
+                          MÉTODO PAGO
+                        </label>
+                        <select
+                          className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={editDepositMethod}
+                          onChange={(e) =>
+                            setEditDepositMethod(e.target.value as PayMethod)
+                          }
+                        >
+                          <option value="EFECTIVO">EFECTIVO</option>
+                          <option value="QR_LLAVE">QR_LLAVE</option>
+                          <option value="DATAFONO">DATAFONO</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm mb-1 uppercase">
+                          NOTA (opcional)
+                        </label>
+                        <input
+                          className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={editDepositNote}
+                          onChange={(e) => setEditDepositNote(e.target.value)}
+                          placeholder="ABONO A COTIZACIÓN / ACEPTACIÓN / ..."
+                        />
+                      </div>
+                    </>
                   )}
                 </>
               )}
@@ -1092,8 +1151,7 @@ export default function WorksPage() {
 
             {editHasQuote === "YES" && (
               <div className="text-xs text-gray-300">
-                Saldo = Cotización – Abono. Se mostrará en la tarjeta y se usará
-                al “FINALIZAR”.
+                Saldo = Cotización – Abonos (pagos). Se usará al “FINALIZAR”.
               </div>
             )}
 
