@@ -199,6 +199,7 @@ type ExpensePreset =
   | "TRANSACCION - CUADRE DE CAJA"
   | "VIAJE A BOGOTÁ"
   | "PAGO TRABAJADORES"
+  | "ARREGLOS"
   | "OTRO";
 
 type Period = "day" | "month" | "year";
@@ -481,6 +482,7 @@ export default function ExpensesPage() {
     ...(isAdmin ? (["TRANSACCION - CUADRE DE CAJA"] as const) : []),
     "VIAJE A BOGOTÁ",
     "PAGO TRABAJADORES",
+    "ARREGLOS",
     "OTRO",
   ];
 

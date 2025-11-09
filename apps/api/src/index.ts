@@ -877,10 +877,8 @@ app.get("/expenses/presets", requireRole("EMPLOYEE"), (_req, res) => {
 const expenseSchema = z.object({
   description: z.string().min(1, "Descripción requerida"),
   amount: z.coerce.number().positive("Monto inválido"),
-  paymentMethod: z.enum(PaymentMethods, {
-    required_error: "Método de pago requerido",
-  }),
-  category: z.enum(ExpenseCategories).default("INTERNO"),
+  paymentMethod: z.enum(["EFECTIVO", "QR_LLAVE", "DATAFONO"]),
+  category: z.enum(ExpenseCategories), // "INTERNO" | "EXTERNO"
 });
 
 app.post("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
@@ -1022,7 +1020,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
 
   const gastos_total = expenses.reduce((a, r) => a + Number(r.amount), 0);
   const gastos_operativos = expenses
-    .filter((e) => String(e.category ?? "").toUpperCase() !== "MERCANCIA") // si migras categorías, puedes ajustar lógica
+    .filter((e) => String(e.category ?? "").toUpperCase() !== "INTERNO")
     .reduce((a, r) => a + Number(r.amount), 0);
 
   const ventas = sum("total");
