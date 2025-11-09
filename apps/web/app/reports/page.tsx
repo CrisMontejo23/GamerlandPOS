@@ -75,7 +75,7 @@ type ExpenseRow = {
   description?: string | null;
   amount: number | string;
   paymentMethod?: string | null;
-  category?: string | null;
+  category?: string | null; // "INTERNO" | "EXTERNO" | otros legacy (LOCAL, MERCANCIA, etc.)
   createdAt: string;
 };
 
@@ -84,7 +84,7 @@ type CashboxAPI = {
   efectivo: number;
   qr_llave?: number;
   datafono?: number;
-  total: number; // total en caja (puede considerar sólo efectivo o todos, según tu backend)
+  total: number;
   lastUpdated?: string;
 };
 
@@ -112,7 +112,6 @@ const CHART_COLORS = ["#00FFFF", "#FF00FF", "#A5FF00", "#FFD700"];
 const toCOP = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
 const pct = (num: number, den: number) =>
   den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "0%";
-
 function todayLocalISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -156,15 +155,20 @@ function profitByRuleFromSale(s: SaleLine) {
   if (name === "REFACIL - PAGO CUOTA PAYJOY") return 250;
   if (name === "REFACIL - GAME PASS") return Math.round(total * 0.03);
   if (
-    [
-      "REFACIL - CARGA DE CUENTA",
-      "TRANSACCION",
-      "TRANSACCION DATAFONO",
-    ].includes(name)
+    ["REFACIL - CARGA DE CUENTA", "TRANSACCION", "TRANSACCION DATAFONO"].includes(
+      name
+    )
   )
     return 0;
 
   return Math.round(total - costo);
+}
+
+/** Suma gastos operativos EXTERNOS (excluye todo lo que sea category === "INTERNO") */
+function sumOperativeExpensesExcludingInternos(list: ExpenseRow[]) {
+  return (list || [])
+    .filter((e) => String(e.category || "").toUpperCase() !== "INTERNO")
+    .reduce((a, e) => a + Number(e.amount || 0), 0);
 }
 
 export default function ReportsPage() {
@@ -175,17 +179,24 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // Resúmenes base (del backend)
   const [sumDay, setSumDay] = useState<Summary | null>(null);
   const [payDay, setPayDay] = useState<PaymentsBreakdown | null>(null);
   const [sumMonth, setSumMonth] = useState<Summary | null>(null);
   const [sumYear, setSumYear] = useState<Summary | null>(null);
   const [papTotal, setPapTotal] = useState<number>(0);
 
+  // Utilidad por reglas (front) — día/mes/año
   const [utilDayByRule, setUtilDayByRule] = useState<number>(0);
   const [utilMonthByRule, setUtilMonthByRule] = useState<number>(0);
   const [utilYearByRule, setUtilYearByRule] = useState<number>(0);
 
-  /* ===== NUEVO: Estado de CAJA ===== */
+  // NUEVO: gastos operativos recalculados (excluyendo INTERNO) — día/mes/año
+  const [opsDay, setOpsDay] = useState<number>(0);
+  const [opsMonth, setOpsMonth] = useState<number>(0);
+  const [opsYear, setOpsYear] = useState<number>(0);
+
+  /* ===== Estado de CAJA ===== */
   const [cashbox, setCashbox] = useState<CashboxState>({
     ok: false,
     source: "fallback",
@@ -217,38 +228,67 @@ export default function ReportsPage() {
       const mFrom = monthStartISO(to);
       const yFrom = yearStartISO(to);
 
-      const [r1, r2, r3, r4, r5, rLinesDay, rLinesMonth, rLinesYear] =
-        await Promise.all([
-          apiFetch(`/reports/summary?from=${from}&to=${to}`), // day summary
-          apiFetch(`/reports/payments?from=${from}&to=${to}`),
-          apiFetch(`/reports/summary?from=${mFrom}&to=${to}`), // month summary
-          apiFetch(`/reports/summary?from=${yFrom}&to=${to}`), // year summary
-          apiFetch(`/reports/papeleria?from=${from}&to=${to}`),
-          apiFetch(`/reports/sales-lines?from=${from}&to=${to}`), // day lines
-          apiFetch(`/reports/sales-lines?from=${mFrom}&to=${to}`), // month lines
-          apiFetch(`/reports/sales-lines?from=${yFrom}&to=${to}`), // year lines
-        ]);
+      // Pedimos resumen + pagos + papelería + líneas de venta + (NUEVO) gastos
+      const [
+        rSumDay,
+        rPayDay,
+        rSumMonth,
+        rSumYear,
+        rPapDay,
+        rLinesDay,
+        rLinesMonth,
+        rLinesYear,
+        rExpDay,
+        rExpMonth,
+        rExpYear,
+      ] = await Promise.all([
+        apiFetch(`/reports/summary?from=${from}&to=${to}`),
+        apiFetch(`/reports/payments?from=${from}&to=${to}`),
+        apiFetch(`/reports/summary?from=${mFrom}&to=${to}`),
+        apiFetch(`/reports/summary?from=${yFrom}&to=${to}`),
+        apiFetch(`/reports/papeleria?from=${from}&to=${to}`),
+        apiFetch(`/reports/sales-lines?from=${from}&to=${to}`),
+        apiFetch(`/reports/sales-lines?from=${mFrom}&to=${to}`),
+        apiFetch(`/reports/sales-lines?from=${yFrom}&to=${to}`),
+        apiFetch(`/expenses?from=${from}&to=${to}`),
+        apiFetch(`/expenses?from=${mFrom}&to=${to}`),
+        apiFetch(`/expenses?from=${yFrom}&to=${to}`),
+      ]);
 
-      const [d1, d2, d3, d4, d5, linesDay, linesMonth, linesYear] =
-        await Promise.all([
-          r1.json(),
-          r2.json(),
-          r3.json(),
-          r4.json(),
-          r5.json(),
-          rLinesDay.json() as Promise<SaleLine[]>,
-          rLinesMonth.json() as Promise<SaleLine[]>,
-          rLinesYear.json() as Promise<SaleLine[]>,
-        ]);
+      const [
+        dSumDay,
+        dPayDay,
+        dSumMonth,
+        dSumYear,
+        dPap,
+        linesDay,
+        linesMonth,
+        linesYear,
+        expDay,
+        expMonth,
+        expYear,
+      ] = await Promise.all([
+        rSumDay.json() as Promise<Summary>,
+        rPayDay.json() as Promise<PaymentsBreakdown>,
+        rSumMonth.json() as Promise<Summary>,
+        rSumYear.json() as Promise<Summary>,
+        rPapDay.json() as Promise<{ total: number }>,
+        rLinesDay.json() as Promise<SaleLine[]>,
+        rLinesMonth.json() as Promise<SaleLine[]>,
+        rLinesYear.json() as Promise<SaleLine[]>,
+        rExpDay.json() as Promise<ExpenseRow[]>,
+        rExpMonth.json() as Promise<ExpenseRow[]>,
+        rExpYear.json() as Promise<ExpenseRow[]>,
+      ]);
 
-      // Estados base
-      setSumDay(d1);
-      setPayDay(d2);
-      setSumMonth(d3);
-      setSumYear(d4);
-      setPapTotal(Number(d5?.total || 0));
+      // Estados base recibidos del backend
+      setSumDay(dSumDay);
+      setPayDay(dPayDay);
+      setSumMonth(dSumMonth);
+      setSumYear(dSumYear);
+      setPapTotal(Number(dPap?.total || 0));
 
-      // Utilidades por regla (Excel) para cada periodo
+      // Utilidades por regla (Excel) — siempre desde sales-lines
       const uDay = (linesDay || []).reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
@@ -261,10 +301,17 @@ export default function ReportsPage() {
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
-
       setUtilDayByRule(uDay);
       setUtilMonthByRule(uMonth);
       setUtilYearByRule(uYear);
+
+      // NUEVO: recalcular gastos operativos EXTERNOS excluyendo INTERNO (incluye ARREGLOS=INTERNO)
+      const gDay = sumOperativeExpensesExcludingInternos(expDay || []);
+      const gMonth = sumOperativeExpensesExcludingInternos(expMonth || []);
+      const gYear = sumOperativeExpensesExcludingInternos(expYear || []);
+      setOpsDay(gDay);
+      setOpsMonth(gMonth);
+      setOpsYear(gYear);
 
       setMsg("");
     } catch {
@@ -279,10 +326,9 @@ export default function ReportsPage() {
     load();
   }, [load]);
 
-  /* ===== NUEVO: Cargar CAJA (si hay API /reports/cashbox úsala; si no, fallback a payments global) ===== */
+  /* ===== Cargar CAJA ===== */
   const loadCashbox = useCallback(async () => {
     try {
-      // 1) Intento API dedicada
       const r = await apiFetch(`/reports/cashbox`);
       if (r.ok) {
         const d: CashboxAPI = await r.json();
@@ -298,9 +344,8 @@ export default function ReportsPage() {
         return;
       }
     } catch {
-      /* cae a fallback */
+      /* fallback */
     }
-    // 2) Fallback: calcula caja con NETO por método usando /reports/payments (global)
     try {
       const r2 = await apiFetch(
         `/reports/payments?from=2000-01-01&to=2099-12-31`
@@ -348,15 +393,15 @@ export default function ReportsPage() {
 
   useEffect(() => {
     loadCashbox();
-    const t = setInterval(loadCashbox, 60_000); // auto-refresh cada 60s
+    const t = setInterval(loadCashbox, 60_000);
     return () => clearInterval(t);
   }, [loadCashbox]);
 
-  /* Charts (UI) */
+  /* Charts (UI) — usar métricas recalculadas */
   const dayChartData = [
     { name: "Ventas", value: sumDay?.ventas || 0 },
-    { name: "Gastos (Op.)", value: sumDay?.gastos_operativos || 0 },
-    { name: "Utilidad", value: utilDayByRule || 0 }, // <— aquí
+    { name: "Gastos (Op.)", value: opsDay || 0 }, // NUEVO: gastos operativos excluyendo INTERNO
+    { name: "Utilidad", value: utilDayByRule || 0 }, // utilidad por regla
   ];
 
   const payForChart = payDay?.neto ?? {
@@ -381,18 +426,18 @@ export default function ReportsPage() {
     {
       name: "Mes",
       Ventas: sumMonth?.ventas || 0,
-      Gastos: sumMonth?.gastos_operativos || 0,
-      Utilidad: utilMonthByRule || 0, // <—
+      Gastos: opsMonth || 0, // NUEVO
+      Utilidad: utilMonthByRule || 0, // NUEVO
     },
     {
       name: "Año",
       Ventas: sumYear?.ventas || 0,
-      Gastos: sumYear?.gastos_operativos || 0,
-      Utilidad: utilYearByRule || 0, // <—
+      Gastos: opsYear || 0, // NUEVO
+      Utilidad: utilYearByRule || 0, // NUEVO
     },
   ];
 
-  /* ===== Exportar PDF ===== (sin cambios) */
+  /* ===== Exportar PDF ===== */
   const exportReportPdf = async () => {
     try {
       const [salesRes, expRes, sumRes, payRes, papRes] = await Promise.all([
@@ -410,15 +455,18 @@ export default function ReportsPage() {
         papRes.json() as Promise<{ total: number }>,
       ]);
 
+      // NUEVO: recalcular métricas para PDF coherentes con la UI
+      const utilByRuleForPdf = (sales || []).reduce(
+        (a, s) => a + profitByRuleFromSale(s),
+        0
+      );
+      const gastosOperativosPdf =
+        sumOperativeExpensesExcludingInternos(expenses);
+
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
       const marginX = 40;
-
-      const utilByRuleForPdf = sales.reduce(
-        (a, s) => a + profitByRuleFromSale(s),
-        0
-      );
 
       pdf.setFillColor(20, 22, 58);
       pdf.rect(0, 0, pageW, 110, "F");
@@ -452,9 +500,12 @@ export default function ReportsPage() {
         body: [
           ["Ventas totales", toCOP(summary?.ventas || 0)],
           ["Costo vendido", toCOP(summary?.costo_vendido || 0)],
+          // NUEVO: usamos gastos operativos recalculados (excluye INTERNO)
+          ["Gastos (operativos)", toCOP(gastosOperativosPdf || 0)],
+          // dejamos el total de gastos tal cual (si quieres, cámbialo a otro cálculo)
           ["Gastos (total)", toCOP(summary?.gastos_total || 0)],
-          ["Gastos operativos", toCOP(summary?.gastos_operativos || 0)],
-          ["Utilidad", toCOP(utilByRuleForPdf || 0)],
+          // NUEVO: utilidad por regla (coherente con dashboard)
+          ["Utilidad (reglas)", toCOP(utilByRuleForPdf || 0)],
           ["PAPELERÍA (periodo)", toCOP(Number(pap?.total || 0))],
         ],
         theme: "grid",
@@ -500,7 +551,8 @@ export default function ReportsPage() {
       const neto = {
         EFECTIVO: payments?.neto?.EFECTIVO ?? bruto.EFECTIVO - gastos.EFECTIVO,
         QR_LLAVE: payments?.neto?.QR_LLAVE ?? bruto.QR_LLAVE - gastos.QR_LLAVE,
-        DATAFONO: payments?.neto?.DATAFONO ?? bruto.DATAFONO - gastos.DATAFONO,
+        DATAFONO:
+          payments?.neto?.DATAFONO ?? bruto.DATAFONO - gastos.DATAFONO,
         total: payments?.neto?.total ?? bruto.total - gastos.total,
       };
 
@@ -775,7 +827,7 @@ export default function ReportsPage() {
 
       {/* Contenedor del dashboard */}
       <div ref={dashRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* ===== NUEVO: CAJA (actual) ===== */}
+        {/* CAJA (actual) */}
         <Card title="CAJA (actual)">
           <div className="flex items-end justify-between">
             <div>
@@ -827,18 +879,18 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Resumen diario */}
+        {/* Resumen */}
         <Card title={resumenTitle}>
           <ChartBar data={dayChartData} />
           <div className="space-y-1 mt-2">
             <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
-            <KV k="Gastos" v={toCOP(sumDay?.gastos_operativos || 0)} />
+            <KV k="Gastos (Operativos)" v={toCOP(opsDay || 0)} />
             <KV k="Utilidad" v={toCOP(utilDayByRule || 0)} strong />
-            <KV k="Papeleria" v={toCOP(papTotal || 0)} />
+            <KV k="Papelería" v={toCOP(papTotal || 0)} />
           </div>
         </Card>
 
-        {/* Caja por método de pago (NETO) */}
+        {/* Caja por método (NETO) */}
         <Card title={cajaPayTitle}>
           <ChartPie data={payChartData} />
           <div className="space-y-1 mt-2">
@@ -854,10 +906,25 @@ export default function ReportsPage() {
 
         {/* Comparativa mes / año */}
         <Card title="Comparativa mensual vs anual">
-          <ChartLine data={monthlyComparison} />
+          <ChartLine
+            data={[
+              {
+                name: "Mes",
+                Ventas: sumMonth?.ventas || 0,
+                Gastos: opsMonth || 0,
+                Utilidad: utilMonthByRule || 0,
+              },
+              {
+                name: "Año",
+                Ventas: sumYear?.ventas || 0,
+                Gastos: opsYear || 0,
+                Utilidad: utilYearByRule || 0,
+              },
+            ]}
+          />
         </Card>
 
-        {/* Indicadores clave */}
+        {/* Indicadores */}
         <Card title="Indicadores de eficiencia">
           <KV
             k="% Utilidad / Ventas (mes)"
@@ -865,7 +932,7 @@ export default function ReportsPage() {
           />
           <KV
             k="% Gastos / Ventas (mes)"
-            v={pct(sumMonth?.gastos_operativos || 0, sumMonth?.ventas || 0)}
+            v={pct(opsMonth || 0, sumMonth?.ventas || 0)}
           />
           <KV
             k="% Utilidad / Ventas (año)"
@@ -873,7 +940,7 @@ export default function ReportsPage() {
           />
           <KV
             k="% Gastos / Ventas (año)"
-            v={pct(sumYear?.gastos_operativos || 0, sumYear?.ventas || 0)}
+            v={pct(opsYear || 0, sumYear?.ventas || 0)}
           />
         </Card>
       </div>
@@ -902,6 +969,7 @@ function Card({
     </div>
   );
 }
+
 function KV({
   k,
   v,
@@ -918,6 +986,7 @@ function KV({
     </div>
   );
 }
+
 function MiniStat({
   label,
   value,
@@ -1000,13 +1069,6 @@ function ChartPie({ data }: { data: { name: string; value: number }[] }) {
   );
 }
 
-type ChartLineData = {
-  name: string;
-  Ventas: number;
-  Gastos: number;
-  Utilidad: number;
-};
-
 function ChartLine({
   data,
 }: {
@@ -1026,24 +1088,9 @@ function ChartLine({
           contentStyle={{ backgroundColor: "#1E1F4B", border: "none" }}
         />
         <Legend />
-        <Line
-          type="monotone"
-          dataKey="Ventas"
-          stroke="#00FFFF"
-          strokeWidth={2}
-        />
-        <Line
-          type="monotone"
-          dataKey="Gastos"
-          stroke="#FF00FF"
-          strokeWidth={2}
-        />
-        <Line
-          type="monotone"
-          dataKey="Utilidad"
-          stroke="#A5FF00"
-          strokeWidth={2}
-        />
+        <Line type="monotone" dataKey="Ventas" stroke="#00FFFF" strokeWidth={2} />
+        <Line type="monotone" dataKey="Gastos" stroke="#FF00FF" strokeWidth={2} />
+        <Line type="monotone" dataKey="Utilidad" stroke="#A5FF00" strokeWidth={2} />
       </LineChart>
     </ResponsiveContainer>
   );
