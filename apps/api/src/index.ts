@@ -11,10 +11,20 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "gamerland_secret";
 
-const ExpenseCategories = ["MERCANCIA", "LOCAL", "FUERA_DEL_LOCAL"] as const;
+// ====== GASTOS: presets y categorías nuevas (para el front) ======
+const EXPENSE_PRESETS = [
+  "COMPRA DE MERCANCIA - PRODUCTOS",
+  "TRANSACCION - CUADRE DE CAJA",
+  "VIAJE A BOGOTÁ",
+  "PAGO TRABAJADORES",
+] as const;
+
+// Si tu modelo Prisma usa enum, añade INTERNO/EXTERNO al enum.
+// Si category es String, no necesitas migración.
+const ExpenseCategories = ["INTERNO", "EXTERNO"] as const;
 type ExpenseCategory = (typeof ExpenseCategories)[number];
 
-// Carga .env solo en desarrollo/local. En producción (Railway) no hace falta.
+// Carga .env local (Railway no lo necesita)
 if (process.env.NODE_ENV !== "production") {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -34,10 +44,10 @@ const U = (s: unknown) =>
   (typeof s === "string" ? s.trim().toUpperCase() : s) as string;
 
 function parseLocalDateRange(fromStr: string, toStr: string) {
-  // America/Bogota (sin DST). Si luego quieres, hazlo configurable por ENV.
+  // America/Bogota (sin DST)
   const TZ = "-05:00";
   const from = new Date(`${fromStr}T00:00:00.000${TZ}`);
-  const to   = new Date(`${toStr}T23:59:59.999${TZ}`);
+  const to = new Date(`${toStr}T23:59:59.999${TZ}`);
   return { from, to };
 }
 
@@ -45,9 +55,8 @@ function parseLocalDateRange(fromStr: string, toStr: string) {
 const PaymentMethods = ["EFECTIVO", "QR_LLAVE", "DATAFONO"] as const;
 type PaymentMethod = (typeof PaymentMethods)[number];
 
-// Calcula stock actual (IN - OUT) de un producto
+// Calcula stock actual
 type StockGroupRow = { type: string; _sum: { qty: number | null } };
-
 async function getCurrentStock(
   tx: Prisma.TransactionClient,
   productId: number
@@ -58,9 +67,8 @@ async function getCurrentStock(
     _sum: { qty: true },
   })) as unknown as StockGroupRow[];
 
-  const sumIn = rows.find((r: StockGroupRow) => r.type === "in")?._sum.qty ?? 0;
-  const sumOut =
-    rows.find((r: StockGroupRow) => r.type === "out")?._sum.qty ?? 0;
+  const sumIn = rows.find((r) => r.type === "in")?._sum.qty ?? 0;
+  const sumOut = rows.find((r) => r.type === "out")?._sum.qty ?? 0;
   return Number(sumIn) - Number(sumOut);
 }
 
@@ -76,7 +84,6 @@ const CATEGORY_PREFIX: Record<string, string> = {
   SERVICIOS: "SRV",
   PAPELERIA: "PAP",
 };
-
 async function getNextSku(category?: string | null) {
   const cat = (category || "").toUpperCase().trim();
   const prefix = CATEGORY_PREFIX[cat] || "PRD";
@@ -115,7 +122,7 @@ async function getNextWorkCode() {
 // ==================== RUTAS PÚBLICAS ====================
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// ===== AUTH: login / register / me / seed-admin =====
+// ===== AUTH =====
 app.post("/auth/login", async (req, res) => {
   const { username, password } = req.body as {
     username: string;
@@ -135,7 +142,7 @@ app.post("/auth/login", async (req, res) => {
   res.json({ token, role: user.role, username: user.username });
 });
 
-// (Opción bootstrap; en producción crea usuarios por /users)
+// Bootstrap opcional
 app.post("/auth/register", async (req, res) => {
   const { username, password, role } = req.body as {
     username: string;
@@ -157,7 +164,7 @@ app.get("/auth/me", verifyToken, (req: AuthRequest, res) => {
   res.json({ id: req.user!.id, role: req.user!.role });
 });
 
-// Semilla de admin (solo dev) con header ADMIN_SECRET
+// Seed admin (dev) con header
 app.post("/auth/seed-admin", async (req, res) => {
   if (req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "unauthorized" });
@@ -177,10 +184,10 @@ app.post("/auth/seed-admin", async (req, res) => {
   res.json({ ok: true, id: u.id, username: u.username });
 });
 
-// ==================== A PARTIR DE AQUÍ: RUTAS PROTEGIDAS ====================
+// ==================== RUTAS PROTEGIDAS ====================
 app.use(verifyToken);
 
-// ==================== GESTIÓN DE USUARIOS (SOLO ADMIN) ====================
+// ===== USUARIOS (ADMIN) =====
 const userBodySchema = z.object({
   username: z.string().min(3),
   password: z.string().min(6).optional(),
@@ -237,12 +244,13 @@ app.put("/users/:id", requireRole("ADMIN"), async (req, res) => {
   try {
     const u = await prisma.user.update({ where: { id }, data });
     res.json({ id: u.id, username: u.username, role: u.role });
-  } catch (e: any) {
-    if (e?.code === "P2002")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2002")
       return res.status(409).json({ error: "Usuario ya existe" });
-    if (e?.code === "P2025")
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo actualizar" });
+    res.status(400).json({ error: err?.message || "No se pudo actualizar" });
   }
 });
 
@@ -254,16 +262,16 @@ app.delete("/users/:id", requireRole("ADMIN"), async (req, res) => {
   try {
     await prisma.user.delete({ where: { id } });
     res.json({ ok: true, id });
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo eliminar" });
+    res.status(400).json({ error: err?.message || "No se pudo eliminar" });
   }
 });
 
 // ==================== PRODUCTS ====================
-// EMPLOYEE puede leer; ADMIN crea/edita/activa/desactiva/elimina
-
+// EMPLOYEE lee; ADMIN crea/edita/activa/desactiva/elimina
 const productCreateSchema = z.object({
   sku: z.string().optional(),
   barcode: z.string().optional().nullable(),
@@ -277,7 +285,6 @@ const productCreateSchema = z.object({
 });
 const productUpdateSchema = productCreateSchema.partial();
 
-// Leer productos (EMPLOYEE)
 app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
   const q = String(req.query.q || "").trim();
   const includeInactive =
@@ -302,11 +309,10 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     take: 100,
     orderBy: { id: "asc" },
   });
-
   if (!withStock) return res.json(products);
 
   // Adjuntar stock actual
-  const ids = products.map((p: { id: number }) => p.id);
+  const ids = products.map((p) => p.id);
   if (ids.length === 0) return res.json(products);
 
   const rows = (await prisma.stockMovement.groupBy({
@@ -322,11 +328,12 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
   const map = new Map<number, number>();
   for (const r of rows) {
     const sign = r.type === "out" ? -1 : 1;
-    const prev = map.get(r.productId) || 0;
-    map.set(r.productId, prev + sign * Number(r._sum.qty || 0));
+    map.set(
+      r.productId,
+      (map.get(r.productId) || 0) + sign * Number(r._sum.qty || 0)
+    );
   }
-
-  res.json(products.map((p: any) => ({ ...p, stock: map.get(p.id) ?? 0 })));
+  res.json(products.map((p) => ({ ...p, stock: map.get(p.id) ?? 0 })));
 });
 
 app.get("/products/next-sku", requireRole("EMPLOYEE"), async (req, res) => {
@@ -345,7 +352,6 @@ app.get("/products/:id", requireRole("EMPLOYEE"), async (req, res) => {
   res.json(p);
 });
 
-// Crear/editar/eliminar (solo ADMIN)
 app.post("/products", requireRole("ADMIN"), async (req, res) => {
   const parsed = productCreateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -370,12 +376,13 @@ app.post("/products", requireRole("ADMIN"), async (req, res) => {
       },
     });
     res.status(201).json(p);
-  } catch (e: any) {
-    if (e?.code === "P2002")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ error: "SKU ya existe o código de barras ya existe" });
-    res.status(400).json({ error: e.message || "No se pudo crear" });
+    res.status(400).json({ error: err?.message || "No se pudo crear" });
   }
 });
 
@@ -394,14 +401,15 @@ app.put("/products/:id", requireRole("ADMIN"), async (req, res) => {
   try {
     const p = await prisma.product.update({ where: { id }, data: parsed.data });
     res.json(p);
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    if (e?.code === "P2002")
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ error: "SKU ya existe o código de barras ya existe" });
-    res.status(400).json({ error: e.message || "No se pudo actualizar" });
+    res.status(400).json({ error: err?.message || "No se pudo actualizar" });
   }
 });
 
@@ -438,14 +446,15 @@ app.patch("/products/:id", requireRole("ADMIN"), async (req, res) => {
       },
     });
     res.json(p);
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    if (e?.code === "P2002")
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ error: "SKU ya existe o código de barras ya existe" });
-    res.status(400).json({ error: e.message || "No se pudo actualizar" });
+    res.status(400).json({ error: err?.message || "No se pudo actualizar" });
   }
 });
 
@@ -457,10 +466,11 @@ app.patch("/products/:id/activate", requireRole("ADMIN"), async (req, res) => {
   try {
     const p = await prisma.product.update({ where: { id }, data: { active } });
     res.json(p);
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e.message || "No se pudo actualizar" });
+    res.status(400).json({ error: err?.message || "No se pudo actualizar" });
   }
 });
 
@@ -484,14 +494,17 @@ app.delete("/products/:id", requireRole("ADMIN"), async (req, res) => {
 
     await prisma.product.delete({ where: { id } });
     return res.json({ ok: true, id });
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    return res.status(400).json({ error: e.message || "No se pudo eliminar" });
+    return res
+      .status(400)
+      .json({ error: err?.message || "No se pudo eliminar" });
   }
 });
 
-// ==================== SALES (EMPLOYEE puede vender) ====================
+// ==================== SALES ====================
 const saleSchema = z.object({
   customer: z.string().nullish(),
   items: z
@@ -525,14 +538,11 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req, res) => {
   }
 
   const { customer, items, payments } = parsed.data;
-  const subtotal = items.reduce(
-    (a: number, it) => a + it.unitPrice * it.qty,
-    0
-  );
+  const subtotal = items.reduce((a, it) => a + it.unitPrice * it.qty, 0);
   const tax = 0;
-  const discount = items.reduce((a: number, it) => a + it.discount, 0);
+  const discount = items.reduce((a, it) => a + it.discount, 0);
   const total = subtotal + tax - discount;
-  const sumaPagos = payments.reduce((a: number, p) => a + p.amount, 0);
+  const sumaPagos = payments.reduce((a, p) => a + p.amount, 0);
   if (Math.abs(sumaPagos - total) > 0.01) {
     return res
       .status(400)
@@ -540,60 +550,62 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req, res) => {
   }
 
   try {
-    const sale = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
-        const s = await tx.sale.create({
-          data: {
-            customer: customer ? U(customer) : null,
-            subtotal,
-            tax,
-            discount,
-            total,
-            status: "paid",
-            items: {
-              create: items.map((it) => ({
-                productId: it.productId,
-                qty: it.qty,
-                unitPrice: it.unitPrice,
-                taxRate: 0,
-                discount: it.discount,
-                total: it.unitPrice * it.qty - it.discount,
-              })),
-            },
-            payments: {
-              create: payments.map((p) => ({
-                method: p.method,
-                amount: p.amount,
-                reference: p.reference ? U(p.reference) : undefined,
-              })),
-            },
-          },
-          include: { items: true, payments: true },
-        });
-
-        for (const it of items) {
-          const prod = await tx.product.findUnique({
-            where: { id: it.productId },
-            select: { cost: true },
-          });
-          const avgCost = Number(prod?.cost ?? 0);
-          await tx.stockMovement.create({
-            data: {
+    const sale = await prisma.$transaction(async (tx) => {
+      const s = await tx.sale.create({
+        data: {
+          customer: customer ? U(customer) : null,
+          subtotal,
+          tax,
+          discount,
+          total,
+          status: "paid",
+          items: {
+            create: items.map((it) => ({
               productId: it.productId,
-              type: "out",
               qty: it.qty,
-              unitCost: avgCost,
-              reference: `sale#${s.id}`,
-            },
-          });
-        }
-        return s;
+              unitPrice: it.unitPrice,
+              taxRate: 0,
+              discount: it.discount,
+              total: it.unitPrice * it.qty - it.discount,
+            })),
+          },
+          payments: {
+            create: payments.map((p) => ({
+              method: p.method,
+              amount: p.amount,
+              reference: p.reference ? U(p.reference) : undefined,
+            })),
+          },
+        },
+        include: { items: true, payments: true },
+      });
+
+      // Movimientos de stock por cada ítem (salida con costo promedio actual)
+      for (const it of items) {
+        const prod = await tx.product.findUnique({
+          where: { id: it.productId },
+          select: { cost: true },
+        });
+        const avgCost = Number(prod?.cost ?? 0);
+        await tx.stockMovement.create({
+          data: {
+            productId: it.productId,
+            type: "out",
+            qty: it.qty,
+            unitCost: avgCost,
+            reference: `sale#${s.id}`,
+          },
+        });
       }
-    );
+      return s;
+    });
 
     res.status(201).json(sale);
-  } catch (e: any) {
-    res.status(400).json({ error: e.message || "No se pudo crear la venta" });
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    res
+      .status(400)
+      .json({ error: err?.message || "No se pudo crear la venta" });
   }
 });
 
@@ -641,22 +653,21 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
       });
       if (!prev) throw new Error("No encontrado");
 
-      // Si vienen items: recalcular totales y reconciliar stock
       let items = prev.items;
       if (parsed.data.items) {
-        // 1) revertir stock de items previos (crear movimientos 'in' de reverso)
+        // revertir stock previo
         for (const it of prev.items) {
           await tx.stockMovement.create({
             data: {
               productId: it.productId,
               type: "in",
               qty: it.qty,
-              unitCost: it.unitPrice, // aproximación: no conocemos avgCost histórico aquí
+              unitCost: it.unitPrice, // aproximación
               reference: `sale#${id}:edit-revert`,
             },
           });
         }
-        // 2) borrar items y crear nuevos
+        // reemplazar items
         await tx.saleItem.deleteMany({ where: { saleId: id } });
         items = await Promise.all(
           parsed.data.items.map(async (it) =>
@@ -673,9 +684,8 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
             })
           )
         );
-        // 3) crear nuevos movimientos 'out'
+        // crear outs nuevos
         for (const it of parsed.data.items) {
-          // usar costo promedio actual como unitCost de salida
           const prod = await tx.product.findUnique({
             where: { id: it.productId },
             select: { cost: true },
@@ -692,7 +702,6 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
         }
       }
 
-      // Si vienen pagos: reemplazar pagos
       if (parsed.data.payments) {
         await tx.payment.deleteMany({ where: { saleId: id } });
         await tx.payment.createMany({
@@ -705,7 +714,6 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
         });
       }
 
-      // Recalcular totales de la venta (con los items actuales)
       const curItems = parsed.data.items ? items : prev.items;
       const subtotal = curItems.reduce(
         (a, it) => a + Number(it.unitPrice) * it.qty,
@@ -740,31 +748,34 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
     });
 
     res.json(updated);
-  } catch (e: any) {
-    if (e?.message === "No encontrado")
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    if (err?.message === "No encontrado")
       return res.status(404).json({ error: "No encontrado" });
     res
       .status(400)
-      .json({ error: e?.message || "No se pudo actualizar la venta" });
+      .json({ error: err?.message || "No se pudo actualizar la venta" });
   }
 });
 
 app.delete("/sales/:id", requireRole("ADMIN"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
   try {
-    // borra en cascada (SaleItem/Payment si FK on delete cascade no está)
     await prisma.payment.deleteMany({ where: { saleId: id } });
     await prisma.saleItem.deleteMany({ where: { saleId: id } });
     await prisma.sale.delete({ where: { id } });
     res.json({ ok: true, id });
-  } catch (e: any) {
-    if (e?.code === "P2025") return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo eliminar" });
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
+    res.status(400).json({ error: err?.message || "No se pudo eliminar" });
   }
 });
 
-// ==================== STOCK IN (SOLO ADMIN) ====================
+// ==================== STOCK IN (ADMIN) ====================
 const stockInSchema = z.object({
   productId: z.coerce.number().int().positive(),
   qty: z.coerce.number().int().positive(),
@@ -779,44 +790,40 @@ app.post("/stock/in", requireRole("ADMIN"), async (req, res) => {
 
   const { productId, qty, unitCost, reference } = parsed.data;
   try {
-    const mov = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
-        const prevStock = await getCurrentStock(tx, productId);
-        const prod = await tx.product.findUnique({
-          where: { id: productId },
-          select: { cost: true },
-        });
-        const prevAvg = Number(prod?.cost ?? 0);
+    const mov = await prisma.$transaction(async (tx) => {
+      const prevStock = await getCurrentStock(tx, productId);
+      const prod = await tx.product.findUnique({
+        where: { id: productId },
+        select: { cost: true },
+      });
+      const prevAvg = Number(prod?.cost ?? 0);
 
-        const newQty = prevStock + qty;
-        const newAvg =
-          newQty > 0
-            ? (prevStock * prevAvg + qty * unitCost) / newQty
-            : unitCost;
+      const newQty = prevStock + qty;
+      const newAvg =
+        newQty > 0 ? (prevStock * prevAvg + qty * unitCost) / newQty : unitCost;
 
-        const m = await tx.stockMovement.create({
-          data: {
-            productId,
-            type: "in",
-            qty,
-            unitCost,
-            reference: reference ? U(reference) : "COMPRA",
-          },
-        });
+      const m = await tx.stockMovement.create({
+        data: {
+          productId,
+          type: "in",
+          qty,
+          unitCost,
+          reference: reference ? U(reference) : "COMPRA",
+        },
+      });
 
-        await tx.product.update({
-          where: { id: productId },
-          data: { cost: newAvg },
-        });
-
-        return m;
-      }
-    );
+      await tx.product.update({
+        where: { id: productId },
+        data: { cost: newAvg },
+      });
+      return m;
+    });
     res.status(201).json(mov);
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const err = e as { message?: string };
     res
       .status(400)
-      .json({ error: e.message || "No se pudo registrar el ingreso" });
+      .json({ error: err?.message || "No se pudo registrar el ingreso" });
   }
 });
 
@@ -844,7 +851,7 @@ app.get("/stock/summary", requireRole("EMPLOYEE"), async (_req, res) => {
   });
 
   res.json(
-    products.map((p: any) => ({
+    products.map((p) => ({
       id: p.id,
       sku: p.sku,
       name: p.name,
@@ -853,14 +860,27 @@ app.get("/stock/summary", requireRole("EMPLOYEE"), async (_req, res) => {
   );
 });
 
-// ==================== EXPENSES (EMPLOYEE permitido) ====================
+// ==================== EXPENSES ====================
+
+// Presets para que el front alimente el selector
+app.get("/expenses/presets", requireRole("EMPLOYEE"), (_req, res) => {
+  res.json({
+    presets: EXPENSE_PRESETS,
+    // map opcional para mostrar ayuda en el UI
+    categoryByPreset: Object.fromEntries(
+      EXPENSE_PRESETS.map((p) => [p, "INTERNO"])
+    ),
+  });
+});
+
+// Esquema: acepta INTERNO/EXTERNO y valida método
 const expenseSchema = z.object({
   description: z.string().min(1, "Descripción requerida"),
   amount: z.coerce.number().positive("Monto inválido"),
-  paymentMethod: z.enum(["EFECTIVO", "QR_LLAVE", "DATAFONO"], {
+  paymentMethod: z.enum(PaymentMethods, {
     required_error: "Método de pago requerido",
   }),
-  category: z.enum(ExpenseCategories).default("LOCAL"),
+  category: z.enum(ExpenseCategories).default("INTERNO"),
 });
 
 app.post("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
@@ -872,10 +892,17 @@ app.post("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   }
 
   const d = parsed.data;
+
+  // Normalización: si cae en preset ≠ "OTRO", forzamos category=INTERNO y descripción exacta en mayúscula.
+  const isPreset = (desc: string) => EXPENSE_PRESETS.includes(desc as any);
+  const descU = U(d.description);
+  const descFinal = isPreset(descU) ? descU : descU; // el front ya lo envía, aquí solo normalizamos
+  const catFinal: ExpenseCategory = isPreset(descU) ? "INTERNO" : d.category;
+
   const e = await prisma.expense.create({
     data: {
-      category: d.category, // "MERCANCIA" | "LOCAL" | "FUERA_DEL_LOCAL"
-      description: d.description.toUpperCase(),
+      category: catFinal, // "INTERNO" | "EXTERNO"
+      description: descFinal,
       amount: d.amount,
       paymentMethod: d.paymentMethod,
     },
@@ -888,22 +915,20 @@ app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   const fromParam = req.query.from ? String(req.query.from) : "";
   const toParam = req.query.to ? String(req.query.to) : "";
 
-  let where: any = {};
-  if (fromParam && toParam) {
-    const { from, to } = parseLocalDateRange(fromParam, toParam);
+  const where: Prisma.ExpenseWhereInput = {};
+  if (fromParam || toParam) {
+    const { from, to } = parseLocalDateRange(
+      fromParam || toParam,
+      toParam || fromParam
+    );
     where.createdAt = { gte: from, lte: to };
-  } else if (fromParam) {
-    const { from } = parseLocalDateRange(fromParam, fromParam);
-    where.createdAt = { gte: from };
-  } else if (toParam) {
-    const { to } = parseLocalDateRange(toParam, toParam);
-    where.createdAt = { lte: to };
   }
+
   const category = req.query.category
     ? String(req.query.category).toUpperCase()
     : "";
-  if (category && ExpenseCategories.includes(category as ExpenseCategory)) {
-    where.category = category;
+  if (category && (ExpenseCategories as readonly string[]).includes(category)) {
+    where.category = category as ExpenseCategory;
   }
 
   const rows = await prisma.expense.findMany({
@@ -913,7 +938,6 @@ app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   res.json(rows);
 });
 
-// PUT (reemplazo completo) o PATCH (parcial)
 const expenseUpdateSchema = expenseSchema.partial();
 
 app.patch("/expenses/:id", requireRole("ADMIN"), async (req, res) => {
@@ -925,16 +949,18 @@ app.patch("/expenses/:id", requireRole("ADMIN"), async (req, res) => {
     return res
       .status(400)
       .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+
   try {
     const row = await prisma.expense.update({
       where: { id },
       data: parsed.data,
     });
     res.json(row);
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo actualizar" });
+    res.status(400).json({ error: err?.message || "No se pudo actualizar" });
   }
 });
 
@@ -945,14 +971,15 @@ app.delete("/expenses/:id", requireRole("ADMIN"), async (req, res) => {
   try {
     await prisma.expense.delete({ where: { id } });
     res.json({ ok: true, id });
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo eliminar" });
+    res.status(400).json({ error: err?.message || "No se pudo eliminar" });
   }
 });
 
-// ==================== REPORTES (EMPLOYEE) ====================
+// ==================== REPORTES ====================
 app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   const fromParam = String(req.query.from || "");
   const toParam = String(req.query.to || "");
@@ -960,13 +987,11 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   if (!fromParam || !toParam) {
     return res.status(400).json({ error: "from/to requeridos (YYYY-MM-DD)" });
   }
-
   const { from, to } = parseLocalDateRange(fromParam, toParam);
   if (isNaN(+from) || isNaN(+to)) {
     return res.status(400).json({ error: "from/to inválidos (YYYY-MM-DD)" });
   }
 
-  // Tipos explícitos para evitar 'any'
   const sales = (await prisma.sale.findMany({
     where: { createdAt: { gte: from, lte: to }, status: "paid" },
     select: { subtotal: true, tax: true, discount: true, total: true },
@@ -978,10 +1003,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   }>;
 
   const sum = (k: "subtotal" | "tax" | "discount" | "total") =>
-    sales.reduce(
-      (a: number, s: { [key: string]: unknown }) => a + Number(s[k]),
-      0
-    );
+    sales.reduce((a, s) => a + Number((s as any)[k]), 0);
 
   const outs = (await prisma.stockMovement.findMany({
     where: { type: "out", createdAt: { gte: from, lte: to } },
@@ -989,8 +1011,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   })) as Array<{ qty: unknown; unitCost: unknown }>;
 
   const costo = outs.reduce(
-    (a: number, r: { qty: unknown; unitCost: unknown }) =>
-      a + Number(r.qty) * Number(r.unitCost),
+    (a, r) => a + Number(r.qty) * Number(r.unitCost),
     0
   );
 
@@ -1001,7 +1022,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
 
   const gastos_total = expenses.reduce((a, r) => a + Number(r.amount), 0);
   const gastos_operativos = expenses
-    .filter((e) => String(e.category ?? "").toUpperCase() !== "MERCANCIA")
+    .filter((e) => String(e.category ?? "").toUpperCase() !== "MERCANCIA") // si migras categorías, puedes ajustar lógica
     .reduce((a, r) => a + Number(r.amount), 0);
 
   const ventas = sum("total");
@@ -1032,10 +1053,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
 
   const sales = (await prisma.sale.findMany({
     where: { createdAt: { gte: from, lte: to }, status: "paid" },
-    include: {
-      items: { include: { product: true } },
-      payments: true,
-    },
+    include: { items: { include: { product: true } }, payments: true },
     orderBy: { createdAt: "desc" },
   })) as Array<{
     id: number;
@@ -1080,7 +1098,6 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       const unitCost = toN(costMap.get(`${s.id}:${it.productId}`));
       const revenue = unitPrice * qty;
       const cost = unitCost * qty;
-      const profit = revenue - cost;
       const total =
         it.total != null ? toN(it.total) : unitPrice * qty - discount;
 
@@ -1096,7 +1113,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
         unitCost,
         revenue,
         cost,
-        profit,
+        profit: revenue - cost,
         paymentMethods: s.payments.map((p) => ({
           method: p.method,
           amount: toN(p.amount),
@@ -1108,7 +1125,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
   res.json(rows);
 });
 
-// Alias para el front antiguo: /reports/sales-detail
+// Alias legacy
 app.get(
   "/reports/sales-detail",
   requireRole("EMPLOYEE"),
@@ -1121,7 +1138,7 @@ app.get(
   }
 );
 
-/// Pagos por método (caja)
+// ======= Pagos por método (CAJA) con AJUSTE de CERTIFICADO =======
 app.get("/reports/payments", requireRole("EMPLOYEE"), async (req, res) => {
   const fromParam = String(req.query.from || "");
   const toParam = String(req.query.to || "");
@@ -1130,6 +1147,7 @@ app.get("/reports/payments", requireRole("EMPLOYEE"), async (req, res) => {
 
   const { from, to } = parseLocalDateRange(fromParam, toParam);
 
+  // Pagos brutos por método
   const rows = (await prisma.payment.groupBy({
     by: ["method"] as const,
     where: { createdAt: { gte: from, lte: to } },
@@ -1137,49 +1155,73 @@ app.get("/reports/payments", requireRole("EMPLOYEE"), async (req, res) => {
   })) as unknown as Array<{ method: string; _sum: { amount: unknown } }>;
 
   const sum = (m: string) =>
-    Number(
-      rows.find((r: { method: string }) => r.method === m)?._sum.amount ?? 0
-    );
-  const EFECTIVO = sum("EFECTIVO");
-  const QR_LLAVE = sum("QR_LLAVE");
-  const DATAFONO = sum("DATAFONO");
-  const total = EFECTIVO + QR_LLAVE + DATAFONO;
+    Number(rows.find((r) => r.method === m)?._sum.amount ?? 0);
+  let EFECTIVO = sum("EFECTIVO");
+  let QR_LLAVE = sum("QR_LLAVE");
+  let DATAFONO = sum("DATAFONO");
 
-  // gastos por método
+  // Gastos por método (reales)
   const exp = await prisma.expense.groupBy({
     by: ["paymentMethod"],
     where: { createdAt: { gte: from, lte: to } },
     _sum: { amount: true },
   });
-
   const expSum = (m: string) =>
     Number(exp.find((e) => e.paymentMethod === m)?._sum.amount ?? 0);
+  let G_EFECTIVO = expSum("EFECTIVO");
+  let G_QR = expSum("QR_LLAVE");
+  let G_DATAFONO = expSum("DATAFONO");
 
-  const G_EFECTIVO = expSum("EFECTIVO");
-  const G_QR = expSum("QR_LLAVE");
-  const G_DATAFONO = expSum("DATAFONO");
+  // ===== AJUSTE: CERTIFICADO LIBERTAD Y TRADICION =====
+  // Por cada unidad vendida: +25.000 a EFECTIVO y -21.900 a QR_LLAVE (caja)
+  const CERT_NAME = "CERTIFICADO LIBERTAD Y TRADICION";
+  const certItems = await prisma.saleItem.findMany({
+    where: {
+      sale: { createdAt: { gte: from, lte: to }, status: "paid" },
+      product: { name: { equals: CERT_NAME } },
+    },
+    select: { qty: true },
+  });
+  const certUnits = certItems.reduce((a, r) => a + Number(r.qty || 0), 0);
+  const AJ_EFECTIVO = 25000 * certUnits;
+  const AJ_QR = 21900 * certUnits;
+
+  EFECTIVO += AJ_EFECTIVO;
+  QR_LLAVE -= AJ_QR;
+
+  // Si quieres reflejar el "descuento" de QR como gasto virtual, súmalo a G_QR
+  // (No crea Expense en DB, solo corrige el informe de caja)
+  G_QR += AJ_QR;
+
+  const total = EFECTIVO + QR_LLAVE + DATAFONO;
   const G_TOTAL = G_EFECTIVO + G_QR + G_DATAFONO;
 
-  // neto por método (caja actual por método)
   const N_EFECTIVO = EFECTIVO - G_EFECTIVO;
   const N_QR = QR_LLAVE - G_QR;
   const N_DATAFONO = DATAFONO - G_DATAFONO;
   const N_TOTAL = N_EFECTIVO + N_QR + N_DATAFONO;
 
   res.json({
-    // bruto
+    // bruto ajustado
     EFECTIVO,
     QR_LLAVE,
     DATAFONO,
     total,
-    // gastos por método
+    ajustes: {
+      certificados: {
+        unidades: certUnits,
+        plus_efectivo: AJ_EFECTIVO,
+        minus_qr: AJ_QR,
+      },
+    },
+    // gastos (reales + virtual QR por certificado)
     gastos: {
       EFECTIVO: G_EFECTIVO,
       QR_LLAVE: G_QR,
       DATAFONO: G_DATAFONO,
       total: G_TOTAL,
     },
-    // neto
+    // neto por método
     neto: {
       EFECTIVO: N_EFECTIVO,
       QR_LLAVE: N_QR,
@@ -1217,10 +1259,9 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
 
   const total = items
     .filter(
-      (it: { product: { category?: string | null } | null }) =>
-        String(it.product?.category ?? "").toUpperCase() === "SERVICIOS"
+      (it) => String(it.product?.category ?? "").toUpperCase() === "SERVICIOS"
     )
-    .reduce((acc: number, it) => {
+    .reduce((acc, it) => {
       const unit = toN(it.unitPrice);
       const qty = toN(it.qty);
       const disc = toN(it.discount);
@@ -1231,8 +1272,7 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
   res.json({ total });
 });
 
-// =================== TARJETAS DE TRABAJOS ==================
-
+// =================== WORK ORDERS ==================
 const workCreateSchema = z.object({
   item: z.string().min(1),
   description: z.string().min(1),
@@ -1240,11 +1280,9 @@ const workCreateSchema = z.object({
   customerPhone: z.string().min(3),
   reviewPaid: z.coerce.boolean().default(false),
   location: z.enum(["LOCAL", "BOGOTA"]).default("LOCAL"),
-  // opcionales
   quote: z.coerce.number().optional(),
   notes: z.string().optional(),
 });
-
 const workUpdateSchema = z.object({
   item: z.string().optional(),
   description: z.string().optional(),
@@ -1259,21 +1297,19 @@ const workUpdateSchema = z.object({
   total: z.coerce.number().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
-
 const workPaymentSchema = z.object({
   amount: z.coerce.number().positive("Monto inválido"),
-  method: z.enum(["EFECTIVO", "QR_LLAVE", "DATAFONO"]).default("EFECTIVO"),
+  method: z.enum(PaymentMethods).default("EFECTIVO"),
   note: z.string().optional(),
   createdBy: z.string().optional(),
 });
 
-// ==================== WORK ORDERS (EMPLOYEE puede gestionar, solo ADMIN elimina) ====================
 app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const q = String(req.query.q || "").trim();
   const status = String(req.query.status || "").toUpperCase();
   const location = String(req.query.location || "").toUpperCase();
 
-  const where: any = {};
+  const where: Prisma.WorkOrderWhereInput = {};
   if (q) {
     where.OR = [
       { code: { contains: q, mode: "insensitive" } },
@@ -1284,20 +1320,17 @@ app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
     ];
   }
   if (["RECEIVED", "IN_PROGRESS", "FINISHED", "DELIVERED"].includes(status)) {
-    where.status = status;
+    where.status = status as any;
   }
   if (["LOCAL", "BOGOTA"].includes(location)) {
-    where.location = location;
+    where.location = location as any;
   }
 
-  // Traemos pagos para poder sumar en el servidor
   const rows = await prisma.workOrder.findMany({
     where,
     orderBy: { createdAt: "desc" },
     take: 200,
-    include: {
-      payments: { select: { amount: true } },
-    },
+    include: { payments: { select: { amount: true } } },
   });
 
   const out = rows.map((r) => {
@@ -1305,46 +1338,28 @@ app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
       (a, p) => a + Number(p.amount || 0),
       0
     );
-    // opcional: si quieres mantener sincronizado el campo deposit en WorkOrder
-    return {
-      id: r.id,
-      code: r.code,
-      item: r.item,
-      description: r.description,
-      customerName: r.customerName,
-      customerPhone: r.customerPhone,
-      reviewPaid: r.reviewPaid,
-      status: r.status,
-      location: r.location,
-      quote: r.quote,
-      total: r.total,
-      notes: r.notes,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-      // 👇 campo calculado que el front usará directamente
-      deposit,
-    };
+    return { ...r, deposit };
   });
 
   res.json(out);
 });
 
-// Registrar abono (pago) a una orden
 app.post("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
 
   const parsed = workPaymentSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Datos inválidos", issues: parsed.error.flatten() });
-  }
+  if (!parsed.success)
+    return res
+      .status(400)
+      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+
   const { amount, method, note, createdBy } = parsed.data;
 
-  // Verificar orden
   const wo = await prisma.workOrder.findUnique({ where: { id } });
   if (!wo) return res.status(404).json({ error: "Orden no encontrada" });
 
-  // Si hay cotización, no permitir abonar más que el saldo
   if (wo.quote != null) {
     const agg = await prisma.workOrderPayment.aggregate({
       where: { workOrderId: id },
@@ -1353,22 +1368,22 @@ app.post("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
     const paid = Number(agg._sum.amount ?? 0);
     const saldo = Math.max(Number(wo.quote) - paid, 0);
     if (amount > saldo + 0.0001) {
-      return res.status(400).json({ error: "El abono excede el saldo pendiente" });
+      return res
+        .status(400)
+        .json({ error: "El abono excede el saldo pendiente" });
     }
   }
 
-  // Crear pago
   const pay = await prisma.workOrderPayment.create({
     data: {
       workOrderId: id,
       amount,
       method,
-      note: note ? note.toUpperCase() : undefined,
-      createdBy: createdBy ? createdBy.toUpperCase() : undefined,
+      note: note ? U(note) : undefined,
+      createdBy: createdBy ? U(createdBy) : undefined,
     },
   });
 
-  // (Opcional) sincronizar WorkOrder.deposit acumulado
   try {
     const agg2 = await prisma.workOrderPayment.aggregate({
       where: { workOrderId: id },
@@ -1378,17 +1393,22 @@ app.post("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
       where: { id },
       data: { deposit: Number(agg2._sum.amount ?? 0) },
     });
-  } catch { /* noop */ }
+  } catch {
+    /* noop */
+  }
 
   res.status(201).json(pay);
 });
 
-// Listar abonos de una orden (útil si luego quieres “ver historial de pagos”)
 app.get("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
 
-  const exists = await prisma.workOrder.findUnique({ where: { id }, select: { id: true } });
+  const exists = await prisma.workOrder.findUnique({
+    where: { id },
+    select: { id: true },
+  });
   if (!exists) return res.status(404).json({ error: "Orden no encontrada" });
 
   const pays = await prisma.workOrderPayment.findMany({
@@ -1398,27 +1418,25 @@ app.get("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
   res.json(pays);
 });
 
-
 app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const parsed = workCreateSchema.safeParse(req.body);
-  if (!parsed.success) {
+  if (!parsed.success)
     return res
       .status(400)
       .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
-  }
   const code = await getNextWorkCode();
   const d = parsed.data;
   const row = await prisma.workOrder.create({
     data: {
       code,
-      item: d.item.toUpperCase(),
-      description: d.description.toUpperCase(),
-      customerName: d.customerName.toUpperCase(),
+      item: U(d.item),
+      description: U(d.description),
+      customerName: U(d.customerName),
       customerPhone: d.customerPhone,
       reviewPaid: d.reviewPaid,
       location: d.location,
       quote: d.quote ?? null,
-      notes: d.notes ? d.notes.toUpperCase() : null,
+      notes: d.notes ? U(d.notes) : null,
     },
   });
   res.status(201).json(row);
@@ -1430,22 +1448,22 @@ app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
     return res.status(400).json({ error: "id inválido" });
 
   const parsed = workUpdateSchema.safeParse(req.body);
-  if (!parsed.success) {
+  if (!parsed.success)
     return res
       .status(400)
       .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
-  }
   const d = parsed.data;
+
   try {
     const row = await prisma.workOrder.update({
       where: { id },
       data: {
-        ...(d.item !== undefined ? { item: d.item.toUpperCase() } : {}),
+        ...(d.item !== undefined ? { item: U(d.item) } : {}),
         ...(d.description !== undefined
-          ? { description: d.description.toUpperCase() }
+          ? { description: U(d.description) }
           : {}),
         ...(d.customerName !== undefined
-          ? { customerName: d.customerName.toUpperCase() }
+          ? { customerName: U(d.customerName) }
           : {}),
         ...(d.customerPhone !== undefined
           ? { customerPhone: d.customerPhone }
@@ -1456,15 +1474,16 @@ app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
         ...(d.quote !== undefined ? { quote: d.quote } : {}),
         ...(d.total !== undefined ? { total: d.total } : {}),
         ...(d.notes !== undefined
-          ? { notes: d.notes ? d.notes.toUpperCase() : null }
+          ? { notes: d.notes ? U(d.notes) : null }
           : {}),
       },
     });
     res.json(row);
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo actualizar" });
+    res.status(400).json({ error: err?.message || "No se pudo actualizar" });
   }
 });
 
@@ -1475,10 +1494,11 @@ app.delete("/works/:id", requireRole("ADMIN"), async (req, res) => {
   try {
     await prisma.workOrder.delete({ where: { id } });
     res.json({ ok: true, id });
-  } catch (e: any) {
-    if (e?.code === "P2025")
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
       return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: e?.message || "No se pudo eliminar" });
+    res.status(400).json({ error: err?.message || "No se pudo eliminar" });
   }
 });
 
@@ -1500,8 +1520,9 @@ app.post("/admin/wipe", requireRole("ADMIN"), async (req, res) => {
       RESTART IDENTITY CASCADE;
     `);
     res.json({ ok: true });
-  } catch (e: any) {
-    res.status(400).json({ error: e?.message || "wipe failed" });
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    res.status(400).json({ error: err?.message || "wipe failed" });
   }
 });
 

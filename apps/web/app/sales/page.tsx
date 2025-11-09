@@ -243,25 +243,46 @@ function rangeFrom(period: Period, baseISO: string) {
 // ---- Reglas de ganancia (equivalentes a tu Excel) ----
 function profitByRule(r: Row) {
   const name = (r.name || "").toUpperCase().trim();
-  const total = r.unitPrice * r.qty; // equivalente a [@TOTAL]
-  const costo = r.unitCost * r.qty; // aproxima [@[PRECIO SIN GANANCIA]]
+  const total = r.unitPrice * r.qty;
+  const costo = r.unitCost * r.qty;
 
   if (name === "REFACIL - RECARGA CELULAR") return Math.round(total * 0.055);
   if (name === "REFACIL - PAGO FACTURA") return 200;
   if (name === "REFACIL - PAGO VANTI GAS NATURAL CUNDIBOYACENSE") return 100;
   if (name === "REFACIL - PAGO CUOTA PAYJOY") return 250;
-  if (name === "REFACIL - GAME PASS") return Math.round(total * 0.03);
+  if (name === "REFACIL - GAME PASS/PSN" || name === "REFACIL - GAME PASS")
+    return Math.round(total * 0.03);
   if (
     [
       "REFACIL - CARGA DE CUENTA",
       "TRANSACCION",
       "TRANSACCION DATAFONO",
+      "CUADRE DE CAJA",
     ].includes(name)
   )
     return 0;
 
-  // Por defecto: margen
+  // CERTIFICADO LIBERTAD Y TRADICION => sin regla: usa margen normal
   return Math.round(total - costo);
+}
+
+function up(s: string) {
+  return (s || "").toUpperCase().trim();
+}
+
+// “Internos/terceros” que NO deben sumarse como ventas del local
+function isExcludedFromRevenue(r: Row) {
+  const n = up(r.name);
+  return (
+    n === "REFACIL - CARGA DE CUENTA" ||
+    n === "REFACIL - RECARGA CELULAR" ||
+    n === "CERTIFICADO LIBERTAD Y TRADICION" ||
+    n === "REFACIL - PAGO FACTURA" ||
+    n === "REFACIL - PAGO VANTI GAS NATURAL CUNDIBOYACENSE" ||
+    n === "REFACIL - PAGO CUOTA PAYJOY" ||
+    n.includes("TRANSACCION") || // “TRANSACCION”, “TRANSACCION DATAFONO”
+    n.includes("CUADRE DE CAJA")
+  );
 }
 
 export default function SalesPage() {
@@ -309,9 +330,13 @@ export default function SalesPage() {
 
   // Totales visibles
   const totals = useMemo(() => {
-    const revenue = rows.reduce((a, r) => a + r.revenue, 0);
+    // Ventas “visibles” del local, excluyendo servicios de terceros/internos
+    const revenue = rows
+      .filter((r) => !isExcludedFromRevenue(r))
+      .reduce((a, r) => a + r.revenue, 0);
+
     const cost = rows.reduce((a, r) => a + r.cost, 0);
-    const profit = rows.reduce((a, r) => a + profitByRule(r), 0); // <— aquí
+    const profit = rows.reduce((a, r) => a + profitByRule(r), 0);
     return { revenue, cost, profit };
   }, [rows]);
 
