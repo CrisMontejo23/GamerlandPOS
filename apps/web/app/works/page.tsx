@@ -405,8 +405,8 @@ export default function WorksPage() {
     const saldo = Math.max(quote - dep, 0);
 
     const partes: string[] = [
-      `Hola ${UU(w.customerName)} 👋`,
-      `Tu trabajo *${UU(w.code)}* fue *RECIBIDO*.`,
+      `Hola ${UU(w.customerName)}`,
+      `Tu trabajo ${UU(w.code)} fue RECIBIDO.`,
       `Equipo: ${UU(w.item)}`,
       `Descripción: ${UU(w.description)}`,
     ];
@@ -419,20 +419,19 @@ export default function WorksPage() {
     }
     partes.push(
       `Ubicación: ${w.location === "LOCAL" ? "En local" : "En Bogotá"}`,
-      `Gracias por elegirnos 🙌`
+      `Gracias por elegirnos.`
     );
     return partes.join("\n");
   }
 
   function buildStatusMsg(w: WorkOrder, newStatus: WorkStatus) {
-    const base = `*${UU(w.code)}*`;
-    if (newStatus === "IN_PROGRESS")
-      return `${base} ahora está *EN PROCESO* 🔧`;
+    const base = `${UU(w.code)}`;
+    if (newStatus === "IN_PROGRESS") return `${base} ahora está EN PROCESO.`;
     if (newStatus === "FINISHED")
-      return `${base} está *FINALIZADO*. ¡Puedes pasar por él! ✅`;
+      return `${base} está FINALIZADO. Puedes pasar por él.`;
     if (newStatus === "DELIVERED")
-      return `${base} *ENTREGADO*. Recuerda: para cualquier garantía avísanos con tiempo para gestionarla. 🧾`;
-    return `${base} ahora está *${niceStatus[newStatus]}*`;
+      return `${base} ENTREGADO. Recuerda: para cualquier garantía avísanos con tiempo para gestionarla.`;
+    return `${base} ahora está ${niceStatus[newStatus]}`;
   }
 
   return (
@@ -624,6 +623,20 @@ export default function WorksPage() {
                       onClick={() => updateStatusAndNotify(w, "RECEIVED")}
                     >
                       RECIBIDO
+                    </button>
+                  )}
+
+                  {/* Avisar al cliente cuando está en RECIBIDO */}
+                  {w.status === "RECEIVED" && (
+                    <button
+                      className="px-3 py-1 rounded border text-xs uppercase"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() =>
+                        openWhatsApp(w.customerPhone, buildReceivedMsg(w))
+                      }
+                      title="Enviar mensaje de recibido"
+                    >
+                      INFORMAR AL CLIENTE
                     </button>
                   )}
 
@@ -993,7 +1006,6 @@ export default function WorksPage() {
                       id: number;
                     } | null;
 
-                    // Si hay abono inicial, registrar pago real
                     if (
                       created &&
                       typeof created.id === "number" &&
@@ -1008,18 +1020,6 @@ export default function WorksPage() {
                           createdBy: username || undefined,
                         }),
                       }).catch(() => null);
-                    }
-
-                    // 🔽 Nuevo: fetch del trabajo recién creado para obtener code/phone y notificar
-                    let full: WorkOrder | null = null;
-                    try {
-                      const rr = await apiFetch(`/works/${created?.id}`);
-                      if (rr.ok) full = (await rr.json()) as WorkOrder;
-                    } catch {}
-
-                    if (full) {
-                      const msg = buildReceivedMsg(full);
-                      openWhatsApp(full.customerPhone, msg);
                     }
 
                     setMsg("TRABAJO CREADO ✅");
