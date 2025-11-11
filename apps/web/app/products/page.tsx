@@ -9,8 +9,8 @@ type Product = {
   sku: string;
   name: string;
   category?: string | null;
-  price: string;
-  cost?: string;
+  price: number | string;
+  cost?: number | string;
   active?: boolean;
   stock?: number;
 };
@@ -33,32 +33,32 @@ export default function ProductsPage() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [reload, setReload] = useState(0);
 
-  // ---- Paginación (client-side) ----
+  // ---- Paginación (server-side) ----
+  const [total, setTotal] = useState(0);
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
 
-  // Carga datos
+  // Carga datos desde el backend (paginado en server)
   useEffect(() => {
     const load = async () => {
-      const url = new URL(`/products`, window.location.origin);
-      if (q) url.searchParams.set("q", q);
-      if (includeInactive) url.searchParams.set("includeInactive", "true");
-      url.searchParams.set("withStock", "true");
-      const res = await apiFetch(`/products?${url.searchParams.toString()}`);
-      const data = await res.json();
-      setRows(data);
+      const sp = new URLSearchParams();
+      if (q) sp.set("q", q);
+      if (includeInactive) sp.set("includeInactive", "true");
+      sp.set("withStock", "true");
+      sp.set("page", String(page));
+      sp.set("pageSize", String(PAGE_SIZE));
+
+      const res = await apiFetch(`/products?${sp.toString()}`);
+      const data = await res.json(); // { total, rows }
+      setRows(Array.isArray(data?.rows) ? data.rows : []);
+      setTotal(Number(data?.total ?? 0));
     };
     load();
-  }, [q, includeInactive, reload]);
+  }, [q, includeInactive, page, reload]);
 
-  // Totales y página “segura” derivada (sin setState en efectos)
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  // Derivados de paginación
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
-
-  const pageSlice = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE;
-    return rows.slice(start, start + PAGE_SIZE);
-  }, [rows, safePage]);
 
   // Rango compacto de páginas
   const pageRange = useMemo(() => {
@@ -79,8 +79,14 @@ export default function ProductsPage() {
     return out;
   }, [safePage, totalPages]);
 
+  // Rangos "Mostrando X – Y de Z"
+  const startItem = total === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endItem = Math.min(safePage * PAGE_SIZE, total);
+
   const toggleActive = async (id: number, active: boolean) => {
-    await apiFetch(`/products/${id}/activate?active=${String(!active)}`, { method: "PATCH" });
+    await apiFetch(`/products/${id}/activate?active=${String(!active)}`, {
+      method: "PATCH",
+    });
     setReload((r) => r + 1);
   };
 
@@ -97,7 +103,7 @@ export default function ProductsPage() {
 
   const { role } = useAuth();
 
-  // Handlers que resetean página sin efectos
+  // Handlers que resetean a la primera página
   const onSearchChange = (val: string) => {
     setQ(val.toUpperCase());
     setPage(1);
@@ -129,7 +135,10 @@ export default function ProductsPage() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input
           className="rounded px-3 py-2 flex-1 text-gray-100 placeholder-gray-400 outline-none"
-          style={{ backgroundColor: UI.input, border: `1px solid ${UI.border}` }}
+          style={{
+            backgroundColor: UI.input,
+            border: `1px solid ${UI.border}`,
+          }}
           placeholder="Buscar por nombre, SKU o categoría"
           value={q}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -163,15 +172,22 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {pageSlice.map((p) => (
-              <tr key={p.id} className="border-b border-[#1E1F4B] hover:bg-[#191B4B]">
+            {rows.map((p) => (
+              <tr
+                key={p.id}
+                className="border-b border-[#1E1F4B] hover:bg-[#191B4B]"
+              >
                 <td className="py-2 px-3">{p.id}</td>
                 <td className="px-3 font-mono">{p.sku?.toUpperCase()}</td>
                 <td className="px-3">{p.name?.toUpperCase()}</td>
                 <td className="px-3">{(p.category || "-").toUpperCase()}</td>
                 <td className="px-3 text-right">{Number(p.stock ?? 0)}</td>
-                <td className="px-3 text-right text-cyan-300">{fmtCOP(p.price)}</td>
-                <td className="px-3 text-right text-pink-300">{fmtCOP(p.cost)}</td>
+                <td className="px-3 text-right text-cyan-300">
+                  {fmtCOP(p.price)}
+                </td>
+                <td className="px-3 text-right text-pink-300">
+                  {fmtCOP(p.cost)}
+                </td>
                 <td className="px-3 text-center">
                   {p.active === false ? (
                     <span className="text-red-400">INACTIVO</span>
@@ -182,14 +198,22 @@ export default function ProductsPage() {
                 <td className="px-3 text-right space-x-2">
                   {role === "ADMIN" ? (
                     <>
-                      <Link href={`/products/${p.id}/edit`} className="underline text-cyan-300">Editar</Link>
+                      <Link
+                        href={`/products/${p.id}/edit`}
+                        className="underline text-cyan-300"
+                      >
+                        Editar
+                      </Link>
                       <button
                         onClick={() => toggleActive(p.id, p.active !== false)}
                         className="underline text-yellow-300"
                       >
                         {p.active === false ? "Activar" : "Desactivar"}
                       </button>
-                      <button onClick={() => remove(p.id)} className="underline text-pink-400">
+                      <button
+                        onClick={() => remove(p.id)}
+                        className="underline text-pink-400"
+                      >
                         Eliminar
                       </button>
                     </>
@@ -199,7 +223,7 @@ export default function ProductsPage() {
                 </td>
               </tr>
             ))}
-            {pageSlice.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td className="py-4 px-3 text-center text-gray-400" colSpan={9}>
                   Sin resultados
@@ -215,14 +239,15 @@ export default function ProductsPage() {
           style={{ borderTop: `1px solid ${UI.border}` }}
         >
           <div className="text-xs text-gray-300">
-            Mostrando{" "}
-            <b>{rows.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}</b>
-            {" – "}
-            <b>{Math.min(safePage * PAGE_SIZE, rows.length)}</b> de <b>{rows.length}</b>
+            Mostrando <b>{startItem}</b> – <b>{endItem}</b> de <b>{total}</b>
           </div>
 
           <div className="flex items-center gap-1">
-            <PagerButton label="«" disabled={safePage === 1} onClick={() => setPage(1)} />
+            <PagerButton
+              label="«"
+              disabled={safePage === 1}
+              onClick={() => setPage(1)}
+            />
             <PagerButton
               label="‹"
               disabled={safePage === 1}
@@ -231,7 +256,12 @@ export default function ProductsPage() {
 
             {pageRange.map((p, idx) =>
               p === "…" ? (
-                <span key={`dots-${idx}`} className="px-2 text-gray-400 select-none">…</span>
+                <span
+                  key={`dots-${idx}`}
+                  className="px-2 text-gray-400 select-none"
+                >
+                  …
+                </span>
               ) : (
                 <PagerButton
                   key={p}
@@ -247,7 +277,11 @@ export default function ProductsPage() {
               disabled={safePage === totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             />
-            <PagerButton label="»" disabled={safePage === totalPages} onClick={() => setPage(totalPages)} />
+            <PagerButton
+              label="»"
+              disabled={safePage === totalPages}
+              onClick={() => setPage(totalPages)}
+            />
           </div>
         </div>
       </div>
@@ -267,10 +301,12 @@ function PagerButton({
   disabled?: boolean;
   active?: boolean;
 }) {
-  const base = "px-3 py-1.5 rounded border text-sm select-none transition transform";
+  const base =
+    "px-3 py-1.5 rounded border text-sm select-none transition transform";
   const border = `1px solid ${UI.border}`;
   const activeStyle = {
-    background: "linear-gradient(90deg, rgba(0,255,255,0.22), rgba(255,0,255,0.22))",
+    background:
+      "linear-gradient(90deg, rgba(0,255,255,0.22), rgba(255,0,255,0.22))",
     boxShadow: UI.glow,
     color: "#E5E7EB",
     cursor: "default",
@@ -280,12 +316,18 @@ function PagerButton({
     border,
     color: "#D1D5DB",
   } as React.CSSProperties;
-  const disabledStyle = { opacity: 0.45, cursor: "not-allowed" } as React.CSSProperties;
+  const disabledStyle = {
+    opacity: 0.45,
+    cursor: "not-allowed",
+  } as React.CSSProperties;
 
   return (
     <button
       className={`${base} ${active ? "font-semibold" : ""}`}
-      style={{ ...(active ? activeStyle : normalStyle), ...(disabled ? disabledStyle : {}) }}
+      style={{
+        ...(active ? activeStyle : normalStyle),
+        ...(disabled ? disabledStyle : {}),
+      }}
       onClick={() => !disabled && !active && onClick()}
       disabled={disabled || active}
       aria-current={active ? "page" : undefined}

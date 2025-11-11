@@ -291,49 +291,56 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     String(req.query.includeInactive || "").toLowerCase() === "true";
   const withStock = String(req.query.withStock || "").toLowerCase() === "true";
 
-  const where = {
+  const pageSize = Math.min(Math.max(Number(req.query.pageSize || 10), 1), 200);
+  const page = Math.max(Number(req.query.page || 1), 1);
+  const skip = (page - 1) * pageSize;
+
+  const where: Prisma.ProductWhereInput = {
     ...(q
       ? {
           OR: [
-            { name: { contains: q, mode: "insensitive" as const } },
-            { sku: { contains: q, mode: "insensitive" as const } },
-            { category: { contains: q, mode: "insensitive" as const } },
+            { name: { contains: q, mode: "insensitive" } },
+            { sku: { contains: q, mode: "insensitive" } },
+            { category: { contains: q, mode: "insensitive" } },
           ],
         }
       : {}),
     ...(includeInactive ? {} : { active: true }),
   };
 
-  const products = await prisma.product.findMany({
-    where,
-    take: 100,
-    orderBy: { id: "asc" },
-  });
-  if (!withStock) return res.json(products);
+  const [total, products] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      orderBy: { id: "asc" },
+      skip,
+      take: pageSize,
+    }),
+  ]);
 
-  // Adjuntar stock actual
+  if (!withStock) return res.json({ total, rows: products });
+
+  // adjuntar stock como ya lo haces:
   const ids = products.map((p) => p.id);
-  if (ids.length === 0) return res.json(products);
-
-  const rows = (await prisma.stockMovement.groupBy({
-    by: ["productId", "type"] as const,
-    where: { productId: { in: ids } },
-    _sum: { qty: true },
-  })) as unknown as Array<{
-    productId: number;
-    type: string;
-    _sum: { qty: number | null };
-  }>;
-
-  const map = new Map<number, number>();
-  for (const r of rows) {
-    const sign = r.type === "out" ? -1 : 1;
-    map.set(
-      r.productId,
-      (map.get(r.productId) || 0) + sign * Number(r._sum.qty || 0)
-    );
+  let rowsWithStock = products;
+  if (ids.length) {
+    const grouped = await prisma.stockMovement.groupBy({
+      by: ["productId", "type"] as const,
+      where: { productId: { in: ids } },
+      _sum: { qty: true },
+    });
+    const map = new Map<number, number>();
+    for (const r of grouped as any[]) {
+      const sign = r.type === "out" ? -1 : 1;
+      map.set(
+        r.productId,
+        (map.get(r.productId) || 0) + sign * Number(r._sum.qty || 0)
+      );
+    }
+    rowsWithStock = products.map((p) => ({ ...p, stock: map.get(p.id) ?? 0 }));
   }
-  res.json(products.map((p) => ({ ...p, stock: map.get(p.id) ?? 0 })));
+
+  res.json({ total, rows: rowsWithStock });
 });
 
 app.get("/products/next-sku", requireRole("EMPLOYEE"), async (req, res) => {
