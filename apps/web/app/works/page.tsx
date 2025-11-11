@@ -216,6 +216,22 @@ export default function WorksPage() {
     }
   };
 
+  async function updateStatusAndNotify(
+    w: WorkOrder,
+    newStatus: WorkStatus,
+    extraPatch?: Patch
+  ) {
+    const ok = await update(w.id, { status: newStatus, ...(extraPatch || {}) });
+    if (!ok) return;
+
+    // Mensaje corto para cambios de estado
+    const msg = buildStatusMsg(w, newStatus);
+    openWhatsApp(w.customerPhone, msg);
+
+    // refresca lista
+    await load();
+  }
+
   const onDelete = async (id: number) => {
     if (!canDelete) return;
     if (!confirm("¿ELIMINAR ESTE TRABAJO? ESTA ACCIÓN ES PERMANENTE.")) return;
@@ -234,14 +250,16 @@ export default function WorksPage() {
   };
 
   // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
+  // Si hay cotización: finaliza directo con saldo y notifica
   const openFinish = async (w: WorkOrder) => {
     if (w.quote != null) {
       const dep = Number(w.deposit || 0);
       const saldo = Math.max(Number(w.quote) - dep, 0);
-      await update(w.id, { status: "FINISHED", total: saldo });
+      await updateStatusAndNotify(w, "FINISHED", { total: saldo });
       setMsg("TRABAJO FINALIZADO ✅");
       return;
     }
+    // (sigue el modal para los que no tienen cotización)
     setFinishTarget(w);
     setFinishAmount(w.total != null ? String(Number(w.total)) : "");
     setFinishModalOpen(true);
@@ -255,7 +273,7 @@ export default function WorksPage() {
       setTimeout(() => setMsg(""), 2000);
       return;
     }
-    await update(finishTarget.id, { status: "FINISHED", total: val });
+    await updateStatusAndNotify(finishTarget, "FINISHED", { total: val });
     setFinishModalOpen(false);
     setFinishTarget(null);
     setFinishAmount("");
@@ -296,7 +314,10 @@ export default function WorksPage() {
 
     // 1) Actualizar/limpiar cotización en WorkOrder
     if (editHasQuote === "NO") {
-      const ok = await update(editQDTarget.id, { quotation: null, quote: null });
+      const ok = await update(editQDTarget.id, {
+        quotation: null,
+        quote: null,
+      });
       if (ok !== false) setMsg("COTIZACIÓN ACTUALIZADA ✅");
       // si no hay cotización, ignoramos abono
       setEditQDOpen(false);
@@ -351,6 +372,68 @@ export default function WorksPage() {
     { key: "FINISHED", label: "FINALIZADOS" },
     { key: "DELIVERED", label: "ENTREGADOS" },
   ];
+
+  // ===== WhatsApp helpers =====
+  function onlyDigits(s: string) {
+    return (s || "").replace(/\D+/g, "");
+  }
+  function normalizeCOPhone(raw: string) {
+    const d = onlyDigits(raw);
+    if (d.startsWith("57")) return d;
+    // si son 10 dígitos locales, anteponer 57
+    if (d.length === 10) return "57" + d;
+    // fallback: si ya viene en 57xxxxxxxxxx o algo raro, intenta 57 + últimos 10
+    return d.length >= 10 ? "57" + d.slice(-10) : d;
+  }
+  function toCOP(n?: number | null) {
+    if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+    return n.toLocaleString("es-CO", {
+      style: "currency",
+      currency: "COP",
+      maximumFractionDigits: 0,
+    });
+  }
+  function openWhatsApp(phone: string, text: string) {
+    const num = normalizeCOPhone(phone);
+    const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+  // Mensajes
+  function buildReceivedMsg(w: WorkOrder) {
+    const dep = Number(w.deposit || 0);
+    const quote = Number(w.quote ?? 0);
+    const saldo = Math.max(quote - dep, 0);
+
+    const partes: string[] = [
+      `Hola ${UU(w.customerName)} 👋`,
+      `Tu trabajo *${UU(w.code)}* fue *RECIBIDO*.`,
+      `Equipo: ${UU(w.item)}`,
+      `Descripción: ${UU(w.description)}`,
+    ];
+    if (w.quote != null) {
+      partes.push(
+        `Cotización: ${toCOP(quote)}`,
+        `Abonos: ${toCOP(dep)}`,
+        `Saldo: ${toCOP(saldo)}`
+      );
+    }
+    partes.push(
+      `Ubicación: ${w.location === "LOCAL" ? "En local" : "En Bogotá"}`,
+      `Gracias por elegirnos 🙌`
+    );
+    return partes.join("\n");
+  }
+
+  function buildStatusMsg(w: WorkOrder, newStatus: WorkStatus) {
+    const base = `*${UU(w.code)}*`;
+    if (newStatus === "IN_PROGRESS")
+      return `${base} ahora está *EN PROCESO* 🔧`;
+    if (newStatus === "FINISHED")
+      return `${base} está *FINALIZADO*. ¡Puedes pasar por él! ✅`;
+    if (newStatus === "DELIVERED")
+      return `${base} *ENTREGADO*. Recuerda: para cualquier garantía avísanos con tiempo para gestionarla. 🧾`;
+    return `${base} ahora está *${niceStatus[newStatus]}*`;
+  }
 
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
@@ -538,17 +621,18 @@ export default function WorksPage() {
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
                       style={{ borderColor: COLORS.border }}
-                      onClick={() => update(w.id, { status: "RECEIVED" })}
+                      onClick={() => updateStatusAndNotify(w, "RECEIVED")}
                     >
                       RECIBIDO
                     </button>
                   )}
 
+                  {/* EN PROCESO */}
                   {w.status !== "IN_PROGRESS" && (
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
                       style={{ borderColor: COLORS.border }}
-                      onClick={() => update(w.id, { status: "IN_PROGRESS" })}
+                      onClick={() => updateStatusAndNotify(w, "IN_PROGRESS")}
                     >
                       EN PROCESO
                     </button>
@@ -584,7 +668,7 @@ export default function WorksPage() {
                     <button
                       className="px-3 py-1 rounded border text-xs uppercase"
                       style={{ borderColor: COLORS.border }}
-                      onClick={() => deliver(w)}
+                      onClick={() => updateStatusAndNotify(w, "DELIVERED")}
                     >
                       ENTREGADO
                     </button>
@@ -905,12 +989,16 @@ export default function WorksPage() {
                   });
 
                   if (r.ok) {
-                    const created = (await r.json().catch(() => null)) as
-                      | { id: number }
-                      | null;
+                    const created = (await r.json().catch(() => null)) as {
+                      id: number;
+                    } | null;
 
                     // Si hay abono inicial, registrar pago real
-                    if (created && typeof created.id === "number" && depositNum > 0) {
+                    if (
+                      created &&
+                      typeof created.id === "number" &&
+                      depositNum > 0
+                    ) {
                       await apiFetch(`/works/${created.id}/payments`, {
                         method: "POST",
                         body: JSON.stringify({
@@ -920,6 +1008,18 @@ export default function WorksPage() {
                           createdBy: username || undefined,
                         }),
                       }).catch(() => null);
+                    }
+
+                    // 🔽 Nuevo: fetch del trabajo recién creado para obtener code/phone y notificar
+                    let full: WorkOrder | null = null;
+                    try {
+                      const rr = await apiFetch(`/works/${created?.id}`);
+                      if (rr.ok) full = (await rr.json()) as WorkOrder;
+                    } catch {}
+
+                    if (full) {
+                      const msg = buildReceivedMsg(full);
+                      openWhatsApp(full.customerPhone, msg);
                     }
 
                     setMsg("TRABAJO CREADO ✅");
