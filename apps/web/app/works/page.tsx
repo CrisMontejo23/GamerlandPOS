@@ -710,6 +710,19 @@ export default function WorksPage() {
                       ELIMINAR
                     </button>
                   )}
+
+                  {delivered && canDelete && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      <button
+                        className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+                        style={{ borderColor: COLORS.border }}
+                        onClick={() => onDelete(w.id)}
+                        title="Eliminar definitivamente este trabajo (ADMIN)"
+                      >
+                        ELIMINAR
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </article>
