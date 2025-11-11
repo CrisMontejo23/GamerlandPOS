@@ -406,9 +406,9 @@ export default function WorksPage() {
 
     const partes: string[] = [
       `Hola ${UU(w.customerName)} 🎮`,
-      `Tu trabajo ${UU(w.code)} fue RECIBIDO. 📥`,
+      `Tu trabajo ${UU(w.code)} fue RECIBIDO.`,
       `Equipo: ${UU(w.item)} 🕹️`,
-      `Descripción: ${UU(w.description)} 📢`,
+      `Descripción: ${UU(w.description)}`,
     ];
     if (w.quote != null) {
       partes.push(
@@ -418,18 +418,18 @@ export default function WorksPage() {
       );
     }
     partes.push(      
-      `Gracias por elegirnos. 😊`
+      `Gracias por elegirnos.`
     );
     return partes.join("\n");
   }
 
   function buildStatusMsg(w: WorkOrder, newStatus: WorkStatus) {
     const base = `${UU(w.code)}`;
-    if (newStatus === "IN_PROGRESS") return `${base} ahora está EN PROCESO. ⚙️`;
+    if (newStatus === "IN_PROGRESS") return `${base} ahora está EN PROCESO.`;
     if (newStatus === "FINISHED")
-      return `${base} está FINALIZADO. Puedes pasar por él. ✅`;
+      return `${base} está FINALIZADO. Puedes pasar por él.`;
     if (newStatus === "DELIVERED")
-      return `${base} ENTREGADO. Recuerda: para cualquier garantía avísanos con tiempo para gestionarla. 😁`;
+      return `${base} ENTREGADO. Recuerda: para cualquier garantía avísanos con tiempo para gestionarla.`;
     return `${base} ahora está ${niceStatus[newStatus]}`;
   }
 
