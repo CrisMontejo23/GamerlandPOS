@@ -9,8 +9,8 @@ type Product = {
   id: number;
   sku: string;
   name: string;
-  price: string;
-  cost: string;
+  price: number;
+  cost: number;
   stock?: number;
 };
 type CartItem = { product: Product; qty: number; unitPrice: number };
@@ -167,9 +167,9 @@ export default function POSPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const receivedRef = useRef<HTMLInputElement>(null);
 
-  // Buscar
   useEffect(() => {
     let abort = false;
+
     const run = async () => {
       if (!q) {
         setFound([]);
@@ -180,13 +180,20 @@ export default function POSPage() {
         const url = new URL(`/products`, window.location.origin);
         url.searchParams.set("q", q);
         url.searchParams.set("withStock", "true");
+
         const r = await apiFetch(`/products?${url.searchParams.toString()}`);
-        const data: Product[] = await r.json();
-        if (!abort) setFound(data);
+        const payload = (await r.json()) as
+          | Product[]
+          | { total: number; rows: Product[] };
+
+        const list = Array.isArray(payload) ? payload : payload?.rows ?? [];
+
+        if (!abort) setFound(list);
       } finally {
         if (!abort) setLoading(false);
       }
     };
+
     const t = setTimeout(run, 220);
     return () => {
       abort = true;
@@ -338,35 +345,40 @@ export default function POSPage() {
   }, [checkout]);
 
   // PAPELERÍA
-  const addPaperItem = async () => {
-    const toProduct = (raw: unknown): Product => {
-      const r = raw as Partial<Product>;
-      return {
-        id: Number(r.id ?? 0),
-        sku: String(r.sku ?? ""),
-        name: String(r.name ?? "PAPELERIA"),
-        price: String(r.price ?? "0"),
-        cost: String(r.cost ?? "0"),
-        stock: Number(r.stock ?? 0),
-      };
+  // Tipos auxiliares del backend
+  type ProductsResp = Product[] | { total: number; rows: Product[] };
+
+  function asProduct(raw: unknown): Product | null {
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw as Partial<Record<keyof Product, unknown>>;
+    return {
+      id: Number(r.id ?? 0),
+      sku: String(r.sku ?? ""),
+      name: String(r.name ?? "PAPELERIA"),
+      price: Number(r.price ?? "0"),
+      cost: Number(r.cost ?? "0"),
+      stock: Number(r.stock ?? 0),
     };
+  }
+
+  const addPaperItem = async () => {
+    // 1) Buscar si ya existe el producto PAPELERIA
     const r = await apiFetch(`/products?q=PAPELERIA&withStock=true`);
-    const list: unknown = await r.json();
-    let raw = Array.isArray(list)
-      ? (list.find(
-          (x) =>
-            typeof x === "object" &&
-            x !== null &&
-            String((x as { name?: string }).name ?? "").toUpperCase() ===
-              "PAPELERIA"
-        ) as Partial<Product> | undefined)
-      : undefined;
-    if (!raw) {
+    const payload = (await r.json()) as ProductsResp;
+    const list: Product[] = Array.isArray(payload) ? payload : payload.rows;
+
+    let paper = list.find(
+      (x) =>
+        x && typeof x.name === "string" && x.name.toUpperCase() === "PAPELERIA"
+    );
+
+    // 2) Si no existe, crearlo (requiere rol ADMIN)
+    if (!paper) {
       const created = await apiFetch(`/products`, {
         method: "POST",
         body: JSON.stringify({
           name: "PAPELERIA",
-          sku: "",
+          sku: "", // se autogenera según tu backend
           category: "SERVICIOS",
           cost: 0,
           price: 0,
@@ -375,12 +387,30 @@ export default function POSPage() {
           minStock: 0,
         }),
       });
-      raw = (await created.json()) as Partial<Product>;
+
+      if (!created.ok) {
+        const err = await created.json().catch(() => ({}));
+        // Puedes mostrar tu GamerToast de error si prefieres
+        alert(
+          err?.error ||
+            "No se pudo crear el item PAPELERIA (se requiere rol ADMIN)."
+        );
+        return;
+      }
+
+      const rawCreated = await created.json();
+      const parsed = asProduct(rawCreated);
+      if (!parsed) {
+        alert("Respuesta inesperada al crear PAPELERIA.");
+        return;
+      }
+      paper = parsed;
     }
-    const paper = toProduct(raw);
+
+    // 3) Agregar al carrito como servicio sin límite de stock
     setCart((prev): CartItem[] => [
       ...prev,
-      { product: { ...paper, stock: 9999 }, qty: 1, unitPrice: 0 },
+      { product: { ...paper!, stock: 9999 }, qty: 1, unitPrice: 0 },
     ]);
   };
 
