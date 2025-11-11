@@ -644,7 +644,7 @@ export default function POSPage() {
                             color: active ? COLORS.cyan : COLORS.text,
                           }}
                         >
-                          {m === "QR_LLAVE" ? "QR / Llave" : m}
+                          {m === "QR_LLAVE" ? "QR / LLAVE" : m}
                         </button>
                       );
                     }
