@@ -155,9 +155,11 @@ function profitByRuleFromSale(s: SaleLine) {
   if (name === "REFACIL - PAGO CUOTA PAYJOY") return 250;
   if (name === "REFACIL - GAME PASS") return Math.round(total * 0.03);
   if (
-    ["REFACIL - CARGA DE CUENTA", "TRANSACCION", "TRANSACCION DATAFONO"].includes(
-      name
-    )
+    [
+      "REFACIL - CARGA DE CUENTA",
+      "TRANSACCION",
+      "TRANSACCION DATAFONO",
+    ].includes(name)
   )
     return 0;
 
@@ -551,8 +553,7 @@ export default function ReportsPage() {
       const neto = {
         EFECTIVO: payments?.neto?.EFECTIVO ?? bruto.EFECTIVO - gastos.EFECTIVO,
         QR_LLAVE: payments?.neto?.QR_LLAVE ?? bruto.QR_LLAVE - gastos.QR_LLAVE,
-        DATAFONO:
-          payments?.neto?.DATAFONO ?? bruto.DATAFONO - gastos.DATAFONO,
+        DATAFONO: payments?.neto?.DATAFONO ?? bruto.DATAFONO - gastos.DATAFONO,
         total: payments?.neto?.total ?? bruto.total - gastos.total,
       };
 
@@ -1088,9 +1089,24 @@ function ChartLine({
           contentStyle={{ backgroundColor: "#1E1F4B", border: "none" }}
         />
         <Legend />
-        <Line type="monotone" dataKey="Ventas" stroke="#00FFFF" strokeWidth={2} />
-        <Line type="monotone" dataKey="Gastos" stroke="#FF00FF" strokeWidth={2} />
-        <Line type="monotone" dataKey="Utilidad" stroke="#A5FF00" strokeWidth={2} />
+        <Line
+          type="monotone"
+          dataKey="Ventas"
+          stroke="#00FFFF"
+          strokeWidth={2}
+        />
+        <Line
+          type="monotone"
+          dataKey="Gastos"
+          stroke="#FF00FF"
+          strokeWidth={2}
+        />
+        <Line
+          type="monotone"
+          dataKey="Utilidad"
+          stroke="#A5FF00"
+          strokeWidth={2}
+        />
       </LineChart>
     </ResponsiveContainer>
   );
