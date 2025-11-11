@@ -570,7 +570,7 @@ export default function SalesPage() {
                   title={p.method}
                 >
                   <b className="text-cyan-300">
-                    {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}:
+                    {p.method === "QR_LLAVE" ? "QR / LLAVE" : p.method}:
                   </b>{" "}
                   {fmtCOP(p.amount)}
                 </span>
@@ -741,7 +741,7 @@ export default function SalesPage() {
                             }}
                             title={p.method}
                           >
-                            {p.method === "QR_LLAVE" ? "QR / Llave" : p.method}
+                            {p.method === "QR_LLAVE" ? "QR / LLAVE" : p.method}
                           </span>
                         ))}
                       </div>
