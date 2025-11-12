@@ -31,7 +31,7 @@ type Summary = {
   costo_vendido: number;
   gastos_total: number;
   gastos_operativos: number;
-  utilidad: number; // <-- AHORA VIENE "POR REGLAS" DESDE EL BACKEND
+  utilidad: number; // puede venir del backend, pero en UI y PDF usamos "por reglas"
 };
 
 type PaymentsBreakdown = {
@@ -60,7 +60,7 @@ type SaleLine = {
   createdAt: string;
   sku: string;
   name: string;
-  category?: string | null; // <-- NUEVO (lo devuelve /reports/sales-lines)
+  category?: string | null;
   qty: number;
   unitPrice: number;
   unitCost: number;
@@ -76,7 +76,7 @@ type ExpenseRow = {
   description?: string | null;
   amount: number | string;
   paymentMethod?: string | null;
-  category?: string | null; // "INTERNO" | "EXTERNO" | otros legacy
+  category?: string | null;
   createdAt: string;
 };
 
@@ -88,7 +88,6 @@ type CashboxAPI = {
   total: number;
   lastUpdated?: string;
 };
-
 type CashboxState = {
   ok: boolean;
   source: "api" | "fallback";
@@ -139,7 +138,7 @@ const FIXED_MONTHLY = {
 const FIXED_MONTHLY_TOTAL =
   FIXED_MONTHLY.arriendo + FIXED_MONTHLY.servicios + FIXED_MONTHLY.nomina;
 
-/** Prorratea gastos fijos mensuales según el rango dado */
+/** Prorratea gastos fijos mensuales según el rango dado (aprox 30 días/mes) */
 function prorateFixed(fromISO: string, toISO: string): number {
   const from = new Date(`${fromISO}T00:00:00`);
   const to = new Date(`${toISO}T23:59:59`);
@@ -147,7 +146,6 @@ function prorateFixed(fromISO: string, toISO: string): number {
     1,
     Math.round((to.getTime() - from.getTime()) / 86400000) + 1
   );
-  // Aproximación simple: 30 días por mes
   const months = days / 30;
   return Math.round(FIXED_MONTHLY_TOTAL * months);
 }
@@ -167,7 +165,7 @@ async function fetchImageAsDataUrl(src: string): Promise<string | null> {
   }
 }
 
-// ---- Reglas de ganancia (equivalentes a tu Excel) ----
+/* ===== Reglas de ganancia (igual que en Sales) ===== */
 function profitByRuleFromSale(s: SaleLine) {
   const name = (s.name || "").toUpperCase().trim();
   const total = typeof s.revenue === "number" ? s.revenue : s.unitPrice * s.qty;
@@ -191,15 +189,19 @@ function profitByRuleFromSale(s: SaleLine) {
 
   return Math.round(total - costo);
 }
+const revenueFromLine = (s: SaleLine) =>
+  typeof s.revenue === "number" ? s.revenue : s.unitPrice * s.qty;
+const costFromLine = (s: SaleLine) =>
+  typeof s.cost === "number" ? s.cost : s.unitCost * s.qty;
 
-/** Suma gastos operativos EXTERNOS (excluye todo lo que sea category === "INTERNO") */
+/** Suma gastos operativos EXTERNOS (excluye category === "INTERNO") */
 function sumOperativeExpensesExcludingInternos(list: ExpenseRow[]) {
   return (list || [])
     .filter((e) => String(e.category || "").toUpperCase() !== "INTERNO")
     .reduce((a, e) => a + Number(e.amount || 0), 0);
 }
 
-/* ====== NUEVO: Series diarias, rolling average y semanales ====== */
+/* ===== Series diarias / semanales ===== */
 function toLocalDayKey(d: string | Date) {
   const x = d instanceof Date ? d : new Date(d);
   const y = x.getFullYear();
@@ -208,11 +210,9 @@ function toLocalDayKey(d: string | Date) {
   return `${y}-${m}-${day}`;
 }
 function getISOWeek(dt: Date) {
-  // Algoritmo ISO week-numbering
   const date = new Date(
     Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate())
   );
-  // jueves de esta semana
   const dayNum = (date.getUTCDay() + 6) % 7;
   date.setUTCDate(date.getUTCDate() - dayNum + 3);
   const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
@@ -242,8 +242,8 @@ function buildDailySeries(lines: SaleLine[]): DailyPoint[] {
   >();
   for (const s of lines || []) {
     const key = toLocalDayKey(s.createdAt);
-    const rev = typeof s.revenue === "number" ? s.revenue : s.unitPrice * s.qty;
-    const cst = typeof s.cost === "number" ? s.cost : s.unitCost * s.qty;
+    const rev = revenueFromLine(s);
+    const cst = costFromLine(s);
     const prf = profitByRuleFromSale(s);
     const cur = map.get(key) || { revenue: 0, cost: 0, profit: 0 };
     cur.revenue += rev;
@@ -251,7 +251,7 @@ function buildDailySeries(lines: SaleLine[]): DailyPoint[] {
     cur.profit += prf;
     map.set(key, cur);
   }
-  const out: DailyPoint[] = Array.from(map.entries())
+  return Array.from(map.entries())
     .map(([date, v]) => ({
       date,
       revenue: v.revenue,
@@ -259,15 +259,13 @@ function buildDailySeries(lines: SaleLine[]): DailyPoint[] {
       profit: v.profit,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
-  return out;
 }
-
 function addRolling7(series: DailyPoint[]): DailyWithMA[] {
   const out: DailyWithMA[] = [];
-  let accRev = 0;
-  let accPrf = 0;
-  const qRev: number[] = [];
-  const qPrf: number[] = [];
+  let accRev = 0,
+    accPrf = 0;
+  const qRev: number[] = [],
+    qPrf: number[] = [];
   const W = 7;
   for (const p of series) {
     qRev.push(p.revenue);
@@ -301,8 +299,8 @@ function buildWeeklySeries(lines: SaleLine[]): WeeklyPoint[] {
     const d = new Date(s.createdAt);
     const { year, week } = getISOWeek(d);
     const weekKey = `${year}-W${String(week).padStart(2, "0")}`;
-    const rev = typeof s.revenue === "number" ? s.revenue : s.unitPrice * s.qty;
-    const cst = typeof s.cost === "number" ? s.cost : s.unitCost * s.qty;
+    const rev = revenueFromLine(s);
+    const cst = costFromLine(s);
     const prf = profitByRuleFromSale(s);
     const cur = map.get(weekKey) || {
       revenue: 0,
@@ -334,24 +332,28 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // Resúmenes base (del backend)
+  // Resúmenes base (del backend) — los seguimos mostrando, pero los KPIs usan líneas
   const [sumDay, setSumDay] = useState<Summary | null>(null);
   const [payDay, setPayDay] = useState<PaymentsBreakdown | null>(null);
   const [sumMonth, setSumMonth] = useState<Summary | null>(null);
   const [sumYear, setSumYear] = useState<Summary | null>(null);
   const [papTotal, setPapTotal] = useState<number>(0);
 
-  // Utilidad por reglas (front) — día/mes/año
+  // ===== NUEVO: totales calculados desde LÍNEAS (mismo criterio que Sales) =====
+  const [ventasRange, setVentasRange] = useState(0);
+  const [ventasMonth, setVentasMonth] = useState(0);
+  const [ventasYear, setVentasYear] = useState(0);
+
   const [utilDayByRule, setUtilDayByRule] = useState<number>(0);
   const [utilMonthByRule, setUtilMonthByRule] = useState<number>(0);
   const [utilYearByRule, setUtilYearByRule] = useState<number>(0);
 
-  // NUEVO: gastos operativos recalculados (excluyendo INTERNO) — día/mes/año
+  // NUEVO: gastos operativos recalculados (excluyendo INTERNO)
   const [opsDay, setOpsDay] = useState<number>(0);
   const [opsMonth, setOpsMonth] = useState<number>(0);
   const [opsYear, setOpsYear] = useState<number>(0);
 
-  // NUEVO: series para tendencias
+  // Series
   const [dailySeries, setDailySeries] = useState<DailyWithMA[]>([]);
   const [weeklySeries, setWeeklySeries] = useState<WeeklyPoint[]>([]);
 
@@ -387,14 +389,13 @@ export default function ReportsPage() {
       const mFrom = monthStartISO(to);
       const yFrom = yearStartISO(to);
 
-      // Pedimos resumen + pagos + papelería + líneas de venta + (NUEVO) gastos
       const [
         rSumDay,
         rPayDay,
         rSumMonth,
         rSumYear,
         rPapDay,
-        rLinesRange, // NUEVO: líneas en el rango elegido (para series)
+        rLinesRange,
         rLinesMonth,
         rLinesYear,
         rExpDay,
@@ -406,7 +407,7 @@ export default function ReportsPage() {
         apiFetch(`/reports/summary?from=${mFrom}&to=${to}`),
         apiFetch(`/reports/summary?from=${yFrom}&to=${to}`),
         apiFetch(`/reports/papeleria?from=${from}&to=${to}`),
-        apiFetch(`/reports/sales-lines?from=${from}&to=${to}`), // para tendencias
+        apiFetch(`/reports/sales-lines?from=${from}&to=${to}`),
         apiFetch(`/reports/sales-lines?from=${mFrom}&to=${to}`),
         apiFetch(`/reports/sales-lines?from=${yFrom}&to=${to}`),
         apiFetch(`/expenses?from=${from}&to=${to}`),
@@ -440,14 +441,30 @@ export default function ReportsPage() {
         rExpYear.json() as Promise<ExpenseRow[]>,
       ]);
 
-      // Estados base recibidos del backend
+      // Estados base (por si quieres ver lo que dice el backend)
       setSumDay(dSumDay);
       setPayDay(dPayDay);
       setSumMonth(dSumMonth);
       setSumYear(dSumYear);
       setPapTotal(Number(dPap?.total || 0));
 
-      // Utilidades por regla (Excel) — siempre desde sales-lines
+      // ===== NUEVO: totales por líneas (mismo criterio que Sales) =====
+      const vRange = (linesRange || []).reduce(
+        (a, s) => a + revenueFromLine(s),
+        0
+      );
+      const vMonth = (linesMonth || []).reduce(
+        (a, s) => a + revenueFromLine(s),
+        0
+      );
+      const vYear = (linesYear || []).reduce(
+        (a, s) => a + revenueFromLine(s),
+        0
+      );
+      setVentasRange(vRange);
+      setVentasMonth(vMonth);
+      setVentasYear(vYear);
+
       const uRange = (linesRange || []).reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
@@ -460,27 +477,19 @@ export default function ReportsPage() {
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
-
-      // Para “Resumen diario” mantenemos el valor del periodo seleccionado (si es día, coincide)
-      setUtilDayByRule(
-        typeof dSumDay?.utilidad === "number" ? dSumDay.utilidad : uRange
-      );
-      setUtilMonthByRule(
-        typeof dSumMonth?.utilidad === "number" ? dSumMonth.utilidad : uMonth
-      );
-      setUtilYearByRule(
-        typeof dSumYear?.utilidad === "number" ? dSumYear.utilidad : uYear
-      );
+      setUtilDayByRule(uRange);
+      setUtilMonthByRule(uMonth);
+      setUtilYearByRule(uYear);
 
       // Gastos operativos EXTERNOS
-      const gRange = sumOperativeExpensesExcludingInternos(expDay || []); // expDay corresponde a from..to
+      const gRange = sumOperativeExpensesExcludingInternos(expDay || []);
       const gMonth = sumOperativeExpensesExcludingInternos(expMonth || []);
       const gYear = sumOperativeExpensesExcludingInternos(expYear || []);
       setOpsDay(gRange);
       setOpsMonth(gMonth);
       setOpsYear(gYear);
 
-      // ===== Series para tendencias (diarias + rolling 7) y semanales =====
+      // Series
       const daily = buildDailySeries(linesRange || []);
       setDailySeries(addRolling7(daily));
       setWeeklySeries(buildWeeklySeries(linesRange || []));
@@ -517,14 +526,13 @@ export default function ReportsPage() {
         return;
       }
     } catch {
-      /* fallback */
+      /* ignore */
     }
     try {
       const r2 = await apiFetch(
         `/reports/payments?from=2000-01-01&to=2099-12-31`
       );
       const p: PaymentsBreakdown = await r2.json();
-
       const bruto = {
         EFECTIVO: Number(p?.EFECTIVO || 0),
         QR_LLAVE: Number(p?.QR_LLAVE || 0),
@@ -535,22 +543,11 @@ export default function ReportsPage() {
         QR_LLAVE: Number(p?.gastos?.QR_LLAVE || 0),
         DATAFONO: Number(p?.gastos?.DATAFONO || 0),
       };
-
       const neto = {
-        EFECTIVO:
-          typeof p?.neto?.EFECTIVO === "number"
-            ? p.neto.EFECTIVO
-            : bruto.EFECTIVO - gastos.EFECTIVO,
-        QR_LLAVE:
-          typeof p?.neto?.QR_LLAVE === "number"
-            ? p.neto.QR_LLAVE
-            : bruto.QR_LLAVE - gastos.QR_LLAVE,
-        DATAFONO:
-          typeof p?.neto?.DATAFONO === "number"
-            ? p.neto.DATAFONO
-            : bruto.DATAFONO - gastos.DATAFONO,
+        EFECTIVO: p?.neto?.EFECTIVO ?? bruto.EFECTIVO - gastos.EFECTIVO,
+        QR_LLAVE: p?.neto?.QR_LLAVE ?? bruto.QR_LLAVE - gastos.QR_LLAVE,
+        DATAFONO: p?.neto?.DATAFONO ?? bruto.DATAFONO - gastos.DATAFONO,
       };
-
       setCashbox({
         ok: true,
         source: "fallback",
@@ -570,30 +567,17 @@ export default function ReportsPage() {
     return () => clearInterval(t);
   }, [loadCashbox]);
 
-  /* ======= KPI de rentabilidad y punto de equilibrio ======= */
-  // Sobre el rango seleccionado (from..to)
+  /* ======= KPI de rentabilidad y punto de equilibrio (sobre líneas) ======= */
   const kpiProfitability = useMemo(() => {
-    // Totales reales del rango desde dailySeries
     const totRevenue = dailySeries.reduce((a, d) => a + d.revenue, 0);
     const totProfit = dailySeries.reduce((a, d) => a + d.profit, 0);
-
-    // Gastos operativos externos (del rango) ya calculados en opsDay
     const ops = opsDay;
-
-    // Gastos fijos prorrateados según días del rango
     const fixed = prorateFixed(from, to);
-
-    // Margen real del periodo (sobre ingresos) usando la utilidad por regla
     const marginRate = totRevenue > 0 ? totProfit / totRevenue : 0;
-
-    // Resultado neto = util (regla) - gastos operativos - gastos fijos prorrateados
     const net = totProfit - ops - fixed;
-
-    // Punto de equilibrio (ingresos necesarios) = (ops + fixed) / marginRate
     const breakEvenRevenue =
       marginRate > 0 ? Math.ceil((ops + fixed) / marginRate) : Infinity;
 
-    // Promedios diarios para lectura rápida
     const days = Math.max(1, dailySeries.length);
     const avgRevenueDay = Math.round(totRevenue / days);
     const avgProfitDay = Math.round(totProfit / days);
@@ -619,7 +603,6 @@ export default function ReportsPage() {
     };
   }, [dailySeries, opsDay, from, to]);
 
-  /* Charts (UI) — métricas clave */
   const payForChart = payDay?.neto ?? {
     EFECTIVO: payDay?.EFECTIVO || 0,
     QR_LLAVE: payDay?.QR_LLAVE || 0,
@@ -719,7 +702,7 @@ export default function ReportsPage() {
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
       {loading && <div>CARGANDO...</div>}
 
-      {/* Contenedor del dashboard */}
+      {/* Contenedor */}
       <div ref={dashRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CAJA (actual) */}
         <Card title="CAJA (actual)">
@@ -731,7 +714,7 @@ export default function ReportsPage() {
               <div className="text-xs text-gray-400 mt-1">
                 {cashbox.source === "api"
                   ? "Fuente: /reports/cashbox"
-                  : "Fuente: cálculo neto efectivo (fallback)"}
+                  : "Fuente: cálculo neto (fallback)"}
                 {cashbox.lastUpdated
                   ? ` — ${new Date(cashbox.lastUpdated).toLocaleString(
                       "es-CO"
@@ -773,17 +756,17 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Resumen del rango + Papelería */}
+        {/* Resumen del rango + Papelería (usando líneas) */}
         <Card title={resumenTitle}>
           <ChartBar
             data={[
-              { name: "Ventas", value: sumDay?.ventas || 0 },
+              { name: "Ventas", value: ventasRange || 0 },
               { name: "Gastos (Op.)", value: opsDay || 0 },
               { name: "Utilidad", value: utilDayByRule || 0 },
             ]}
           />
           <div className="space-y-1 mt-2">
-            <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
+            <KV k="Ventas" v={toCOP(ventasRange || 0)} />
             <KV k="Gastos (Operativos)" v={toCOP(opsDay || 0)} />
             <KV k="Utilidad (reglas)" v={toCOP(utilDayByRule || 0)} strong />
             <KV k="Papelería" v={toCOP(papTotal || 0)} />
@@ -810,19 +793,19 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Comparativa mes / año */}
+        {/* Comparativa mes / año (usando líneas) */}
         <Card title="Comparativa mensual vs anual">
           <ChartLine
             data={[
               {
                 name: "Mes",
-                Ventas: sumMonth?.ventas || 0,
+                Ventas: ventasMonth || 0,
                 Gastos: opsMonth || 0,
                 Utilidad: utilMonthByRule || 0,
               },
               {
                 name: "Año",
-                Ventas: sumYear?.ventas || 0,
+                Ventas: ventasYear || 0,
                 Gastos: opsYear || 0,
                 Utilidad: utilYearByRule || 0,
               },
@@ -830,7 +813,7 @@ export default function ReportsPage() {
           />
         </Card>
 
-        {/* ===== NUEVO: Tendencia diaria + MA(7) ===== */}
+        {/* Tendencia diaria + MA(7) */}
         <Card title="Tendencia diaria (Ingresos/Utilidad) y promedio móvil 7 días">
           <TrendDailyChart data={dailySeries} />
           <div className="text-xs text-gray-400 mt-2">
@@ -838,12 +821,12 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* ===== NUEVO: Acumulado semanal (ISO week) ===== */}
+        {/* Semanal */}
         <Card title="Acumulado semanal (ISO)">
           <WeeklyBars data={weeklySeries} />
         </Card>
 
-        {/* ===== NUEVO: Rentabilidad & Punto de equilibrio ===== */}
+        {/* Rentabilidad & Punto de equilibrio */}
         <Card title="Rentabilidad & Punto de equilibrio (rango actual)">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <MiniStat
@@ -907,26 +890,26 @@ export default function ReportsPage() {
         <Card title="Indicadores de eficiencia">
           <KV
             k="% Utilidad / Ventas (mes)"
-            v={pct(utilMonthByRule || 0, sumMonth?.ventas || 0)}
+            v={pct(utilMonthByRule || 0, ventasMonth || 0)}
           />
           <KV
             k="% Gastos / Ventas (mes)"
-            v={pct(opsMonth || 0, sumMonth?.ventas || 0)}
+            v={pct(opsMonth || 0, ventasMonth || 0)}
           />
           <KV
             k="% Utilidad / Ventas (año)"
-            v={pct(utilYearByRule || 0, sumYear?.ventas || 0)}
+            v={pct(utilYearByRule || 0, ventasYear || 0)}
           />
           <KV
             k="% Gastos / Ventas (año)"
-            v={pct(opsYear || 0, sumYear?.ventas || 0)}
+            v={pct(opsYear || 0, ventasYear || 0)}
           />
         </Card>
       </div>
     </div>
   );
 
-  /* ===== Exportar PDF ===== */
+  /* ===== Exportar PDF (alineado con la UI) ===== */
   async function exportReportPdf() {
     try {
       const [salesRes, expRes, sumRes, payRes, papRes] = await Promise.all([
@@ -944,11 +927,16 @@ export default function ReportsPage() {
         papRes.json() as Promise<{ total: number }>,
       ]);
 
-      // NUEVO: recalcular métricas para PDF coherentes con la UI
-      const utilByRuleForPdf =
-        typeof summary?.utilidad === "number"
-          ? summary.utilidad
-          : (sales || []).reduce((a, s) => a + profitByRuleFromSale(s), 0);
+      // ===== NUEVO: totales por líneas (mismo criterio que en pantalla)
+      const ventasPdf = (sales || []).reduce(
+        (a, s) => a + revenueFromLine(s),
+        0
+      );
+      const costoPdf = (sales || []).reduce((a, s) => a + costFromLine(s), 0);
+      const utilPdf = (sales || []).reduce(
+        (a, s) => a + profitByRuleFromSale(s),
+        0
+      );
       const gastosOperativosPdf =
         sumOperativeExpensesExcludingInternos(expenses);
       const fixedPdf = prorateFixed(from, to);
@@ -966,7 +954,6 @@ export default function ReportsPage() {
           ? logo
           : (logo as unknown as { src?: string })?.src) || "/logo.png";
       const logoDataUrl = await fetchImageAsDataUrl(logoSrc);
-
       if (logoDataUrl) pdf.addImage(logoDataUrl, "PNG", marginX, 25, 60, 60);
 
       pdf.setFont("helvetica", "bold");
@@ -988,11 +975,11 @@ export default function ReportsPage() {
         startY: curY,
         head: [["Métrica", "Valor"]],
         body: [
-          ["Ventas totales", toCOP(summary?.ventas || 0)],
-          ["Costo vendido", toCOP(summary?.costo_vendido || 0)],
+          ["Ventas totales", toCOP(ventasPdf || 0)],
+          ["Costo vendido", toCOP(costoPdf || 0)],
           ["Gastos (operativos)", toCOP(gastosOperativosPdf || 0)],
           ["Gastos fijos (prorrateados)", toCOP(fixedPdf)],
-          ["Utilidad (reglas)", toCOP(utilByRuleForPdf || 0)],
+          ["Utilidad (reglas)", toCOP(utilPdf || 0)],
           ["PAPELERÍA (periodo)", toCOP(Number(pap?.total || 0))],
         ],
         theme: "grid",
@@ -1122,7 +1109,7 @@ export default function ReportsPage() {
             new Date(s.createdAt).toLocaleString("es-CO"),
             s.sku,
             s.name,
-            s.category ?? "-", // <-- NUEVA COLUMNA
+            s.category ?? "-",
             String(s.qty),
             toCOP(s.unitPrice),
             toCOP(s.unitCost),
@@ -1315,7 +1302,6 @@ function ChartBar({ data }: { data: { name: string; value: number }[] }) {
     </ResponsiveContainer>
   );
 }
-
 function ChartPie({ data }: { data: { name: string; value: number }[] }) {
   return (
     <ResponsiveContainer width="100%" height={220}>
@@ -1344,7 +1330,6 @@ function ChartPie({ data }: { data: { name: string; value: number }[] }) {
     </ResponsiveContainer>
   );
 }
-
 function ChartLine({
   data,
 }: {
@@ -1387,9 +1372,8 @@ function ChartLine({
   );
 }
 
-/* ===== NUEVO: Tendencia diaria + MA(7) ===== */
+/* ===== Tendencia diaria + MA(7) ===== */
 function TrendDailyChart({ data }: { data: DailyWithMA[] }) {
-  // Convierto a formato para recharts
   const rechartsData = data.map((d) => ({
     date: d.date,
     Ingresos: d.revenue,
@@ -1446,7 +1430,7 @@ function TrendDailyChart({ data }: { data: DailyWithMA[] }) {
   );
 }
 
-/* ===== NUEVO: Barras semanales ===== */
+/* ===== Barras semanales ===== */
 function WeeklyBars({ data }: { data: WeeklyPoint[] }) {
   const rechartsData = data.map((w) => ({
     Semana: w.label,
