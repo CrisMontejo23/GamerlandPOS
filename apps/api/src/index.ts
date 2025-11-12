@@ -1337,10 +1337,7 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
       const cat = String(it.product?.category ?? "").toUpperCase();
       const sku = String(it.product?.sku ?? "").toUpperCase();
       const name = String(it.product?.name ?? "").toUpperCase();
-      // Regla principal: categoría PAPELERIA
-      if (cat === "PAPELERIA") return true;
-      // Salvavidas por si hay legacy sin categoría:
-      if (sku.startsWith("PAP")) return true;
+      // Regla principal: categoría PAPELERIA      
       if (name.includes("PAPELERIA")) return true;
       return false;
     })
