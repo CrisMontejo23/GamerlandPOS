@@ -997,53 +997,88 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
     return res.status(400).json({ error: "from/to inválidos (YYYY-MM-DD)" });
   }
 
-  const sales = (await prisma.sale.findMany({
+  // 1) Ventas (todas, incl. REFACIL)
+  const sales = await prisma.sale.findMany({
     where: { createdAt: { gte: from, lte: to }, status: "paid" },
-    select: { subtotal: true, tax: true, discount: true, total: true },
-  })) as Array<{
-    subtotal: unknown;
-    tax: unknown;
-    discount: unknown;
-    total: unknown;
-  }>;
+    select: {
+      subtotal: true,
+      tax: true,
+      discount: true,
+      total: true,
+      id: true,
+    },
+  });
+  const sumKey = (k: "subtotal" | "tax" | "discount" | "total") =>
+    sales.reduce((a, s) => a + Number((s as any)[k] ?? 0), 0);
 
-  const sum = (k: "subtotal" | "tax" | "discount" | "total") =>
-    sales.reduce((a, s) => a + Number((s as any)[k]), 0);
-
-  const outs = (await prisma.stockMovement.findMany({
-    where: { type: "out", createdAt: { gte: from, lte: to } },
-    select: { qty: true, unitCost: true },
-  })) as Array<{ qty: unknown; unitCost: unknown }>;
-
-  const costo = outs.reduce(
-    (a, r) => a + Number(r.qty) * Number(r.unitCost),
+  // 2) Costos vendidos (desde outs) — se mantiene para referencia
+  const outs = await prisma.stockMovement.findMany({
+    where: {
+      type: "out",
+      createdAt: { gte: from, lte: to },
+      reference: { startsWith: "sale#" },
+    },
+    select: { productId: true, unitCost: true, reference: true, qty: true },
+  });
+  const costo_vendido = outs.reduce(
+    (a, r) => a + Number(r.qty || 0) * Number(r.unitCost || 0),
     0
   );
 
-  const expenses = (await prisma.expense.findMany({
+  // 3) Gastos operativos (EXTERNOS) — se reportan aparte
+  const expenses = await prisma.expense.findMany({
     where: { createdAt: { gte: from, lte: to } },
     select: { amount: true, category: true },
-  })) as Array<{ amount: unknown; category?: string | null }>;
-
+  });
   const gastos_total = expenses.reduce((a, r) => a + Number(r.amount), 0);
   const gastos_operativos = expenses
     .filter((e) => String(e.category ?? "").toUpperCase() !== "INTERNO")
     .reduce((a, r) => a + Number(r.amount), 0);
 
-  const ventas = sum("total");
-  const utilidad = ventas - costo - gastos_operativos;
+  // 4) UTILIDAD por REGLAS (sumatoria línea a línea)
+  //    Necesitamos items y el unitCost por venta/producto
+  const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
+  for (const m of outs) {
+    const saleId = Number((m.reference || "").split("#")[1] || 0);
+    if (!saleId) continue;
+    costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
+  }
+
+  const items = await prisma.saleItem.findMany({
+    where: { sale: { createdAt: { gte: from, lte: to }, status: "paid" } },
+    select: {
+      saleId: true,
+      productId: true,
+      qty: true,
+      unitPrice: true,
+      product: { select: { name: true } },
+    },
+  });
+
+  const utilidadReglas = items.reduce((acc, it) => {
+    const unitCost = toN(costMap.get(`${it.saleId}:${it.productId}`));
+    return (
+      acc +
+      profitByRule(
+        it.product?.name ?? "",
+        Number(it.unitPrice || 0),
+        unitCost,
+        Number(it.qty || 0)
+      )
+    );
+  }, 0);
 
   res.json({
     from,
     to,
-    ventas,
-    subtotal: sum("subtotal"),
-    iva: sum("tax"),
-    descuentos: sum("discount"),
-    costo_vendido: costo,
-    gastos_total,
-    gastos_operativos,
-    utilidad,
+    ventas: sumKey("total"), // <- TODAS las ventas
+    subtotal: sumKey("subtotal"),
+    iva: sumKey("tax"),
+    descuentos: sumKey("discount"),
+    costo_vendido: Math.round(costo_vendido),
+    gastos_total: Math.round(gastos_total),
+    gastos_operativos: Math.round(gastos_operativos),
+    utilidad: Math.round(utilidadReglas), // <- SOLO utilidad por REGLAS
   });
 });
 
@@ -1058,7 +1093,14 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
 
   const sales = (await prisma.sale.findMany({
     where: { createdAt: { gte: from, lte: to }, status: "paid" },
-    include: { items: { include: { product: true } }, payments: true },
+    include: {
+      items: {
+        include: {
+          product: { select: { sku: true, name: true, category: true } },
+        },
+      },
+      payments: true,
+    },
     orderBy: { createdAt: "desc" },
   })) as Array<{
     id: number;
@@ -1069,11 +1111,16 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       qty: unknown;
       discount: unknown;
       total: unknown | null;
-      product: { sku?: string | null; name?: string | null } | null;
+      product: {
+        sku?: string | null;
+        name?: string | null;
+        category?: string | null;
+      } | null;
     }>;
     payments: Array<{ method: string; amount: unknown }>;
   }>;
 
+  // Costos unitarios por venta/producto (desde movimientos out)
   const outs = (await prisma.stockMovement.findMany({
     where: {
       type: "out",
@@ -1088,7 +1135,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
     reference: string | null;
   }>;
 
-  const costMap = new Map<string, number>(); // `${saleId}:${productId}`
+  const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
   for (const m of outs) {
     const saleId = Number((m.reference || "").split("#")[1] || 0);
     if (!saleId) continue;
@@ -1103,22 +1150,21 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       const unitCost = toN(costMap.get(`${s.id}:${it.productId}`));
       const revenue = unitPrice * qty;
       const cost = unitCost * qty;
-      const total =
-        it.total != null ? toN(it.total) : unitPrice * qty - discount;
 
       return {
         saleId: s.id,
         createdAt: s.createdAt,
         sku: it.product?.sku ?? "",
         name: it.product?.name ?? "",
+        category: it.product?.category ?? null,
         qty,
         unitPrice,
         discount,
-        total,
+        total: it.total != null ? toN(it.total) : unitPrice * qty - discount,
         unitCost,
         revenue,
         cost,
-        profit: revenue - cost,
+        profit: profitByRule(it.product?.name ?? "", unitPrice, unitCost, qty), // <— REGLA
         paymentMethods: s.payments.map((p) => ({
           method: p.method,
           amount: toN(p.amount),
@@ -1142,6 +1188,36 @@ app.get(
     );
   }
 );
+
+// ===== Utilidad por REGLAS (igual a tu front) =====
+function profitByRule(
+  name: string,
+  unitPrice: number,
+  unitCost: number,
+  qty: number
+) {
+  const N = (name || "").toUpperCase().trim();
+  const total = unitPrice * qty;
+  const costo = unitCost * qty;
+
+  if (N === "REFACIL - RECARGA CELULAR") return Math.round(total * 0.055);
+  if (N === "REFACIL - PAGO FACTURA") return 200;
+  if (N === "REFACIL - PAGO VANTI GAS NATURAL CUNDIBOYACENSE") return 100;
+  if (N === "REFACIL - PAGO CUOTA PAYJOY") return 250;
+  if (N === "REFACIL - GAME PASS" || N === "REFACIL - GAME PASS/PSN")
+    return Math.round(total * 0.03);
+  if (
+    [
+      "REFACIL - CARGA DE CUENTA",
+      "TRANSACCION",
+      "TRANSACCION DATAFONO",
+      "CUADRE DE CAJA",
+    ].includes(N)
+  )
+    return 0;
+
+  return Math.round(total - costo);
+}
 
 // ======= Pagos por método (CAJA) con AJUSTE de CERTIFICADO =======
 app.get("/reports/payments", requireRole("EMPLOYEE"), async (req, res) => {
@@ -1245,27 +1321,29 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
 
   const { from, to } = parseLocalDateRange(fromParam, toParam);
 
-  const items = (await prisma.saleItem.findMany({
+  const items = await prisma.saleItem.findMany({
     where: { sale: { createdAt: { gte: from, lte: to }, status: "paid" } },
     select: {
       unitPrice: true,
       qty: true,
       discount: true,
       total: true,
-      product: { select: { category: true } },
+      product: { select: { category: true, sku: true, name: true } },
     },
-  })) as Array<{
-    unitPrice: unknown;
-    qty: unknown;
-    discount: unknown;
-    total: unknown | null;
-    product: { category?: string | null } | null;
-  }>;
+  });
 
   const total = items
-    .filter(
-      (it) => String(it.product?.category ?? "").toUpperCase() === "SERVICIOS"
-    )
+    .filter((it) => {
+      const cat = String(it.product?.category ?? "").toUpperCase();
+      const sku = String(it.product?.sku ?? "").toUpperCase();
+      const name = String(it.product?.name ?? "").toUpperCase();
+      // Regla principal: categoría PAPELERIA
+      if (cat === "PAPELERIA") return true;
+      // Salvavidas por si hay legacy sin categoría:
+      if (sku.startsWith("PAP")) return true;
+      if (name.includes("PAPELERIA")) return true;
+      return false;
+    })
     .reduce((acc, it) => {
       const unit = toN(it.unitPrice);
       const qty = toN(it.qty);
@@ -1274,7 +1352,49 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
       return acc + line;
     }, 0);
 
-  res.json({ total });
+  res.json({ total: Math.round(total) });
+});
+
+// CAJA actual por método (bruto - gastos), tomando toda la historia
+app.get("/reports/cashbox", requireRole("EMPLOYEE"), async (_req, res) => {
+  const rows = (await prisma.payment.groupBy({
+    by: ["method"] as const,
+    _sum: { amount: true },
+  })) as unknown as Array<{ method: string; _sum: { amount: unknown } }>;
+  const sumPay = (m: string) =>
+    Number(rows.find((r) => r.method === m)?._sum.amount ?? 0);
+
+  // Gastos por método (reales, toda la historia)
+  const exp = await prisma.expense.groupBy({
+    by: ["paymentMethod"],
+    _sum: { amount: true },
+  });
+  const sumExp = (m: string) =>
+    Number(exp.find((e) => e.paymentMethod === m)?._sum.amount ?? 0);
+
+  const bruto = {
+    efectivo: sumPay("EFECTIVO"),
+    qr_llave: sumPay("QR_LLAVE"),
+    datafono: sumPay("DATAFONO"),
+  };
+  const gastos = {
+    efectivo: sumExp("EFECTIVO"),
+    qr_llave: sumExp("QR_LLAVE"),
+    datafono: sumExp("DATAFONO"),
+  };
+
+  const efectivo = bruto.efectivo - gastos.efectivo;
+  const qr_llave = bruto.qr_llave - gastos.qr_llave;
+  const datafono = bruto.datafono - gastos.datafono;
+  const total = efectivo + qr_llave + datafono;
+
+  res.json({
+    efectivo,
+    qr_llave,
+    datafono,
+    total,
+    lastUpdated: new Date().toISOString(),
+  });
 });
 
 // =================== WORK ORDERS ==================

@@ -178,10 +178,12 @@ function GamerConfirm({
   );
 }
 
+/* ===== Tipos ===== */
 type Payment = {
   method: "EFECTIVO" | "QR_LLAVE" | "DATAFONO" | string;
   amount: number;
 };
+
 type Row = {
   saleId: number;
   createdAt: string;
@@ -190,8 +192,8 @@ type Row = {
   qty: number;
   unitPrice: number;
   unitCost: number;
-  revenue: number;
-  cost: number;
+  revenue: number; // puede venir del back
+  cost: number; // puede venir del back
   profit: number;
   paymentMethods: Payment[];
 };
@@ -199,9 +201,12 @@ type Row = {
 type SalePatch = {
   customer?: string | null;
   status?: "paid" | "void" | "return";
+  items?: { sku: string; unitPrice: number; qty: number; discount?: number }[];
 };
+
 type Period = "day" | "month" | "year";
 
+/* ===== Constantes / helpers ===== */
 const COLORS = {
   bgCard: "#14163A",
   border: "#1E1F4B",
@@ -218,12 +223,14 @@ function fmtCOP(n: number) {
     maximumFractionDigits: 0,
   });
 }
+
 function todayISO() {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
 }
+
 function rangeFrom(period: Period, baseISO: string) {
   const d = new Date(baseISO + "T00:00:00");
   const y = d.getFullYear();
@@ -240,11 +247,11 @@ function rangeFrom(period: Period, baseISO: string) {
   return { from: `${y}-01-01`, to: `${y}-12-31` };
 }
 
-// ---- Reglas de ganancia (equivalentes a tu Excel) ----
+/* ===== Reglas de ganancia (Excel) ===== */
 function profitByRule(r: Row) {
   const name = (r.name || "").toUpperCase().trim();
-  const total = r.unitPrice * r.qty;
-  const costo = r.unitCost * r.qty;
+  const total = r.revenue ?? r.unitPrice * r.qty;
+  const costo = r.cost ?? r.unitCost * r.qty;
 
   if (name === "REFACIL - RECARGA CELULAR") return Math.round(total * 0.055);
   if (name === "REFACIL - PAGO FACTURA") return 200;
@@ -262,7 +269,6 @@ function profitByRule(r: Row) {
   )
     return 0;
 
-  // CERTIFICADO LIBERTAD Y TRADICION => sin regla: usa margen normal
   return Math.round(total - costo);
 }
 
@@ -270,7 +276,7 @@ function up(s: string) {
   return (s || "").toUpperCase().trim();
 }
 
-// “Internos/terceros” que NO deben sumarse como ventas del local
+/** Ítems que NO cuentan como ventas propias (excluir de KPIs) */
 function isExcludedFromRevenue(r: Row) {
   const n = up(r.name);
   return (
@@ -280,11 +286,12 @@ function isExcludedFromRevenue(r: Row) {
     n === "REFACIL - PAGO FACTURA" ||
     n === "REFACIL - PAGO VANTI GAS NATURAL CUNDIBOYACENSE" ||
     n === "REFACIL - PAGO CUOTA PAYJOY" ||
-    n.includes("TRANSACCION") || // “TRANSACCION”, “TRANSACCION DATAFONO”
+    n.includes("TRANSACCION") ||
     n.includes("CUADRE DE CAJA")
   );
 }
 
+/* ========================================= */
 export default function SalesPage() {
   const { role } = useAuth();
   const isAdmin = role === "ADMIN";
@@ -295,7 +302,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(false);
   const [paperTotal, setPaperTotal] = useState(0);
 
-  // ---- Paginación (client-side) ----
+  // Paginación
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
 
@@ -307,21 +314,16 @@ export default function SalesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const url = new URL(`/reports/sales-lines`, window.location.origin);
-      url.searchParams.set("from", from);
-      url.searchParams.set("to", to);
-
-      const r = await apiFetch(
-        `/reports/sales-lines?${url.searchParams.toString()}`
-      );
+      const r = await apiFetch(`/reports/sales-lines?from=${from}&to=${to}`);
       const data: Row[] = await r.json();
+
       data.sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setRows(data);
 
-      // --- Papelería (categoría SERVICIOS) ---
+      // Papelería (categoría SERVICIOS)
       const rPap = await apiFetch(`/reports/papeleria?from=${from}&to=${to}`);
       const { total: papTotal } = await rPap.json();
       setPaperTotal(Number(papTotal || 0));
@@ -335,19 +337,22 @@ export default function SalesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
-  // Totales visibles
+  /* ===== Totales (solo productos propios) con fallbacks ===== */
   const totals = useMemo(() => {
-    // Ventas “visibles” del local, excluyendo servicios de terceros/internos
-    const revenue = rows
-      .filter((r) => !isExcludedFromRevenue(r))
-      .reduce((a, r) => a + r.revenue, 0);
-
-    const cost = rows.reduce((a, r) => a + r.cost, 0);
-    const profit = rows.reduce((a, r) => a + profitByRule(r), 0);
+    const included = rows.filter((r) => !isExcludedFromRevenue(r));
+    const revenue = included.reduce(
+      (a, r) => a + (r.revenue ?? r.unitPrice * r.qty),
+      0
+    );
+    const cost = included.reduce(
+      (a, r) => a + (r.cost ?? r.unitCost * r.qty),
+      0
+    );
+    const profit = included.reduce((a, r) => a + profitByRule(r), 0);
     return { revenue, cost, profit };
   }, [rows]);
 
-  // Breakdown métodos
+  /* ===== Breakdown por métodos de pago (rango completo) ===== */
   const payBreakdown = useMemo(() => {
     const acc = new Map<string, number>();
     for (const r of rows)
@@ -359,7 +364,7 @@ export default function SalesPage() {
     }));
   }, [rows]);
 
-  // helpers por venta
+  /* ===== Primer índice de cada venta (para mostrar botón eliminar una vez) ===== */
   const firstIndexBySale = useMemo(() => {
     const seen = new Set<number>();
     const idx = new Map<number, number>();
@@ -372,7 +377,7 @@ export default function SalesPage() {
     return idx;
   }, [rows]);
 
-  // ======== PAGINACIÓN: derivaciones ========
+  /* ===== Paginación: derivados ===== */
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
 
@@ -396,7 +401,7 @@ export default function SalesPage() {
     return out;
   }, [safePage, totalPages]);
 
-  // --- acciones admin (genéricas) ---
+  /* ===== Acciones admin ===== */
   const patchSale = async (
     id: number,
     body: SalePatch | Record<string, unknown>
@@ -413,35 +418,32 @@ export default function SalesPage() {
     return true;
   };
 
-  // --- edición inline por línea ---
+  // Edición inline: SOLO precio y cantidad (el costo lo maneja el back)
   type LineKey = string; // `${saleId}-${idx}`
   const [editKey, setEditKey] = useState<LineKey | null>(null);
   const [editPrice, setEditPrice] = useState<number | "">("");
-  const [editCost, setEditCost] = useState<number | "">("");
   const [editQty, setEditQty] = useState<number | "">("");
 
   const startEditLine = (k: LineKey, r: Row) => {
     if (!isAdmin) return;
     setEditKey(k);
     setEditPrice(r.unitPrice);
-    setEditCost(r.unitCost);
     setEditQty(r.qty);
   };
   const cancelEditLine = () => {
     setEditKey(null);
     setEditPrice("");
-    setEditCost("");
     setEditQty("");
   };
   const saveEditLine = async (r: Row) => {
     if (editKey == null) return;
-    const body = {
+    const body: SalePatch = {
       items: [
         {
           sku: r.sku,
           unitPrice: editPrice === "" ? r.unitPrice : Number(editPrice),
-          unitCost: editCost === "" ? r.unitCost : Number(editCost),
           qty: editQty === "" ? r.qty : Number(editQty),
+          discount: 0,
         },
       ],
     };
@@ -452,7 +454,7 @@ export default function SalesPage() {
     }
   };
 
-  // eliminar venta
+  /* ===== Eliminar venta ===== */
   const [toast, setToast] = useState<{
     open: boolean;
     kind: "success" | "error" | "info";
@@ -492,7 +494,7 @@ export default function SalesPage() {
     });
   };
 
-  // Handlers de filtros que resetean página
+  // Filtros
   const onChangePeriod = (val: Period) => {
     setPeriod(val);
     setPage(1);
@@ -506,6 +508,7 @@ export default function SalesPage() {
     load();
   };
 
+  /* ===== Render ===== */
   return (
     <div className="max-w-7xl mx-auto text-gray-200 space-y-5">
       <h1 className="text-2xl font-bold text-cyan-400">Ventas</h1>
@@ -558,11 +561,11 @@ export default function SalesPage() {
             </button>
           </div>
 
-          <div className="md:ml-auto grid grid-cols-1 sm:grid-cols-3 gap-3 w-full md:w-auto">
+          <div className="md:ml-auto grid grid-cols-1 sm:grid-cols-4 gap-3 w-full md:w-auto">
             <SummaryCard title="Ventas" value={totals.revenue} accent="cyan" />
             <SummaryCard title="Costo" value={totals.cost} accent="pink" />
             <SummaryCard title="Ganancia" value={totals.profit} accent="cyan" />
-            <SummaryCard title="Papelería" value={paperTotal} accent="pink"/>
+            <SummaryCard title="Papelería" value={paperTotal} accent="pink" />
           </div>
 
           {payBreakdown.length > 0 && (
@@ -644,6 +647,10 @@ export default function SalesPage() {
                   firstIndexBySale.get(r.saleId) ===
                   (safePage - 1) * PAGE_SIZE + idx;
 
+                const lineRevenue = r.revenue ?? r.unitPrice * r.qty;
+                const lineCost = r.cost ?? r.unitCost * r.qty;
+                const lineProfit = profitByRule(r);
+
                 return (
                   <tr
                     key={k}
@@ -654,7 +661,7 @@ export default function SalesPage() {
                     <Td className="font-mono">{r.sku}</Td>
                     <Td>{r.name}</Td>
 
-                    {/* Precio */}
+                    {/* Precio (editable) */}
                     <Td className="text-right">
                       {isEditing ? (
                         <input
@@ -679,32 +686,10 @@ export default function SalesPage() {
                       )}
                     </Td>
 
-                    {/* Costo */}
-                    <Td className="text-right">
-                      {isEditing ? (
-                        <input
-                          className="rounded px-2 py-1 w-28 text-right outline-none"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          type="number"
-                          min={0}
-                          value={editCost}
-                          onChange={(e) =>
-                            setEditCost(
-                              e.target.value === ""
-                                ? ""
-                                : Math.max(0, Number(e.target.value))
-                            )
-                          }
-                        />
-                      ) : (
-                        fmtCOP(r.unitCost)
-                      )}
-                    </Td>
+                    {/* Costo (solo lectura; el back lo maneja) */}
+                    <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
 
-                    {/* Cantidad */}
+                    {/* Cantidad (editable) */}
                     <Td className="text-center">
                       {isEditing ? (
                         <input
@@ -730,11 +715,11 @@ export default function SalesPage() {
                     </Td>
 
                     <Td className="text-right text-cyan-300">
-                      {fmtCOP(r.revenue)}
+                      {fmtCOP(lineRevenue)}
                     </Td>
-                    <Td className="text-right">{fmtCOP(r.cost)}</Td>
+                    <Td className="text-right">{fmtCOP(lineCost)}</Td>
                     <Td className="text-right text-pink-300">
-                      {fmtCOP(profitByRule(r))}
+                      {fmtCOP(lineProfit)}
                     </Td>
 
                     <Td>
@@ -764,7 +749,7 @@ export default function SalesPage() {
                                 onClick={() => startEditLine(k, r)}
                                 className="px-3 py-1 rounded text-sm font-semibold"
                                 style={{ backgroundColor: "#0ea5e9" }}
-                                title="Editar línea (precio/costo/cantidad)"
+                                title="Editar (precio/cantidad)"
                               >
                                 Editar
                               </button>
@@ -793,11 +778,7 @@ export default function SalesPage() {
                                   backgroundColor: "#0bd977",
                                   color: "#001014",
                                 }}
-                                disabled={
-                                  editQty === "" ||
-                                  editPrice === "" ||
-                                  editCost === ""
-                                }
+                                disabled={editQty === "" || editPrice === ""}
                               >
                                 Guardar
                               </button>

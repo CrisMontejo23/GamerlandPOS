@@ -31,7 +31,7 @@ type Summary = {
   costo_vendido: number;
   gastos_total: number;
   gastos_operativos: number;
-  utilidad: number;
+  utilidad: number; // <-- AHORA VIENE "POR REGLAS" DESDE EL BACKEND
 };
 
 type PaymentsBreakdown = {
@@ -60,6 +60,7 @@ type SaleLine = {
   createdAt: string;
   sku: string;
   name: string;
+  category?: string | null; // <-- NUEVO (lo devuelve /reports/sales-lines)
   qty: number;
   unitPrice: number;
   unitCost: number;
@@ -461,9 +462,15 @@ export default function ReportsPage() {
       );
 
       // Para “Resumen diario” mantenemos el valor del periodo seleccionado (si es día, coincide)
-      setUtilDayByRule(uRange);
-      setUtilMonthByRule(uMonth);
-      setUtilYearByRule(uYear);
+      setUtilDayByRule(
+        typeof dSumDay?.utilidad === "number" ? dSumDay.utilidad : uRange
+      );
+      setUtilMonthByRule(
+        typeof dSumMonth?.utilidad === "number" ? dSumMonth.utilidad : uMonth
+      );
+      setUtilYearByRule(
+        typeof dSumYear?.utilidad === "number" ? dSumYear.utilidad : uYear
+      );
 
       // Gastos operativos EXTERNOS
       const gRange = sumOperativeExpensesExcludingInternos(expDay || []); // expDay corresponde a from..to
@@ -938,10 +945,10 @@ export default function ReportsPage() {
       ]);
 
       // NUEVO: recalcular métricas para PDF coherentes con la UI
-      const utilByRuleForPdf = (sales || []).reduce(
-        (a, s) => a + profitByRuleFromSale(s),
-        0
-      );
+      const utilByRuleForPdf =
+        typeof summary?.utilidad === "number"
+          ? summary.utilidad
+          : (sales || []).reduce((a, s) => a + profitByRuleFromSale(s), 0);
       const gastosOperativosPdf =
         sumOperativeExpensesExcludingInternos(expenses);
       const fixedPdf = prorateFixed(from, to);
@@ -1096,6 +1103,7 @@ export default function ReportsPage() {
             "Fecha",
             "SKU",
             "Producto",
+            "Categoría",
             "Cant.",
             "Precio",
             "Costo",
@@ -1114,6 +1122,7 @@ export default function ReportsPage() {
             new Date(s.createdAt).toLocaleString("es-CO"),
             s.sku,
             s.name,
+            s.category ?? "-", // <-- NUEVA COLUMNA
             String(s.qty),
             toCOP(s.unitPrice),
             toCOP(s.unitCost),
