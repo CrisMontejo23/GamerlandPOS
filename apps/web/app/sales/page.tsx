@@ -272,26 +272,6 @@ function profitByRule(r: Row) {
   return Math.round(total - costo);
 }
 
-function up(s: string) {
-  return (s || "").toUpperCase().trim();
-}
-
-/** Ítems que NO cuentan como ventas propias (excluir de KPIs) */
-function isExcludedFromRevenue(r: Row) {
-  const n = up(r.name);
-  return (
-    n === "REFACIL - CARGA DE CUENTA" ||
-    n === "REFACIL - RECARGA CELULAR" ||
-    n === "CERTIFICADO LIBERTAD Y TRADICION" ||
-    n === "REFACIL - PAGO FACTURA" ||
-    n === "REFACIL - PAGO VANTI GAS NATURAL CUNDIBOYACENSE" ||
-    n === "REFACIL - PAGO CUOTA PAYJOY" ||
-    n.includes("TRANSACCION") ||
-    n.includes("CUADRE DE CAJA")
-  );
-}
-
-/* ========================================= */
 export default function SalesPage() {
   const { role } = useAuth();
   const isAdmin = role === "ADMIN";
@@ -337,18 +317,17 @@ export default function SalesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
-  /* ===== Totales (solo productos propios) con fallbacks ===== */
+  /* ======= TOTALES EXACTOS (sin excluir nada) =======
+     VENTAS = suma de TOTAL VENTA de cada registro
+     GANANCIA = suma de GANANCIA de cada registro (misma regla que por fila)
+     COSTO = suma de TOTAL COSTO de cada registro (útil para control) */
   const totals = useMemo(() => {
-    const included = rows.filter((r) => !isExcludedFromRevenue(r));
-    const revenue = included.reduce(
+    const revenue = rows.reduce(
       (a, r) => a + (r.revenue ?? r.unitPrice * r.qty),
       0
     );
-    const cost = included.reduce(
-      (a, r) => a + (r.cost ?? r.unitCost * r.qty),
-      0
-    );
-    const profit = included.reduce((a, r) => a + profitByRule(r), 0);
+    const cost = rows.reduce((a, r) => a + (r.cost ?? r.unitCost * r.qty), 0);
+    const profit = rows.reduce((a, r) => a + profitByRule(r), 0);
     return { revenue, cost, profit };
   }, [rows]);
 
