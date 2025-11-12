@@ -138,6 +138,38 @@ export default function WorksPage() {
     useState<PayMethod>("EFECTIVO");
   const [editDepositNote, setEditDepositNote] = useState<string>("");
 
+  // === Editar DESCRIPCIÓN / ITEM ===
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<WorkOrder | null>(null);
+  const [editItem, setEditItem] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+
+  function openEditDetails(w: WorkOrder) {
+    setEditTarget(w);
+    setEditItem(UU(w.item));
+    setEditDescription(UU(w.description));
+    setEditOpen(true);
+  }
+
+  async function saveEditDetails() {
+    if (!editTarget) return;
+    if (!editItem.trim() || !editDescription.trim()) {
+      setMsg("FALTAN CAMPOS OBLIGATORIOS");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+    const ok = await update(editTarget.id, {
+      item: editItem,
+      description: editDescription,
+    });
+    if (ok) {
+      setMsg("DESCRIPCIÓN ACTUALIZADA ✅");
+      setTimeout(() => setMsg(""), 1800);
+      setEditOpen(false);
+      setEditTarget(null);
+    }
+  }
+
   function resetForm() {
     setItem("");
     setDescription("");
@@ -417,9 +449,7 @@ export default function WorksPage() {
         `Saldo: ${toCOP(saldo)}`
       );
     }
-    partes.push(      
-      `Gracias por elegirnos.`
-    );
+    partes.push(`Gracias por elegirnos.`);
     return partes.join("\n");
   }
 
@@ -638,6 +668,16 @@ export default function WorksPage() {
                       INFORMAR AL CLIENTE
                     </button>
                   )}
+
+                  {/* Editar descripción / qué se recibe */}
+                  <button
+                    className="px-3 py-1 rounded border text-xs uppercase"
+                    style={{ borderColor: COLORS.border }}
+                    onClick={() => openEditDetails(w)}
+                    title="Editar descripción y 'qué se recibe'"
+                  >
+                    EDITAR DESC.
+                  </button>
 
                   {/* EN PROCESO */}
                   {w.status !== "IN_PROGRESS" && (
@@ -1288,6 +1328,88 @@ export default function WorksPage() {
                     "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={saveEditQuoteDeposit}
+              >
+                GUARDAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal EDITAR DESCRIPCIÓN / ITEM */}
+      {editOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-xl rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-desc-title"
+          >
+            <h3
+              id="edit-desc-title"
+              className="text-lg font-semibold text-cyan-300 uppercase"
+            >
+              EDITAR — {editTarget ? UU(editTarget.code) : ""}
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="md:col-span-1">
+                <label className="block text-sm mb-1 uppercase">
+                  ¿QUÉ SE RECIBE? *
+                </label>
+                <input
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={editItem}
+                  onChange={(e) => setEditItem(UU(e.target.value))}
+                  placeholder="EJ: XBOX 360, CONTROL"
+                />
+              </div>
+              <div className="md:col-span-1">
+                <label className="block text-sm mb-1 uppercase">
+                  DESCRIPCIÓN *
+                </label>
+                <input
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(UU(e.target.value))}
+                  placeholder="NO PRENDE / MANTENIMIENTO / ..."
+                />
+              </div>
+            </div>
+
+            <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => {
+                  setEditOpen(false);
+                  setEditTarget(null);
+                }}
+              >
+                CANCELAR
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={saveEditDetails}
               >
                 GUARDAR
               </button>
