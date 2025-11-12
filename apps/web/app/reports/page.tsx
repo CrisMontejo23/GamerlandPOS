@@ -75,11 +75,11 @@ type ExpenseRow = {
   description?: string | null;
   amount: number | string;
   paymentMethod?: string | null;
-  category?: string | null; // "INTERNO" | "EXTERNO" | otros legacy
+  category?: string | null; // "INTERNO" | "EXTERNO" | otros
   createdAt: string;
 };
 
-/* ===== NUEVO: tipos de caja ===== */
+/* ===== CAJA ===== */
 type CashboxAPI = {
   efectivo: number;
   qr_llave?: number;
@@ -109,12 +109,16 @@ const COLORS = {
 };
 const CHART_COLORS = ["#00FFFF", "#FF00FF", "#A5FF00", "#FFD700"];
 
-// COSTOS FIJOS MENSUALES (COP)
-const FIXED_RENT = 473_400;
-const FIXED_SERVICES = 200_000;
-const FIXED_PAYROLL = 760_000;
-const FIXED_MONTHLY = FIXED_RENT + FIXED_SERVICES + FIXED_PAYROLL; // 1,433,400
+/** COSTOS FIJOS MENSUALES (parametrizables) */
+const FIXED_MONTHLY = {
+  arriendo: 473_400,
+  servicios: 200_000,
+  trabajadores: 760_000,
+};
+const FIXED_TOTAL_MONTH =
+  FIXED_MONTHLY.arriendo + FIXED_MONTHLY.servicios + FIXED_MONTHLY.trabajadores;
 
+/** Normaliza a pesos sin decimales */
 const toCOP = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
 const pct = (num: number, den: number) =>
   den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "0%";
@@ -134,54 +138,29 @@ function yearStartISO(d: string) {
   const [y] = d.split("-").map(Number);
   return `${y}-01-01`;
 }
-function daysInMonth(y: number, m0to11: number) {
-  return new Date(y, m0to11 + 1, 0).getDate();
-}
-function clampDateToMidnightISO(d: Date) {
-  const d2 = new Date(d);
-  d2.setHours(0, 0, 0, 0);
-  const y = d2.getFullYear();
-  const m = d2.getMonth() + 1;
-  const day = d2.getDate();
-  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
 function parseISO(s: string) {
+  // fuerza medianoche local
   return new Date(`${s}T00:00:00`);
 }
-
-/** Prorratea costos fijos mensuales entre dos fechas (incluye extremos). */
-function fixedCostBetween(fromISO: string, toISO: string) {
-  const start = parseISO(fromISO);
-  const end = parseISO(toISO);
-  if (end < start) return 0;
-
-  let cur = new Date(start);
-  let total = 0;
-
-  while (cur <= end) {
-    const y = cur.getFullYear();
-    const m = cur.getMonth(); // 0..11
-    const monthDays = daysInMonth(y, m);
-
-    // tramo del mes actual dentro del rango
-    const monthStart = new Date(y, m, 1);
-    const monthEnd = new Date(y, m, monthDays);
-
-    const segStart = cur > monthStart ? cur : monthStart;
-    const segEnd = end < monthEnd ? end : monthEnd;
-
-    const segDays =
-      Math.floor((segEnd.getTime() - segStart.getTime()) / 86400000) + 1;
-
-    const prorata = (segDays / monthDays) * FIXED_MONTHLY;
-    total += prorata;
-
-    // siguiente mes
-    cur = new Date(y, m + 1, 1);
-  }
-  return Math.round(total);
+function daysBetweenInclusive(fromISO: string, toISO: string) {
+  const a = parseISO(fromISO).getTime();
+  const b = parseISO(toISO).getTime();
+  const ms = Math.max(0, b - a);
+  return Math.floor(ms / 86_400_000) + 1;
+}
+/** días del mes del toISO */
+function daysInMonthOf(toISO: string) {
+  const d = parseISO(toISO);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+/** Prorratea costos fijos para un rango arbitrario usando una base diaria (30.42 días promedio/mes) */
+function fixedForRange(fromISO: string, toISO: string) {
+  const days = Math.max(1, daysBetweenInclusive(fromISO, toISO));
+  const daily = FIXED_TOTAL_MONTH / 30.42;
+  return daily * days;
 }
 
+/** Carga imagen local como dataURL para PDF */
 async function fetchImageAsDataUrl(src: string): Promise<string | null> {
   try {
     const resp = await fetch(src);
@@ -197,7 +176,7 @@ async function fetchImageAsDataUrl(src: string): Promise<string | null> {
   }
 }
 
-// ---- Reglas de ganancia (equivalentes a tu Excel) ----
+/* ===== Reglas de ganancia (tu Excel) ===== */
 function profitByRuleFromSale(s: SaleLine) {
   const name = (s.name || "").toUpperCase().trim();
   const total = typeof s.revenue === "number" ? s.revenue : s.unitPrice * s.qty;
@@ -219,14 +198,21 @@ function profitByRuleFromSale(s: SaleLine) {
   )
     return 0;
 
+  // Margen normal
   return Math.round(total - costo);
 }
 
-/** Suma gastos operativos EXTERNOS (excluye todo lo que sea category === "INTERNO") */
+/** Gastos operativos EXTERNOS (excluye INTERNO) */
 function sumOperativeExpensesExcludingInternos(list: ExpenseRow[]) {
   return (list || [])
     .filter((e) => String(e.category || "").toUpperCase() !== "INTERNO")
     .reduce((a, e) => a + Number(e.amount || 0), 0);
+}
+
+/** Utilidad por reglas sobre ventas (CMR aproximado) */
+function contributionMarginRatio(ventas: number, utilidadPorReglas: number) {
+  if (ventas <= 0) return 0;
+  return Math.max(0, Math.min(1, utilidadPorReglas / ventas));
 }
 
 export default function ReportsPage() {
@@ -249,17 +235,12 @@ export default function ReportsPage() {
   const [utilMonthByRule, setUtilMonthByRule] = useState<number>(0);
   const [utilYearByRule, setUtilYearByRule] = useState<number>(0);
 
-  // gastos operativos recalculados (excluyendo INTERNO) — día/mes/año
+  // Gastos operativos recalculados (excluye INTERNO) — día/mes/año
   const [opsDay, setOpsDay] = useState<number>(0);
   const [opsMonth, setOpsMonth] = useState<number>(0);
   const [opsYear, setOpsYear] = useState<number>(0);
 
-  // también cargamos las líneas/gastos del rango exacto seleccionado para KPIs de rentabilidad
-  const [utilRangeByRule, setUtilRangeByRule] = useState<number>(0);
-  const [opsRange, setOpsRange] = useState<number>(0);
-  const [ventasRange, setVentasRange] = useState<number>(0);
-
-  /* ===== Estado de CAJA ===== */
+  /* CAJA */
   const [cashbox, setCashbox] = useState<CashboxState>({
     ok: false,
     source: "fallback",
@@ -271,7 +252,7 @@ export default function ReportsPage() {
 
   const dashRef = useRef<HTMLDivElement>(null);
 
-  /* Ajuste autom. de rango por tipo */
+  /* Ajuste automático de rango por tipo */
   useEffect(() => {
     if (rangeType === "day") {
       const t = todayLocalISO();
@@ -284,29 +265,23 @@ export default function ReportsPage() {
     }
   }, [rangeType, to]);
 
-  /* Carga dashboard + KPIs de rentabilidad */
+  /* Carga dashboard */
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const mFrom = monthStartISO(to);
       const yFrom = yearStartISO(to);
 
-      // Pedimos:
-      // - Resumen y pagos del rango exacto
-      // - Resumen mes y año hasta "to"
-      // - Papelería del rango
-      // - Líneas del rango / mes / año
-      // - Gastos del rango / mes / año
       const [
         rSumDay,
         rPayDay,
         rSumMonth,
         rSumYear,
         rPapDay,
-        rLinesRange,
+        rLinesDay,
         rLinesMonth,
         rLinesYear,
-        rExpRange,
+        rExpDay,
         rExpMonth,
         rExpYear,
       ] = await Promise.all([
@@ -329,10 +304,10 @@ export default function ReportsPage() {
         dSumMonth,
         dSumYear,
         dPap,
-        linesRange,
+        linesDay,
         linesMonth,
         linesYear,
-        expRange,
+        expDay,
         expMonth,
         expYear,
       ] = await Promise.all([
@@ -341,15 +316,15 @@ export default function ReportsPage() {
         rSumMonth.json() as Promise<Summary>,
         rSumYear.json() as Promise<Summary>,
         rPapDay.json() as Promise<{ total: number }>,
-        rLinesRange.json() as Promise<SaleLine[]>,
+        rLinesDay.json() as Promise<SaleLine[]>,
         rLinesMonth.json() as Promise<SaleLine[]>,
         rLinesYear.json() as Promise<SaleLine[]>,
-        rExpRange.json() as Promise<ExpenseRow[]>,
+        rExpDay.json() as Promise<ExpenseRow[]>,
         rExpMonth.json() as Promise<ExpenseRow[]>,
         rExpYear.json() as Promise<ExpenseRow[]>,
       ]);
 
-      // Estados base
+      // Estados base recibidos del backend
       setSumDay(dSumDay);
       setPayDay(dPayDay);
       setSumMonth(dSumMonth);
@@ -357,7 +332,7 @@ export default function ReportsPage() {
       setPapTotal(Number(dPap?.total || 0));
 
       // Utilidades por regla
-      const uRange = (linesRange || []).reduce(
+      const uDay = (linesDay || []).reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
@@ -369,21 +344,17 @@ export default function ReportsPage() {
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
-      setUtilRangeByRule(uRange);
+      setUtilDayByRule(uDay);
       setUtilMonthByRule(uMonth);
       setUtilYearByRule(uYear);
 
-      // gastos operativos EXTERNOS (excluye INTERNO)
-      const gRange = sumOperativeExpensesExcludingInternos(expRange || []);
+      // Gastos operativos EXTERNOS (excluye INTERNO)
+      const gDay = sumOperativeExpensesExcludingInternos(expDay || []);
       const gMonth = sumOperativeExpensesExcludingInternos(expMonth || []);
       const gYear = sumOperativeExpensesExcludingInternos(expYear || []);
-      setOpsRange(gRange);
-      setOpsDay(gRange); // para tarjetas "Resumen" cuando rangeType=day
+      setOpsDay(gDay);
       setOpsMonth(gMonth);
       setOpsYear(gYear);
-
-      // ventas del rango (para punto de equilibrio y KPI)
-      setVentasRange(Number(dSumDay?.ventas || 0)); // dSumDay es del rango from..to
 
       setMsg("");
     } catch {
@@ -398,7 +369,7 @@ export default function ReportsPage() {
     load();
   }, [load]);
 
-  /* ===== Cargar CAJA ===== */
+  /* ===== CAJA ===== */
   const loadCashbox = useCallback(async () => {
     try {
       const r = await apiFetch(`/reports/cashbox`);
@@ -469,80 +440,97 @@ export default function ReportsPage() {
     return () => clearInterval(t);
   }, [loadCashbox]);
 
-  /* ======== MÉTRICAS DE RENTABILIDAD (periodo seleccionado) ======== */
-  const fixedProrrated = useMemo(() => fixedCostBetween(from, to), [from, to]);
+  /* ====== KPIs de rentabilidad (derivados) ====== */
 
-  // Utilidad neta = Utilidad por regla – Gastos operativos (EXTERNOS) – Costos fijos prorrateados
-  const netProfitRange = useMemo(
-    () => Math.round(utilRangeByRule - opsRange - fixedProrrated),
-    [utilRangeByRule, opsRange, fixedProrrated]
+  // Prorrateo de fijos para el rango actual
+  const fixedForCurrentRange = useMemo(
+    () => fixedForRange(from, to),
+    [from, to]
   );
 
-  // Margen operativo sobre ventas (usando utilidad por regla como "margen bruto")
-  const opMargin = useMemo(
-    () => (ventasRange > 0 ? utilRangeByRule / ventasRange : 0),
-    [utilRangeByRule, ventasRange]
+  // Ratios de contribución (día/mes/año)
+  const cmrDay = useMemo(
+    () => contributionMarginRatio(sumDay?.ventas || 0, utilDayByRule || 0),
+    [sumDay, utilDayByRule]
+  );
+  const cmrMonth = useMemo(
+    () => contributionMarginRatio(sumMonth?.ventas || 0, utilMonthByRule || 0),
+    [sumMonth, utilMonthByRule]
+  );
+  const cmrYear = useMemo(
+    () => contributionMarginRatio(sumYear?.ventas || 0, utilYearByRule || 0),
+    [sumYear, utilYearByRule]
   );
 
-  // Ventas necesarias (punto de equilibrio) = (Gastos operativos + Costos fijos) / margen
-  const breakEvenSales = useMemo(() => {
-    const margin = opMargin;
-    const den = margin > 0 ? margin : 0;
-    return den > 0 ? Math.round((opsRange + fixedProrrated) / den) : Infinity;
-  }, [opMargin, opsRange, fixedProrrated]);
+  // Neto del periodo (utilidad por reglas - gastos operativos - fijos prorrateados)
+  const netPeriod = useMemo(() => {
+    const util = utilDayByRule || 0;
+    const ops = opsDay || 0;
+    const fijos = fixedForCurrentRange || 0;
+    return util - ops - fijos;
+  }, [utilDayByRule, opsDay, fixedForCurrentRange]);
 
-  const rentabilidadOk = netProfitRange >= 0;
+  const netMonth = useMemo(
+    () => utilMonthByRule - opsMonth - fixedForRange(monthStartISO(to), to),
+    [utilMonthByRule, opsMonth, to]
+  );
+  const netYear = useMemo(
+    () => utilYearByRule - opsYear - fixedForRange(yearStartISO(to), to),
+    [utilYearByRule, opsYear, to]
+  );
 
-  // ===== Proyección a fin de mes (si la fecha "to" está en el mes actual del rango)
-  const projection = useMemo(() => {
-    // Tomamos el mes de "to"
-    const end = parseISO(to);
-    const y = end.getFullYear();
-    const m = end.getMonth(); // 0..11
-    const dim = daysInMonth(y, m);
-    const monthStart = `${y}-${String(m + 1).padStart(2, "0")}-01`;
-    const todayISO = clampDateToMidnightISO(new Date());
+  // Margen neto sobre ventas (periodo)
+  const netMarginPeriod = useMemo(() => {
+    const v = sumDay?.ventas || 0;
+    return v > 0 ? netPeriod / v : 0;
+  }, [sumDay, netPeriod]);
 
-    // Calculamos desde inicio de mes hasta "to"
-    const daysElapsed =
-      Math.floor(
-        (parseISO(to).getTime() - parseISO(monthStart).getTime()) / 86400000
-      ) + 1;
+  // Puntos de equilibrio (ventas) — clásico: Fijos / CMR
+  const beSales_fixedOnly = useMemo(() => {
+    const cmr = cmrDay;
+    return cmr > 0 ? (fixedForCurrentRange || 0) / cmr : Infinity;
+  }, [cmrDay, fixedForCurrentRange]);
 
-    // Si el rango seleccionado NO está dentro del mes de "to", evitamos sesgos: proyectamos sólo cuando from es el inicio del mes
-    const sameMonth = monthStartISO(to) === from;
-    if (!sameMonth) {
-      return null;
-    }
+  // Punto de equilibrio ampliado (fijos + gastos operativos del periodo)
+  const beSales_fixedPlusOps = useMemo(() => {
+    const cmr = cmrDay;
+    const target = (fixedForCurrentRange || 0) + (opsDay || 0);
+    return cmr > 0 ? target / cmr : Infinity;
+  }, [cmrDay, fixedForCurrentRange, opsDay]);
 
-    // Promedio diario (utilidad por regla – operativos – fijos prorrateados del periodo / días)
-    const fixedMonth = FIXED_MONTHLY;
-    const fixedPerDay = fixedMonth / dim;
+  // Margen de seguridad (ventas – BE) y %
+  const safetyAbs = useMemo(
+    () => (sumDay?.ventas || 0) - beSales_fixedOnly,
+    [sumDay, beSales_fixedOnly]
+  );
+  const safetyPct = useMemo(() => {
+    const v = sumDay?.ventas || 0;
+    if (v <= 0 || !isFinite(beSales_fixedOnly)) return 0;
+    return Math.max(0, (v - beSales_fixedOnly) / v);
+  }, [sumDay, beSales_fixedOnly]);
 
-    // Recalculamos métricas de "mes hasta to" (ya las tenemos):
-    const utilMTD = utilMonthByRule;
-    const opsMTD = opsMonth;
-    const fixedMTD = Math.round(fixedPerDay * daysElapsed);
-    const netMTD = utilMTD - opsMTD - fixedMTD;
+  // Proyección fin de mes (promedio diario al día "to")
+  const monthDays = daysInMonthOf(to);
+  const elapsedDays = useMemo(() => {
+    const d = parseISO(to);
+    return d.getDate(); // día del mes (1..n)
+  }, [to]);
+  const avgNetPerDayMonthToDate = useMemo(
+    () => (elapsedDays > 0 ? netMonth / elapsedDays : 0),
+    [netMonth, elapsedDays]
+  );
+  const projectedNetMonth = useMemo(
+    () => avgNetPerDayMonthToDate * monthDays,
+    [avgNetPerDayMonthToDate, monthDays]
+  );
 
-    const avgNetPerDay = netMTD / Math.max(1, daysElapsed);
-    const projectedNetMonth = Math.round(avgNetPerDay * dim);
-
-    return {
-      dim,
-      daysElapsed,
-      fixedPerDay: Math.round(fixedPerDay),
-      netMTD: Math.round(netMTD),
-      projectedNetMonth,
-      avgNetPerDay: Math.round(avgNetPerDay),
-    };
-  }, [to, from, utilMonthByRule, opsMonth]);
-
-  /* Charts (UI) — usar métricas recalculadas */
+  /* Charts (UI) — ahora con fijos y neto */
   const dayChartData = [
     { name: "Ventas", value: sumDay?.ventas || 0 },
     { name: "Gastos (Op.)", value: opsDay || 0 },
-    { name: "Utilidad", value: utilDayByRule || 0 },
+    { name: "Fijos prorr.", value: fixedForCurrentRange || 0 },
+    { name: "Utilidad (reglas)", value: utilDayByRule || 0 },
+    { name: "Neto", value: netPeriod || 0 },
   ];
 
   const payForChart = payDay?.neto ?? {
@@ -563,7 +551,22 @@ export default function ReportsPage() {
       ]
     : [];
 
-  /* ===== Exportar PDF (coherente con dashboard) ===== */
+  const monthlyComparison = [
+    {
+      name: "Mes",
+      Ventas: sumMonth?.ventas || 0,
+      Gastos: opsMonth || 0,
+      Utilidad: utilMonthByRule || 0,
+    },
+    {
+      name: "Año",
+      Ventas: sumYear?.ventas || 0,
+      Gastos: opsYear || 0,
+      Utilidad: utilYearByRule || 0,
+    },
+  ];
+
+  /* ===== Exportar PDF ===== */
   const exportReportPdf = async () => {
     try {
       const [salesRes, expRes, sumRes, payRes, papRes] = await Promise.all([
@@ -581,14 +584,28 @@ export default function ReportsPage() {
         papRes.json() as Promise<{ total: number }>,
       ]);
 
+      // Recalcular métricas para PDF
       const utilByRuleForPdf = (sales || []).reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
       const gastosOperativosPdf =
         sumOperativeExpensesExcludingInternos(expenses);
-      const fixedPdf = fixedCostBetween(from, to);
-      const netPdf = utilByRuleForPdf - gastosOperativosPdf - fixedPdf;
+      const fijosProrrPdf = fixedForRange(from, to);
+      const netoPdf = utilByRuleForPdf - gastosOperativosPdf - fijosProrrPdf;
+
+      const cmrPdf = contributionMarginRatio(
+        summary?.ventas || 0,
+        utilByRuleForPdf
+      );
+      const beFixedPdf = cmrPdf > 0 ? fijosProrrPdf / cmrPdf : Infinity;
+      const beFixedPlusOpsPdf =
+        cmrPdf > 0 ? (fijosProrrPdf + gastosOperativosPdf) / cmrPdf : Infinity;
+      const safetyAbsPdf = (summary?.ventas || 0) - beFixedPdf;
+      const safetyPctPdf =
+        summary?.ventas && isFinite(beFixedPdf) && summary.ventas > 0
+          ? Math.max(0, safetyAbsPdf / summary.ventas)
+          : 0;
 
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
@@ -621,6 +638,7 @@ export default function ReportsPage() {
 
       let curY = 120;
 
+      // Bloque 1: métricas principales
       autoTable(pdf, {
         startY: curY,
         head: [["Métrica", "Valor"]],
@@ -628,10 +646,10 @@ export default function ReportsPage() {
           ["Ventas totales", toCOP(summary?.ventas || 0)],
           ["Costo vendido", toCOP(summary?.costo_vendido || 0)],
           ["Gastos (operativos)", toCOP(gastosOperativosPdf || 0)],
-          ["Costos fijos (prorrateados)", toCOP(fixedPdf)],
+          ["Fijos prorrateados", toCOP(fijosProrrPdf || 0)],
           ["Utilidad (reglas)", toCOP(utilByRuleForPdf || 0)],
-          ["Utilidad neta del periodo", toCOP(netPdf)],
-          ["PAPELERÍA (periodo)", toCOP(Number(pap?.total || 0))],
+          ["Neto del periodo", toCOP(netoPdf || 0)],
+          ["Papelería (periodo)", toCOP(Number(pap?.total || 0))],
         ],
         theme: "grid",
         styles: {
@@ -650,6 +668,58 @@ export default function ReportsPage() {
       const lastY1 = (pdf as JsPDFWithAutoTable).lastAutoTable?.finalY ?? curY;
       curY = lastY1 + 24;
 
+      // Bloque 2: análisis de equilibrio
+      pdf.setFontSize(13);
+      pdf.setTextColor(0, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Análisis de equilibrio", marginX, curY);
+      curY += 8;
+
+      pdf.setDrawColor(30, 31, 75);
+      pdf.setLineWidth(0.8);
+      pdf.line(marginX, curY, pageW - marginX, curY);
+      curY += 8;
+
+      autoTable(pdf, {
+        startY: curY,
+        head: [["Indicador", "Valor"]],
+        body: [
+          [
+            "CMR (Utilidad/Ventas)",
+            pct(utilByRuleForPdf, summary?.ventas || 0),
+          ],
+          [
+            "Punto de equilibrio (fijos)",
+            isFinite(beFixedPdf) ? toCOP(beFixedPdf) : "∞",
+          ],
+          [
+            "Punto de equilibrio (fijos + ops)",
+            isFinite(beFixedPlusOpsPdf) ? toCOP(beFixedPlusOpsPdf) : "∞",
+          ],
+          ["Margen de seguridad (abs.)", toCOP(safetyAbsPdf || 0)],
+          ["Margen de seguridad (%)", `${(safetyPctPdf * 100).toFixed(1)}%`],
+        ],
+        theme: "grid",
+        styles: {
+          fontSize: 10,
+          fillColor: [15, 16, 48],
+          textColor: [229, 229, 229],
+          halign: "center",
+          cellPadding: 5,
+        },
+        headStyles: {
+          fillColor: [0, 255, 255],
+          textColor: 0,
+          fontStyle: "bold",
+        },
+        alternateRowStyles: { fillColor: [25, 27, 75] },
+        margin: { left: marginX, right: marginX },
+      });
+      const lastYEquil =
+        (pdf as JsPDFWithAutoTable).lastAutoTable?.finalY ?? curY;
+      curY = lastYEquil + 24;
+
+      // Bloque 3: caja por método
       pdf.setFontSize(13);
       pdf.setTextColor(0, 255, 255);
       pdf.setFont("helvetica", "bold");
@@ -724,6 +794,7 @@ export default function ReportsPage() {
         (pdf as JsPDFWithAutoTable).lastAutoTable?.finalY ?? curY;
       curY = lastYPayments + 24;
 
+      // Bloque 4: ventas del periodo
       pdf.setFontSize(13);
       pdf.setTextColor(255, 0, 255);
       pdf.setFont("helvetica", "bold");
@@ -790,6 +861,7 @@ export default function ReportsPage() {
       const lastY2 = (pdf as JsPDFWithAutoTable).lastAutoTable?.finalY ?? curY;
       curY = lastY2 + 24;
 
+      // Bloque 5: gastos del periodo
       pdf.setFontSize(13);
       pdf.setTextColor(255, 0, 255);
       pdf.setFont("helvetica", "bold");
@@ -838,6 +910,7 @@ export default function ReportsPage() {
         columnStyles: { 4: { halign: "right" } },
       });
 
+      // Footer
       const pageCount = pdf.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         pdf.setPage(i);
@@ -866,13 +939,9 @@ export default function ReportsPage() {
       ? "Resumen diario"
       : rangeType === "month"
       ? "Resumen mes"
-      : rangeType === "year"
-      ? "Resumen año"
-      : "Resumen del periodo";
-
+      : "Resumen año";
   const cajaPayTitle = `CAJA POR MÉTODO DE PAGO ${rangeWord} (NETO)`;
 
-  /* ======= UI ======= */
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
       <h1 className="text-2xl font-bold text-cyan-400">DASHBOARD / REPORTES</h1>
@@ -1006,20 +1075,20 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Resumen periodo */}
+        {/* Resumen con rentabilidad del periodo */}
         <Card title={resumenTitle}>
           <ChartBar data={dayChartData} />
           <div className="space-y-1 mt-2">
             <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
-            <KV k="Gastos (Operativos)" v={toCOP(opsRange || 0)} />
-            <KV k="Costos fijos (prorrateados)" v={toCOP(fixedProrrated)} />
-            <KV k="Utilidad (reglas)" v={toCOP(utilRangeByRule || 0)} />
+            <KV k="Gastos (Operativos)" v={toCOP(opsDay || 0)} />
+            <KV k="Fijos prorrateados" v={toCOP(fixedForCurrentRange || 0)} />
+            <KV k="Utilidad (reglas)" v={toCOP(utilDayByRule || 0)} />
+            <KV k="Neto del periodo" v={toCOP(netPeriod || 0)} strong />
             <KV
-              k="Utilidad neta del periodo"
-              v={toCOP(netProfitRange)}
-              strong
+              k="Margen neto sobre ventas"
+              v={pct(netPeriod || 0, sumDay?.ventas || 0)}
             />
-            <KV k="Papelería" v={toCOP(papTotal || 0)} />
+            <KV k="Papelería (periodo)" v={toCOP(papTotal || 0)} />
           </div>
         </Card>
 
@@ -1037,7 +1106,7 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Comparativa mes / año (utilidad y gastos recalculados) */}
+        {/* Comparativa mes / año (utilidad y gastos variables) */}
         <Card title="Comparativa mensual vs anual">
           <ChartLine
             data={[
@@ -1057,63 +1126,46 @@ export default function ReportsPage() {
           />
         </Card>
 
-        {/* Indicadores de eficiencia */}
-        <Card title="Indicadores de eficiencia">
+        {/* Indicadores y equilibrio */}
+        <Card title="Indicadores de eficiencia y equilibrio (periodo)">
           <KV
-            k="% Utilidad / Ventas (periodo)"
-            v={pct(utilRangeByRule || 0, ventasRange || 0)}
+            k="CMR (Utilidad/Ventas)"
+            v={pct(utilDayByRule || 0, sumDay?.ventas || 0)}
           />
           <KV
-            k="% Gastos (Op.) / Ventas (periodo)"
-            v={pct(opsRange || 0, ventasRange || 0)}
+            k="Punto de equilibrio (solo fijos)"
+            v={isFinite(beSales_fixedOnly) ? toCOP(beSales_fixedOnly) : "∞"}
           />
           <KV
-            k="Ventas necesarias (punto de equilibrio)"
-            v={isFinite(breakEvenSales) ? toCOP(breakEvenSales) : "—"}
-            strong
+            k="Punto de equilibrio (fijos + gastos op.)"
+            v={
+              isFinite(beSales_fixedPlusOps) ? toCOP(beSales_fixedPlusOps) : "∞"
+            }
           />
-          <div
-            className="mt-2 px-3 py-2 rounded"
-            style={{
-              backgroundColor: rentabilidadOk ? "#063b2d" : "#3b0611",
-              border: `1px solid ${rentabilidadOk ? "#10b981" : "#ef4444"}`,
-            }}
-          >
-            <b className={rentabilidadOk ? "text-green-300" : "text-red-300"}>
-              {rentabilidadOk ? "Rentable" : "No rentable"}
-            </b>{" "}
-            — Utilidad neta del periodo: {toCOP(netProfitRange)}
-          </div>
+          <KV k="Margen de seguridad (abs.)" v={toCOP(safetyAbs || 0)} />
+          <KV
+            k="Margen de seguridad (%)"
+            v={`${(safetyPct * 100).toFixed(1)}%`}
+          />
         </Card>
 
-        {/* Proyección fin de mes (si aplica) */}
-        <Card title="Proyección a fin de mes">
-          {projection ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <KV k="Días del mes" v={String(projection.dim)} />
-                <KV k="Días transcurridos" v={String(projection.daysElapsed)} />
-                <KV k="Costo fijo por día" v={toCOP(projection.fixedPerDay)} />
-                <KV k="Utilidad neta MTD" v={toCOP(projection.netMTD)} />
-              </div>
-              <div className="mt-2">
-                <KV
-                  k="Promedio neto / día (MTD)"
-                  v={toCOP(projection.avgNetPerDay)}
-                />
-                <KV
-                  k="Proyección neta fin de mes"
-                  v={toCOP(projection.projectedNetMonth)}
-                  strong
-                />
-              </div>
-            </>
-          ) : (
-            <div className="text-gray-300">
-              Selecciona el **tipo MES** (o un rango que inicie en el primer día
-              del mes) para calcular la proyección.
+        {/* Proyección del mes (a fin de mes) */}
+        <Card title="Proyección de cierre del mes">
+          <div className="space-y-1">
+            <KV k="Neto acumulado del mes" v={toCOP(netMonth || 0)} />
+            <KV
+              k="Promedio diario neto (mes a la fecha)"
+              v={toCOP(avgNetPerDayMonthToDate || 0)}
+            />
+            <KV
+              k={`Proyección neta al cierre (≈ ${monthDays} días)`}
+              v={toCOP(projectedNetMonth || 0)}
+              strong
+            />
+            <div className="text-xs text-gray-400">
+              * Proyección = promedio neto diario × días del mes.
             </div>
-          )}
+          </div>
         </Card>
       </div>
     </div>
@@ -1148,15 +1200,13 @@ function KV({
   strong = false,
 }: {
   k: string;
-  v: string | number;
+  v: string;
   strong?: boolean;
 }) {
   return (
     <div className={`flex justify-between ${strong ? "text-lg" : ""}`}>
       <span>{k}</span>
-      <b className={strong ? "text-pink-300" : ""}>
-        {typeof v === "number" ? v : v}
-      </b>
+      <b className={strong ? "text-pink-300" : ""}>{v}</b>
     </div>
   );
 }
@@ -1195,7 +1245,7 @@ function MiniStat({
 /* ===== Charts ===== */
 function ChartBar({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke="#2C2E6D" />
         <XAxis dataKey="name" stroke="#aaa" />
