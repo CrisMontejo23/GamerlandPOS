@@ -293,6 +293,7 @@ export default function SalesPage() {
   const [baseDate, setBaseDate] = useState<string>(todayISO());
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [paperTotal, setPaperTotal] = useState(0);
 
   // ---- Paginación (client-side) ----
   const PAGE_SIZE = 10;
@@ -309,6 +310,7 @@ export default function SalesPage() {
       const url = new URL(`/reports/sales-lines`, window.location.origin);
       url.searchParams.set("from", from);
       url.searchParams.set("to", to);
+
       const r = await apiFetch(
         `/reports/sales-lines?${url.searchParams.toString()}`
       );
@@ -318,6 +320,11 @@ export default function SalesPage() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setRows(data);
+
+      // --- Papelería (categoría SERVICIOS) ---
+      const rPap = await apiFetch(`/reports/papeleria?from=${from}&to=${to}`);
+      const { total: papTotal } = await rPap.json();
+      setPaperTotal(Number(papTotal || 0));
     } finally {
       setLoading(false);
     }
@@ -553,8 +560,9 @@ export default function SalesPage() {
 
           <div className="md:ml-auto grid grid-cols-1 sm:grid-cols-3 gap-3 w-full md:w-auto">
             <SummaryCard title="Ventas" value={totals.revenue} accent="cyan" />
-            <SummaryCard title="Costo" value={totals.cost} />
-            <SummaryCard title="Ganancia" value={totals.profit} accent="pink" />
+            <SummaryCard title="Costo" value={totals.cost} accent="pink" />
+            <SummaryCard title="Ganancia" value={totals.profit} accent="cyan" />
+            <SummaryCard title="Papelería" value={paperTotal} accent="pink"/>
           </div>
 
           {payBreakdown.length > 0 && (
