@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -75,7 +75,7 @@ type ExpenseRow = {
   description?: string | null;
   amount: number | string;
   paymentMethod?: string | null;
-  category?: string | null; // "INTERNO" | "EXTERNO" | otros legacy (LOCAL, MERCANCIA, etc.)
+  category?: string | null; // "INTERNO" | "EXTERNO" | otros legacy
   createdAt: string;
 };
 
@@ -109,9 +109,16 @@ const COLORS = {
 };
 const CHART_COLORS = ["#00FFFF", "#FF00FF", "#A5FF00", "#FFD700"];
 
+// COSTOS FIJOS MENSUALES (COP)
+const FIXED_RENT = 473_400;
+const FIXED_SERVICES = 200_000;
+const FIXED_PAYROLL = 760_000;
+const FIXED_MONTHLY = FIXED_RENT + FIXED_SERVICES + FIXED_PAYROLL; // 1,433,400
+
 const toCOP = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
 const pct = (num: number, den: number) =>
   den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "0%";
+
 function todayLocalISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -126,6 +133,53 @@ function monthStartISO(d: string) {
 function yearStartISO(d: string) {
   const [y] = d.split("-").map(Number);
   return `${y}-01-01`;
+}
+function daysInMonth(y: number, m0to11: number) {
+  return new Date(y, m0to11 + 1, 0).getDate();
+}
+function clampDateToMidnightISO(d: Date) {
+  const d2 = new Date(d);
+  d2.setHours(0, 0, 0, 0);
+  const y = d2.getFullYear();
+  const m = d2.getMonth() + 1;
+  const day = d2.getDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function parseISO(s: string) {
+  return new Date(`${s}T00:00:00`);
+}
+
+/** Prorratea costos fijos mensuales entre dos fechas (incluye extremos). */
+function fixedCostBetween(fromISO: string, toISO: string) {
+  const start = parseISO(fromISO);
+  const end = parseISO(toISO);
+  if (end < start) return 0;
+
+  let cur = new Date(start);
+  let total = 0;
+
+  while (cur <= end) {
+    const y = cur.getFullYear();
+    const m = cur.getMonth(); // 0..11
+    const monthDays = daysInMonth(y, m);
+
+    // tramo del mes actual dentro del rango
+    const monthStart = new Date(y, m, 1);
+    const monthEnd = new Date(y, m, monthDays);
+
+    const segStart = cur > monthStart ? cur : monthStart;
+    const segEnd = end < monthEnd ? end : monthEnd;
+
+    const segDays =
+      Math.floor((segEnd.getTime() - segStart.getTime()) / 86400000) + 1;
+
+    const prorata = (segDays / monthDays) * FIXED_MONTHLY;
+    total += prorata;
+
+    // siguiente mes
+    cur = new Date(y, m + 1, 1);
+  }
+  return Math.round(total);
 }
 
 async function fetchImageAsDataUrl(src: string): Promise<string | null> {
@@ -153,12 +207,14 @@ function profitByRuleFromSale(s: SaleLine) {
   if (name === "REFACIL - PAGO FACTURA") return 200;
   if (name === "REFACIL - PAGO VANTI GAS NATURAL CUNDIBOYACENSE") return 100;
   if (name === "REFACIL - PAGO CUOTA PAYJOY") return 250;
-  if (name === "REFACIL - GAME PASS") return Math.round(total * 0.03);
+  if (name === "REFACIL - GAME PASS" || name === "REFACIL - GAME PASS/PSN")
+    return Math.round(total * 0.03);
   if (
     [
       "REFACIL - CARGA DE CUENTA",
       "TRANSACCION",
       "TRANSACCION DATAFONO",
+      "CUADRE DE CAJA",
     ].includes(name)
   )
     return 0;
@@ -193,10 +249,15 @@ export default function ReportsPage() {
   const [utilMonthByRule, setUtilMonthByRule] = useState<number>(0);
   const [utilYearByRule, setUtilYearByRule] = useState<number>(0);
 
-  // NUEVO: gastos operativos recalculados (excluyendo INTERNO) — día/mes/año
+  // gastos operativos recalculados (excluyendo INTERNO) — día/mes/año
   const [opsDay, setOpsDay] = useState<number>(0);
   const [opsMonth, setOpsMonth] = useState<number>(0);
   const [opsYear, setOpsYear] = useState<number>(0);
+
+  // también cargamos las líneas/gastos del rango exacto seleccionado para KPIs de rentabilidad
+  const [utilRangeByRule, setUtilRangeByRule] = useState<number>(0);
+  const [opsRange, setOpsRange] = useState<number>(0);
+  const [ventasRange, setVentasRange] = useState<number>(0);
 
   /* ===== Estado de CAJA ===== */
   const [cashbox, setCashbox] = useState<CashboxState>({
@@ -223,24 +284,29 @@ export default function ReportsPage() {
     }
   }, [rangeType, to]);
 
-  /* Carga dashboard */
+  /* Carga dashboard + KPIs de rentabilidad */
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const mFrom = monthStartISO(to);
       const yFrom = yearStartISO(to);
 
-      // Pedimos resumen + pagos + papelería + líneas de venta + (NUEVO) gastos
+      // Pedimos:
+      // - Resumen y pagos del rango exacto
+      // - Resumen mes y año hasta "to"
+      // - Papelería del rango
+      // - Líneas del rango / mes / año
+      // - Gastos del rango / mes / año
       const [
         rSumDay,
         rPayDay,
         rSumMonth,
         rSumYear,
         rPapDay,
-        rLinesDay,
+        rLinesRange,
         rLinesMonth,
         rLinesYear,
-        rExpDay,
+        rExpRange,
         rExpMonth,
         rExpYear,
       ] = await Promise.all([
@@ -263,10 +329,10 @@ export default function ReportsPage() {
         dSumMonth,
         dSumYear,
         dPap,
-        linesDay,
+        linesRange,
         linesMonth,
         linesYear,
-        expDay,
+        expRange,
         expMonth,
         expYear,
       ] = await Promise.all([
@@ -275,23 +341,23 @@ export default function ReportsPage() {
         rSumMonth.json() as Promise<Summary>,
         rSumYear.json() as Promise<Summary>,
         rPapDay.json() as Promise<{ total: number }>,
-        rLinesDay.json() as Promise<SaleLine[]>,
+        rLinesRange.json() as Promise<SaleLine[]>,
         rLinesMonth.json() as Promise<SaleLine[]>,
         rLinesYear.json() as Promise<SaleLine[]>,
-        rExpDay.json() as Promise<ExpenseRow[]>,
+        rExpRange.json() as Promise<ExpenseRow[]>,
         rExpMonth.json() as Promise<ExpenseRow[]>,
         rExpYear.json() as Promise<ExpenseRow[]>,
       ]);
 
-      // Estados base recibidos del backend
+      // Estados base
       setSumDay(dSumDay);
       setPayDay(dPayDay);
       setSumMonth(dSumMonth);
       setSumYear(dSumYear);
       setPapTotal(Number(dPap?.total || 0));
 
-      // Utilidades por regla (Excel) — siempre desde sales-lines
-      const uDay = (linesDay || []).reduce(
+      // Utilidades por regla
+      const uRange = (linesRange || []).reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
@@ -303,17 +369,21 @@ export default function ReportsPage() {
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
-      setUtilDayByRule(uDay);
+      setUtilRangeByRule(uRange);
       setUtilMonthByRule(uMonth);
       setUtilYearByRule(uYear);
 
-      // NUEVO: recalcular gastos operativos EXTERNOS excluyendo INTERNO (incluye ARREGLOS=INTERNO)
-      const gDay = sumOperativeExpensesExcludingInternos(expDay || []);
+      // gastos operativos EXTERNOS (excluye INTERNO)
+      const gRange = sumOperativeExpensesExcludingInternos(expRange || []);
       const gMonth = sumOperativeExpensesExcludingInternos(expMonth || []);
       const gYear = sumOperativeExpensesExcludingInternos(expYear || []);
-      setOpsDay(gDay);
+      setOpsRange(gRange);
+      setOpsDay(gRange); // para tarjetas "Resumen" cuando rangeType=day
       setOpsMonth(gMonth);
       setOpsYear(gYear);
+
+      // ventas del rango (para punto de equilibrio y KPI)
+      setVentasRange(Number(dSumDay?.ventas || 0)); // dSumDay es del rango from..to
 
       setMsg("");
     } catch {
@@ -399,11 +469,80 @@ export default function ReportsPage() {
     return () => clearInterval(t);
   }, [loadCashbox]);
 
+  /* ======== MÉTRICAS DE RENTABILIDAD (periodo seleccionado) ======== */
+  const fixedProrrated = useMemo(() => fixedCostBetween(from, to), [from, to]);
+
+  // Utilidad neta = Utilidad por regla – Gastos operativos (EXTERNOS) – Costos fijos prorrateados
+  const netProfitRange = useMemo(
+    () => Math.round(utilRangeByRule - opsRange - fixedProrrated),
+    [utilRangeByRule, opsRange, fixedProrrated]
+  );
+
+  // Margen operativo sobre ventas (usando utilidad por regla como "margen bruto")
+  const opMargin = useMemo(
+    () => (ventasRange > 0 ? utilRangeByRule / ventasRange : 0),
+    [utilRangeByRule, ventasRange]
+  );
+
+  // Ventas necesarias (punto de equilibrio) = (Gastos operativos + Costos fijos) / margen
+  const breakEvenSales = useMemo(() => {
+    const margin = opMargin;
+    const den = margin > 0 ? margin : 0;
+    return den > 0 ? Math.round((opsRange + fixedProrrated) / den) : Infinity;
+  }, [opMargin, opsRange, fixedProrrated]);
+
+  const rentabilidadOk = netProfitRange >= 0;
+
+  // ===== Proyección a fin de mes (si la fecha "to" está en el mes actual del rango)
+  const projection = useMemo(() => {
+    // Tomamos el mes de "to"
+    const end = parseISO(to);
+    const y = end.getFullYear();
+    const m = end.getMonth(); // 0..11
+    const dim = daysInMonth(y, m);
+    const monthStart = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const todayISO = clampDateToMidnightISO(new Date());
+
+    // Calculamos desde inicio de mes hasta "to"
+    const daysElapsed =
+      Math.floor(
+        (parseISO(to).getTime() - parseISO(monthStart).getTime()) / 86400000
+      ) + 1;
+
+    // Si el rango seleccionado NO está dentro del mes de "to", evitamos sesgos: proyectamos sólo cuando from es el inicio del mes
+    const sameMonth = monthStartISO(to) === from;
+    if (!sameMonth) {
+      return null;
+    }
+
+    // Promedio diario (utilidad por regla – operativos – fijos prorrateados del periodo / días)
+    const fixedMonth = FIXED_MONTHLY;
+    const fixedPerDay = fixedMonth / dim;
+
+    // Recalculamos métricas de "mes hasta to" (ya las tenemos):
+    const utilMTD = utilMonthByRule;
+    const opsMTD = opsMonth;
+    const fixedMTD = Math.round(fixedPerDay * daysElapsed);
+    const netMTD = utilMTD - opsMTD - fixedMTD;
+
+    const avgNetPerDay = netMTD / Math.max(1, daysElapsed);
+    const projectedNetMonth = Math.round(avgNetPerDay * dim);
+
+    return {
+      dim,
+      daysElapsed,
+      fixedPerDay: Math.round(fixedPerDay),
+      netMTD: Math.round(netMTD),
+      projectedNetMonth,
+      avgNetPerDay: Math.round(avgNetPerDay),
+    };
+  }, [to, from, utilMonthByRule, opsMonth]);
+
   /* Charts (UI) — usar métricas recalculadas */
   const dayChartData = [
     { name: "Ventas", value: sumDay?.ventas || 0 },
-    { name: "Gastos (Op.)", value: opsDay || 0 }, // NUEVO: gastos operativos excluyendo INTERNO
-    { name: "Utilidad", value: utilDayByRule || 0 }, // utilidad por regla
+    { name: "Gastos (Op.)", value: opsDay || 0 },
+    { name: "Utilidad", value: utilDayByRule || 0 },
   ];
 
   const payForChart = payDay?.neto ?? {
@@ -424,22 +563,7 @@ export default function ReportsPage() {
       ]
     : [];
 
-  const monthlyComparison = [
-    {
-      name: "Mes",
-      Ventas: sumMonth?.ventas || 0,
-      Gastos: opsMonth || 0, // NUEVO
-      Utilidad: utilMonthByRule || 0, // NUEVO
-    },
-    {
-      name: "Año",
-      Ventas: sumYear?.ventas || 0,
-      Gastos: opsYear || 0, // NUEVO
-      Utilidad: utilYearByRule || 0, // NUEVO
-    },
-  ];
-
-  /* ===== Exportar PDF ===== */
+  /* ===== Exportar PDF (coherente con dashboard) ===== */
   const exportReportPdf = async () => {
     try {
       const [salesRes, expRes, sumRes, payRes, papRes] = await Promise.all([
@@ -457,13 +581,14 @@ export default function ReportsPage() {
         papRes.json() as Promise<{ total: number }>,
       ]);
 
-      // NUEVO: recalcular métricas para PDF coherentes con la UI
       const utilByRuleForPdf = (sales || []).reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
       const gastosOperativosPdf =
         sumOperativeExpensesExcludingInternos(expenses);
+      const fixedPdf = fixedCostBetween(from, to);
+      const netPdf = utilByRuleForPdf - gastosOperativosPdf - fixedPdf;
 
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
@@ -502,12 +627,10 @@ export default function ReportsPage() {
         body: [
           ["Ventas totales", toCOP(summary?.ventas || 0)],
           ["Costo vendido", toCOP(summary?.costo_vendido || 0)],
-          // NUEVO: usamos gastos operativos recalculados (excluye INTERNO)
           ["Gastos (operativos)", toCOP(gastosOperativosPdf || 0)],
-          // dejamos el total de gastos tal cual (si quieres, cámbialo a otro cálculo)
-          ["Gastos (total)", toCOP(summary?.gastos_total || 0)],
-          // NUEVO: utilidad por regla (coherente con dashboard)
+          ["Costos fijos (prorrateados)", toCOP(fixedPdf)],
           ["Utilidad (reglas)", toCOP(utilByRuleForPdf || 0)],
+          ["Utilidad neta del periodo", toCOP(netPdf)],
           ["PAPELERÍA (periodo)", toCOP(Number(pap?.total || 0))],
         ],
         theme: "grid",
@@ -743,10 +866,13 @@ export default function ReportsPage() {
       ? "Resumen diario"
       : rangeType === "month"
       ? "Resumen mes"
-      : "Resumen año";
+      : rangeType === "year"
+      ? "Resumen año"
+      : "Resumen del periodo";
 
   const cajaPayTitle = `CAJA POR MÉTODO DE PAGO ${rangeWord} (NETO)`;
 
+  /* ======= UI ======= */
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
       <h1 className="text-2xl font-bold text-cyan-400">DASHBOARD / REPORTES</h1>
@@ -880,13 +1006,19 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Resumen */}
+        {/* Resumen periodo */}
         <Card title={resumenTitle}>
           <ChartBar data={dayChartData} />
           <div className="space-y-1 mt-2">
             <KV k="Ventas" v={toCOP(sumDay?.ventas || 0)} />
-            <KV k="Gastos (Operativos)" v={toCOP(opsDay || 0)} />
-            <KV k="Utilidad" v={toCOP(utilDayByRule || 0)} strong />
+            <KV k="Gastos (Operativos)" v={toCOP(opsRange || 0)} />
+            <KV k="Costos fijos (prorrateados)" v={toCOP(fixedProrrated)} />
+            <KV k="Utilidad (reglas)" v={toCOP(utilRangeByRule || 0)} />
+            <KV
+              k="Utilidad neta del periodo"
+              v={toCOP(netProfitRange)}
+              strong
+            />
             <KV k="Papelería" v={toCOP(papTotal || 0)} />
           </div>
         </Card>
@@ -905,7 +1037,7 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        {/* Comparativa mes / año */}
+        {/* Comparativa mes / año (utilidad y gastos recalculados) */}
         <Card title="Comparativa mensual vs anual">
           <ChartLine
             data={[
@@ -925,24 +1057,63 @@ export default function ReportsPage() {
           />
         </Card>
 
-        {/* Indicadores */}
+        {/* Indicadores de eficiencia */}
         <Card title="Indicadores de eficiencia">
           <KV
-            k="% Utilidad / Ventas (mes)"
-            v={pct(utilMonthByRule || 0, sumMonth?.ventas || 0)}
+            k="% Utilidad / Ventas (periodo)"
+            v={pct(utilRangeByRule || 0, ventasRange || 0)}
           />
           <KV
-            k="% Gastos / Ventas (mes)"
-            v={pct(opsMonth || 0, sumMonth?.ventas || 0)}
+            k="% Gastos (Op.) / Ventas (periodo)"
+            v={pct(opsRange || 0, ventasRange || 0)}
           />
           <KV
-            k="% Utilidad / Ventas (año)"
-            v={pct(utilYearByRule || 0, sumYear?.ventas || 0)}
+            k="Ventas necesarias (punto de equilibrio)"
+            v={isFinite(breakEvenSales) ? toCOP(breakEvenSales) : "—"}
+            strong
           />
-          <KV
-            k="% Gastos / Ventas (año)"
-            v={pct(opsYear || 0, sumYear?.ventas || 0)}
-          />
+          <div
+            className="mt-2 px-3 py-2 rounded"
+            style={{
+              backgroundColor: rentabilidadOk ? "#063b2d" : "#3b0611",
+              border: `1px solid ${rentabilidadOk ? "#10b981" : "#ef4444"}`,
+            }}
+          >
+            <b className={rentabilidadOk ? "text-green-300" : "text-red-300"}>
+              {rentabilidadOk ? "Rentable" : "No rentable"}
+            </b>{" "}
+            — Utilidad neta del periodo: {toCOP(netProfitRange)}
+          </div>
+        </Card>
+
+        {/* Proyección fin de mes (si aplica) */}
+        <Card title="Proyección a fin de mes">
+          {projection ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <KV k="Días del mes" v={String(projection.dim)} />
+                <KV k="Días transcurridos" v={String(projection.daysElapsed)} />
+                <KV k="Costo fijo por día" v={toCOP(projection.fixedPerDay)} />
+                <KV k="Utilidad neta MTD" v={toCOP(projection.netMTD)} />
+              </div>
+              <div className="mt-2">
+                <KV
+                  k="Promedio neto / día (MTD)"
+                  v={toCOP(projection.avgNetPerDay)}
+                />
+                <KV
+                  k="Proyección neta fin de mes"
+                  v={toCOP(projection.projectedNetMonth)}
+                  strong
+                />
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-300">
+              Selecciona el **tipo MES** (o un rango que inicie en el primer día
+              del mes) para calcular la proyección.
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -977,13 +1148,15 @@ function KV({
   strong = false,
 }: {
   k: string;
-  v: string;
+  v: string | number;
   strong?: boolean;
 }) {
   return (
     <div className={`flex justify-between ${strong ? "text-lg" : ""}`}>
       <span>{k}</span>
-      <b className={strong ? "text-pink-300" : ""}>{v}</b>
+      <b className={strong ? "text-pink-300" : ""}>
+        {typeof v === "number" ? v : v}
+      </b>
     </div>
   );
 }
