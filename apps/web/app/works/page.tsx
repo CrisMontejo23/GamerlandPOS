@@ -95,6 +95,8 @@ type Patch = {
   quotation?: number | null;
 };
 
+const PAGE_SIZE = 5;
+
 export default function WorksPage() {
   const { role, ready, username } = useAuth();
   const canDelete = role === "ADMIN";
@@ -113,6 +115,15 @@ export default function WorksPage() {
   const [informedIds, setInformedIds] = useState<Set<number>>(
     () => new Set<number>()
   );
+
+  const [visibleByStatus, setVisibleByStatus] = useState<
+    Record<WorkStatus, number>
+  >({
+    RECEIVED: PAGE_SIZE,
+    IN_PROGRESS: PAGE_SIZE,
+    FINISHED: PAGE_SIZE,
+    DELIVERED: PAGE_SIZE,
+  });
 
   // Crear
   const [openForm, setOpenForm] = useState(false);
@@ -221,6 +232,16 @@ export default function WorksPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, location]); // 👈 ya no recargamos por cambio de status (tab)
+
+  useEffect(() => {
+    // cada vez que cambies de pestaña, reinicia el contador de items por columna
+    setVisibleByStatus({
+      RECEIVED: PAGE_SIZE,
+      IN_PROGRESS: PAGE_SIZE,
+      FINISHED: PAGE_SIZE,
+      DELIVERED: PAGE_SIZE,
+    });
+  }, [status]);
 
   const normalizePatch = (patch: Patch): Patch => {
     const out: Patch = { ...patch };
@@ -791,20 +812,41 @@ export default function WorksPage() {
           {statusOrder
             .filter((st) => visibleStatuses.includes(st))
             .map((st) => {
-              const colRows = sortedRows.filter((w) => w.status === st);
+              const colRowsAll = sortedRows.filter((w) => w.status === st);
+              const limit = visibleByStatus[st] ?? PAGE_SIZE;
+              const colRows = colRowsAll.slice(0, limit);
+              const hasMore = colRowsAll.length > limit;
+
               return (
                 <div key={st} className="space-y-3">
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
                     {niceStatus[st]}
                     <span className="ml-1 text-xs text-gray-400">
-                      ({colRows.length})
+                      ({colRowsAll.length})
                     </span>
                   </h2>
+
                   <div className="space-y-3">
-                    {!loading && colRows.length === 0 && (
+                    {!loading && colRowsAll.length === 0 && (
                       <div className="text-xs text-gray-500">Sin trabajos</div>
                     )}
+
                     {colRows.map((w) => renderWorkCard(w))}
+
+                    {hasMore && (
+                      <button
+                        className="mt-1 px-3 py-1 rounded border text-xs uppercase"
+                        style={{ borderColor: COLORS.border }}
+                        onClick={() =>
+                          setVisibleByStatus((prev) => ({
+                            ...prev,
+                            [st]: (prev[st] ?? PAGE_SIZE) + PAGE_SIZE,
+                          }))
+                        }
+                      >
+                        MOSTRAR MÁS
+                      </button>
+                    )}
                   </div>
                 </div>
               );
