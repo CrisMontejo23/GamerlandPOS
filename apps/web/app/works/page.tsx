@@ -628,11 +628,13 @@ export default function WorksPage() {
                 {/* EN PROCESO SOLO DESPUÉS DE INFORMAR AL CLIENTE */}
                 {w.informedCustomer && (
                   <button
+                    className="px-3 py-1 rounded border text-xs uppercase"
+                    style={{ borderColor: COLORS.border }}
                     onClick={() => updateStatusAndNotify(w, "IN_PROGRESS")}
                   >
                     EN PROCESO
                   </button>
-                )}
+                )}                
               </>
             )}
 
