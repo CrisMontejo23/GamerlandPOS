@@ -139,6 +139,7 @@ model WorkOrder {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   payments      WorkOrderPayment[]                   // 👈 inversa para pagos
+  informedCustomer Boolean @default(false)
 
   @@index([status, location, createdAt])
   @@index([code])

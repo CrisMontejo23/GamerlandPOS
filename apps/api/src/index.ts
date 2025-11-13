@@ -1337,7 +1337,7 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
       const cat = String(it.product?.category ?? "").toUpperCase();
       const sku = String(it.product?.sku ?? "").toUpperCase();
       const name = String(it.product?.name ?? "").toUpperCase();
-      // Regla principal: categoría PAPELERIA      
+      // Regla principal: categoría PAPELERIA
       if (name.includes("PAPELERIA")) return true;
       return false;
     })
@@ -1404,6 +1404,9 @@ const workCreateSchema = z.object({
   location: z.enum(["LOCAL", "BOGOTA"]).default("LOCAL"),
   quote: z.coerce.number().optional(),
   notes: z.string().optional(),
+
+  // 👇 opcional (por defecto false)
+  informedCustomer: z.coerce.boolean().optional(),
 });
 const workUpdateSchema = z.object({
   item: z.string().optional(),
@@ -1418,6 +1421,9 @@ const workUpdateSchema = z.object({
   quote: z.coerce.number().nullable().optional(),
   total: z.coerce.number().nullable().optional(),
   notes: z.string().nullable().optional(),
+
+  // 👇 nuevo en update
+  informedCustomer: z.coerce.boolean().optional(),
 });
 const workPaymentSchema = z.object({
   amount: z.coerce.number().positive("Monto inválido"),
@@ -1559,6 +1565,9 @@ app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
       location: d.location,
       quote: d.quote ?? null,
       notes: d.notes ? U(d.notes) : null,
+
+      // 👇 si viene, úsalo; si no, false
+      informedCustomer: d.informedCustomer ?? false,
     },
   });
   res.status(201).json(row);
@@ -1597,6 +1606,11 @@ app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
         ...(d.total !== undefined ? { total: d.total } : {}),
         ...(d.notes !== undefined
           ? { notes: d.notes ? U(d.notes) : null }
+          : {}),
+
+        // 👇 nuevo: se guarda en BD
+        ...(d.informedCustomer !== undefined
+          ? { informedCustomer: d.informedCustomer }
           : {}),
       },
     });

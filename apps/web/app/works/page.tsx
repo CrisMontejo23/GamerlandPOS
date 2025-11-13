@@ -16,12 +16,15 @@ type WorkOrder = {
   customerPhone: string;
   status: WorkStatus;
   location: WorkLocation;
-  quote?: number | null; // BD
-  total?: number | null; // BD
-  deposit?: number | null; // 👈 viene calculado desde el backend
+  quote?: number | null;
+  total?: number | null;
+  deposit?: number | null;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+
+  // 👇 nuevo
+  informedCustomer?: boolean;
 };
 
 const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030" };
@@ -75,10 +78,12 @@ function normalizeRows(rows: AnyRow[]): WorkOrder[] {
     location: (r.location ?? "LOCAL") as WorkLocation,
     quote: toNum(r.quote),
     total: toNum(r.total),
-    deposit: toNum(r.deposit ?? 0), // 👈 del backend
+    deposit: toNum(r.deposit ?? 0),
     notes: r.notes ?? null,
     createdAt: r.createdAt ?? new Date().toISOString(),
     updatedAt: r.updatedAt ?? new Date().toISOString(),
+
+    informedCustomer: !!r.informedCustomer,
   }));
 }
 
@@ -93,6 +98,7 @@ type Patch = {
   total?: number | null;
   quote?: number | null;
   quotation?: number | null;
+  informedCustomer?: boolean;
 };
 
 const PAGE_SIZE = 5;
@@ -409,6 +415,19 @@ export default function WorksPage() {
     load();
   }
 
+  async function markInformedAndNotify(w: WorkOrder) {
+    // Si ya está marcado, solo reenviamos el mensaje (por si quieres reenviar)
+    if (w.informedCustomer) {
+      openWhatsApp(w.customerPhone, buildReceivedMsg(w));
+      return;
+    }
+
+    const ok = await update(w.id, { informedCustomer: true });
+    if (!ok) return;
+
+    openWhatsApp(w.customerPhone, buildReceivedMsg(w));
+  }
+
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
     { key: "", label: "TODOS" },
     { key: "RECEIVED", label: "RECIBIDOS" },
@@ -601,21 +620,14 @@ export default function WorksPage() {
                 <button
                   className="px-3 py-1 rounded border text-xs uppercase"
                   style={{ borderColor: COLORS.border }}
-                  onClick={() => {
-                    openWhatsApp(w.customerPhone, buildReceivedMsg(w));
-                    setInformedIds((prev) => {
-                      const next = new Set(prev);
-                      next.add(w.id);
-                      return next;
-                    });
-                  }}
+                  onClick={() => markInformedAndNotify(w)}
                   title="Enviar mensaje de recibido"
                 >
                   INFORMAR AL CLIENTE
                 </button>
 
                 {/* EN PROCESO SOLO DESPUÉS DE INFORMAR AL CLIENTE */}
-                {informedIds.has(w.id) && (
+                {w.status === "RECEIVED" && w.informedCustomer && (
                   <button
                     className="px-3 py-1 rounded border text-xs uppercase"
                     style={{ borderColor: COLORS.border }}

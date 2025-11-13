@@ -11,7 +11,8 @@
     "prisma:migrate:dev": "prisma migrate dev --schema packages/db/prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema packages/db/prisma/schema.prisma",
-    "postinstall": "prisma generate --schema packages/db/prisma/schema.prisma"
+    "postinstall": "prisma generate --schema packages/db/prisma/schema.prisma",
+    "prisma:db:push": "prisma db push --schema packages/db/prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
