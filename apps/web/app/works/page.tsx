@@ -425,6 +425,9 @@ export default function WorksPage() {
     const ok = await update(w.id, { informedCustomer: true });
     if (!ok) return;
 
+    // 🔥 Recarga las filas para que la UI se actualice
+    await load();
+
     openWhatsApp(w.customerPhone, buildReceivedMsg(w));
   }
 
@@ -616,21 +619,15 @@ export default function WorksPage() {
             {/* ACCIONES DE ESTADO */}
             {w.status === "RECEIVED" && (
               <>
-                {/* INFORMAR AL CLIENTE SIEMPRE DISPONIBLE */}
-                <button
-                  className="px-3 py-1 rounded border text-xs uppercase"
-                  style={{ borderColor: COLORS.border }}
-                  onClick={() => markInformedAndNotify(w)}
-                  title="Enviar mensaje de recibido"
-                >
-                  INFORMAR AL CLIENTE
-                </button>
+                {!w.informedCustomer && (
+                  <button onClick={() => markInformedAndNotify(w)}>
+                    INFORMAR AL CLIENTE
+                  </button>
+                )}
 
                 {/* EN PROCESO SOLO DESPUÉS DE INFORMAR AL CLIENTE */}
-                {w.status === "RECEIVED" && w.informedCustomer && (
+                {w.informedCustomer && (
                   <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
                     onClick={() => updateStatusAndNotify(w, "IN_PROGRESS")}
                   >
                     EN PROCESO
