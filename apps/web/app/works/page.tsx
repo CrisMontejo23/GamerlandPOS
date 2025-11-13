@@ -109,6 +109,11 @@ export default function WorksPage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
+  // Track de cuáles trabajos ya se les dio "INFORMAR AL CLIENTE"
+  const [informedIds, setInformedIds] = useState<Set<number>>(
+    () => new Set<number>()
+  );
+
   // Crear
   const [openForm, setOpenForm] = useState(false);
   const [item, setItem] = useState("");
@@ -196,7 +201,7 @@ export default function WorksPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams();
-      if (status) p.set("status", status);
+      // El estado ahora se filtra en el front para poder mostrar columnas
       if (location) p.set("location", location);
       if (q.trim()) p.set("q", UDATA(q));
 
@@ -215,7 +220,7 @@ export default function WorksPage() {
     if (!ready) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, status, location]);
+  }, [ready, location]); // 👈 ya no recargamos por cambio de status (tab)
 
   const normalizePatch = (patch: Patch): Patch => {
     const out: Patch = { ...patch };
@@ -256,11 +261,8 @@ export default function WorksPage() {
     const ok = await update(w.id, { status: newStatus, ...(extraPatch || {}) });
     if (!ok) return;
 
-    // Mensaje corto para cambios de estado
     const msg = buildStatusMsg(w, newStatus);
     openWhatsApp(w.customerPhone, msg);
-
-    // refresca lista
     await load();
   }
 
@@ -282,7 +284,6 @@ export default function WorksPage() {
   };
 
   // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
-  // Si hay cotización: finaliza directo con saldo y notifica
   const openFinish = async (w: WorkOrder) => {
     if (w.quote != null) {
       const dep = Number(w.deposit || 0);
@@ -309,16 +310,6 @@ export default function WorksPage() {
     setFinishModalOpen(false);
     setFinishTarget(null);
     setFinishAmount("");
-  };
-
-  const deliver = async (w: WorkOrder) => {
-    if (w.total == null) {
-      const ok = confirm(
-        "Este trabajo no tiene valor registrado. ¿Marcar como ENTREGADO de todas formas?"
-      );
-      if (!ok) return;
-    }
-    await update(w.id, { status: "DELIVERED" });
   };
 
   // Editar/Agregar COT y ABONO (abono se persiste via /works/:id/payments)
@@ -430,7 +421,7 @@ export default function WorksPage() {
     const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
-  // Mensajes
+
   function buildReceivedMsg(w: WorkOrder) {
     const dep = Number(w.deposit || 0);
     const quote = Number(w.quote ?? 0);
@@ -455,13 +446,250 @@ export default function WorksPage() {
 
   function buildStatusMsg(w: WorkOrder, newStatus: WorkStatus) {
     const base = `${UU(w.code)}`;
-    if (newStatus === "IN_PROGRESS") return `${base} ahora está EN PROCESO.`;
-    if (newStatus === "FINISHED")
-      return `${base} está FINALIZADO. Puedes pasar por él.`;
+    const dep = Number(w.deposit || 0);
+    const quoteNum = w.quote != null ? Number(w.quote) : null;
+    const saldo = quoteNum != null ? Math.max(quoteNum - dep, 0) : null;
+
+    if (newStatus === "IN_PROGRESS") return `${base} ahora está EN PROCESO. 👨‍🔧`;
+
+    if (newStatus === "FINISHED") {
+      const lineas: string[] = [];
+      lineas.push(
+        `Hola ${UU(w.customerName)} 🎮`,
+        `Tu trabajo ${base} está FINALIZADO. ✅`
+      );
+      if (quoteNum != null) {
+        lineas.push(
+          `Cotización: ${toCOP(quoteNum)}`,
+          `Abono: ${toCOP(dep)}`,
+          `Saldo: ${toCOP(saldo ?? 0)}`
+        );
+      }
+      lineas.push(
+        `Puedes pasar por tu equipo en horario de atención. ¡Gracias por elegir Gamerland!`
+      );
+      return lineas.join("\n");
+    }
+
     if (newStatus === "DELIVERED")
-      return `${base} ENTREGADO. Recuerda: para cualquier garantía avísanos con tiempo para gestionarla.`;
+      return `${base} ENTREGADO. ✅ Recuerda: para cualquier garantía avísanos con tiempo para gestionarla.`;
+
     return `${base} ahora está ${niceStatus[newStatus]}`;
   }
+
+  // ====== Ordenar trabajos por fecha (antiguos primero) ======
+  const sortedRows = [...rows].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const statusOrder: WorkStatus[] = [
+    "RECEIVED",
+    "IN_PROGRESS",
+    "FINISHED",
+    "DELIVERED",
+  ];
+
+  const visibleStatuses: WorkStatus[] = status === "" ? statusOrder : [status];
+
+  // Render de una tarjeta de trabajo (con la nueva lógica de botones)
+  const renderWorkCard = (w: WorkOrder) => {
+    const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
+    const delivered = w.status === "DELIVERED";
+    const dep = Number(w.deposit || 0);
+    const quote = Number(w.quote ?? 0);
+    const saldo = Math.max(quote - dep, 0);
+
+    return (
+      <article
+        key={w.id}
+        className={`rounded-xl p-4 space-y-2 border ${s.card}`}
+        style={{ backgroundColor: COLORS.bgCard }}
+      >
+        <header className="flex items-center justify-between">
+          <div className="font-semibold text-cyan-300 uppercase">
+            {UU(w.code)}
+          </div>
+          <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
+            {niceStatus[w.status]}
+          </span>
+        </header>
+
+        <div className="text-sm text-gray-300">
+          <div>
+            <b>INGRESÓ:</b> {fmt(w.createdAt)}
+          </div>
+          <div>
+            <b>UBICACIÓN:</b>{" "}
+            {w.location === "LOCAL" ? "EN LOCAL" : "EN BOGOTÁ"}
+          </div>
+        </div>
+
+        <div className="text-sm uppercase">
+          <div>
+            <b>EQUIPO:</b> {UU(w.item)}
+          </div>
+          <div>
+            <b>DESCRIPCIÓN:</b> {UU(w.description)}
+          </div>
+          <div>
+            <b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}
+          </div>
+
+          {w.quote != null && (
+            <>
+              <div>
+                <b>COTIZACIÓN:</b> ${Number(quote).toLocaleString("es-CO")}
+              </div>
+              <div>
+                <b>ABONOS:</b> ${Number(dep).toLocaleString("es-CO")}
+              </div>
+              <div className="text-pink-300">
+                <b>SALDO:</b> ${saldo.toLocaleString("es-CO")}
+              </div>
+            </>
+          )}
+
+          {w.status === "FINISHED" && w.total != null && (
+            <div className="text-emerald-300">
+              <b>VALOR A PAGAR:</b> ${Number(w.total).toLocaleString("es-CO")}
+            </div>
+          )}
+          {w.status === "DELIVERED" && (
+            <div className="text-pink-300">
+              <b>PAGO:</b>{" "}
+              {w.total != null
+                ? `$${Number(w.total).toLocaleString("es-CO")}`
+                : "—"}
+            </div>
+          )}
+
+          {!!w.notes && (
+            <div>
+              <b>NOTAS:</b> {UU(w.notes)}
+            </div>
+          )}
+        </div>
+
+        {/* Botonera según estado (sin retornos) */}
+        {!delivered && (
+          <div className="flex flex-wrap gap-2 pt-2">
+            {/* ACCIONES DE ESTADO */}
+            {w.status === "RECEIVED" && (
+              <>
+                {/* INFORMAR AL CLIENTE SIEMPRE DISPONIBLE */}
+                <button
+                  className="px-3 py-1 rounded border text-xs uppercase"
+                  style={{ borderColor: COLORS.border }}
+                  onClick={() => {
+                    openWhatsApp(w.customerPhone, buildReceivedMsg(w));
+                    setInformedIds((prev) => {
+                      const next = new Set(prev);
+                      next.add(w.id);
+                      return next;
+                    });
+                  }}
+                  title="Enviar mensaje de recibido"
+                >
+                  INFORMAR AL CLIENTE
+                </button>
+
+                {/* EN PROCESO SOLO DESPUÉS DE INFORMAR AL CLIENTE */}
+                {informedIds.has(w.id) && (
+                  <button
+                    className="px-3 py-1 rounded border text-xs uppercase"
+                    style={{ borderColor: COLORS.border }}
+                    onClick={() => updateStatusAndNotify(w, "IN_PROGRESS")}
+                  >
+                    EN PROCESO
+                  </button>
+                )}
+              </>
+            )}
+
+            {w.status === "IN_PROGRESS" && (
+              <button
+                className="px-3 py-1 rounded border text-xs uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => openFinish(w)}
+              >
+                FINALIZADO
+              </button>
+            )}
+
+            {w.status === "FINISHED" && (
+              <button
+                className="px-3 py-1 rounded border text-xs uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => updateStatusAndNotify(w, "DELIVERED")}
+              >
+                ENTREGADO
+              </button>
+            )}
+
+            {/* ACCIONES SIEMPRE DISPONIBLES MIENTRAS NO ESTÉ ENTREGADO */}
+            <button
+              className="px-3 py-1 rounded border text-xs uppercase"
+              style={{ borderColor: COLORS.border }}
+              onClick={() => openEditDetails(w)}
+              title="Editar descripción y 'qué se recibe'"
+            >
+              EDITAR DESC.
+            </button>
+
+            <button
+              className="px-3 py-1 rounded border text-xs uppercase"
+              style={{ borderColor: COLORS.border }}
+              onClick={() => openEditQuoteDeposit(w)}
+              title={
+                w.quote != null
+                  ? "Editar cotización / agregar abono"
+                  : "Agregar cotización"
+              }
+            >
+              {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
+            </button>
+
+            {/* Toggle ubicación */}
+            <button
+              className="px-3 py-1 rounded border text-xs uppercase"
+              style={{ borderColor: COLORS.border }}
+              onClick={() =>
+                update(w.id, {
+                  location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL",
+                })
+              }
+            >
+              {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
+            </button>
+
+            {/* Eliminar (solo ADMIN) */}
+            {canDelete && (
+              <button
+                className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => onDelete(w.id)}
+              >
+                ELIMINAR
+              </button>
+            )}
+          </div>
+        )}
+
+        {delivered && canDelete && (
+          <div className="flex flex-wrap gap-2 pt-2">
+            <button
+              className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+              style={{ borderColor: COLORS.border }}
+              onClick={() => onDelete(w.id)}
+              title="Eliminar definitivamente este trabajo (ADMIN)"
+            >
+              ELIMINAR
+            </button>
+          </div>
+        )}
+      </article>
+    );
+  };
 
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
@@ -552,221 +780,36 @@ export default function WorksPage() {
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
 
-      {/* Lista */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading && (
-          <div className="col-span-full text-gray-400">CARGANDO…</div>
-        )}
+      {/* Lista en 4 columnas por estado */}
+      <section className="space-y-4">
+        {loading && <div className="text-gray-400 text-sm">CARGANDO…</div>}
         {!loading && rows.length === 0 && (
-          <div className="col-span-full text-gray-400">NO HAY TRABAJOS</div>
+          <div className="text-gray-400 text-sm">NO HAY TRABAJOS</div>
         )}
 
-        {rows.map((w) => {
-          const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
-          const delivered = w.status === "DELIVERED";
-          const dep = Number(w.deposit || 0);
-          const quote = Number(w.quote ?? 0);
-          const saldo = Math.max(quote - dep, 0);
-
-          return (
-            <article
-              key={w.id}
-              className={`rounded-xl p-4 space-y-2 border ${s.card}`}
-              style={{ backgroundColor: COLORS.bgCard }}
-            >
-              <header className="flex items-center justify-between">
-                <div className="font-semibold text-cyan-300 uppercase">
-                  {UU(w.code)}
-                </div>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}
-                >
-                  {niceStatus[w.status]}
-                </span>
-              </header>
-
-              <div className="text-sm text-gray-300">
-                <div>
-                  <b>INGRESÓ:</b> {fmt(w.createdAt)}
-                </div>
-                <div>
-                  <b>UBICACIÓN:</b>{" "}
-                  {w.location === "LOCAL" ? "EN LOCAL" : "EN BOGOTÁ"}
-                </div>
-              </div>
-
-              <div className="text-sm uppercase">
-                <div>
-                  <b>EQUIPO:</b> {UU(w.item)}
-                </div>
-                <div>
-                  <b>DESCRIPCIÓN:</b> {UU(w.description)}
-                </div>
-                <div>
-                  <b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}
-                </div>
-
-                {w.quote != null && (
-                  <>
-                    <div>
-                      <b>COTIZACIÓN:</b> $
-                      {Number(quote).toLocaleString("es-CO")}
-                    </div>
-                    <div>
-                      <b>ABONOS:</b> ${Number(dep).toLocaleString("es-CO")}
-                    </div>
-                    <div className="text-pink-300">
-                      <b>SALDO:</b> ${saldo.toLocaleString("es-CO")}
-                    </div>
-                  </>
-                )}
-
-                {w.status === "FINISHED" && w.total != null && (
-                  <div className="text-emerald-300">
-                    <b>VALOR A PAGAR:</b> $
-                    {Number(w.total).toLocaleString("es-CO")}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+          {statusOrder
+            .filter((st) => visibleStatuses.includes(st))
+            .map((st) => {
+              const colRows = sortedRows.filter((w) => w.status === st);
+              return (
+                <div key={st} className="space-y-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
+                    {niceStatus[st]}
+                    <span className="ml-1 text-xs text-gray-400">
+                      ({colRows.length})
+                    </span>
+                  </h2>
+                  <div className="space-y-3">
+                    {!loading && colRows.length === 0 && (
+                      <div className="text-xs text-gray-500">Sin trabajos</div>
+                    )}
+                    {colRows.map((w) => renderWorkCard(w))}
                   </div>
-                )}
-                {w.status === "DELIVERED" && (
-                  <div className="text-pink-300">
-                    <b>PAGO:</b>{" "}
-                    {w.total != null
-                      ? `$${Number(w.total).toLocaleString("es-CO")}`
-                      : "—"}
-                  </div>
-                )}
-
-                {!!w.notes && (
-                  <div>
-                    <b>NOTAS:</b> {UU(w.notes)}
-                  </div>
-                )}
-              </div>
-
-              {!delivered && (
-                <div className="flex flex-wrap gap-2 pt-2">
-                  {w.status !== "RECEIVED" && (
-                    <button
-                      className="px-3 py-1 rounded border text-xs uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() => updateStatusAndNotify(w, "RECEIVED")}
-                    >
-                      RECIBIDO
-                    </button>
-                  )}
-
-                  {/* Avisar al cliente cuando está en RECIBIDO */}
-                  {w.status === "RECEIVED" && (
-                    <button
-                      className="px-3 py-1 rounded border text-xs uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() =>
-                        openWhatsApp(w.customerPhone, buildReceivedMsg(w))
-                      }
-                      title="Enviar mensaje de recibido"
-                    >
-                      INFORMAR AL CLIENTE
-                    </button>
-                  )}
-
-                  {/* Editar descripción / qué se recibe */}
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() => openEditDetails(w)}
-                    title="Editar descripción y 'qué se recibe'"
-                  >
-                    EDITAR DESC.
-                  </button>
-
-                  {/* EN PROCESO */}
-                  {w.status !== "IN_PROGRESS" && (
-                    <button
-                      className="px-3 py-1 rounded border text-xs uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() => updateStatusAndNotify(w, "IN_PROGRESS")}
-                    >
-                      EN PROCESO
-                    </button>
-                  )}
-
-                  {/* Editar/Agregar Cotización/Abono */}
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() => openEditQuoteDeposit(w)}
-                    title={
-                      w.quote != null
-                        ? "Editar cotización / agregar abono"
-                        : "Agregar cotización"
-                    }
-                  >
-                    {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
-                  </button>
-
-                  {/* FINALIZAR */}
-                  {w.status !== "FINISHED" && (
-                    <button
-                      className="px-3 py-1 rounded border text-xs uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() => openFinish(w)}
-                    >
-                      FINALIZADO
-                    </button>
-                  )}
-
-                  {/* ENTREGADO */}
-                  {w.status === "FINISHED" && (
-                    <button
-                      className="px-3 py-1 rounded border text-xs uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() => updateStatusAndNotify(w, "DELIVERED")}
-                    >
-                      ENTREGADO
-                    </button>
-                  )}
-
-                  {/* Toggle ubicación */}
-                  <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
-                    onClick={() =>
-                      update(w.id, {
-                        location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL",
-                      })
-                    }
-                  >
-                    {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
-                  </button>
-
-                  {/* Eliminar (solo ADMIN) */}
-                  {canDelete && (
-                    <button
-                      className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() => onDelete(w.id)}
-                    >
-                      ELIMINAR
-                    </button>
-                  )}
-
-                  {delivered && canDelete && (
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      <button
-                        className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
-                        style={{ borderColor: COLORS.border }}
-                        onClick={() => onDelete(w.id)}
-                        title="Eliminar definitivamente este trabajo (ADMIN)"
-                      >
-                        ELIMINAR
-                      </button>
-                    </div>
-                  )}
                 </div>
-              )}
-            </article>
-          );
-        })}
+              );
+            })}
+        </div>
       </section>
 
       {/* Modal Crear */}
