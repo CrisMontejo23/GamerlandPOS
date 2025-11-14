@@ -466,56 +466,63 @@ export default function LayawaysPage() {
     }) as JsPDFWithAutoTable;
 
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 15;
     let y = 12;
 
-    // ==== ENCABEZADO GAMER ====
+    // ==== ENCABEZADO GAMER MINIMALISTA ====
+    // Barra primero (para que NO tape el logo)
+    doc.setFillColor(5, 10, 40);
+    doc.rect(0, 0, pageWidth, 24, "F");
+
+    // Logo
     try {
       const imgSrc = (logo as StaticImageData).src;
-      // logo a la izquierda
-      doc.addImage(imgSrc, "PNG", marginX, y - 4, 28, 18);
+      doc.addImage(imgSrc, "PNG", marginX, 4, 26, 16);
     } catch {
       /* noop */
     }
 
-    // barra gamer superior
-    doc.setFillColor(5, 10, 40);
-    doc.rect(0, 0, pageWidth, 20, "F");
-
+    // Texto encabezado
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.setTextColor(0, 255, 255);
     doc.text("GAMERLAND PC", pageWidth / 2, 9, { align: "center" });
 
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
     doc.text("Facatativá, Cundinamarca", pageWidth / 2, 13, {
       align: "center",
     });
-    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 17, { align: "center" });
-    doc.text("NIT 1003511062-1", pageWidth / 2, 21, { align: "center" });
+    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 16, {
+      align: "center",
+    });
+    doc.text("NIT 1003511062-1", pageWidth / 2, 19, { align: "center" });
 
-    // línea neon
+    // Línea neón
     doc.setDrawColor(0, 255, 255);
     doc.setLineWidth(0.5);
-    doc.line(marginX, 25, pageWidth - marginX, 25);
+    doc.line(marginX, 26, pageWidth - marginX, 26);
 
-    // Título
+    // ==== TÍTULO ====
     y = 32;
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.setTextColor(0, 255, 255);
+    doc.setTextColor(0, 0, 0); // títulos en negro
     doc.text("CONTRATO DE SISTEMA DE APARTADO", pageWidth / 2, y, {
       align: "center",
     });
 
-    // Subtítulo
+    // Fecha
     y += 6;
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.setTextColor(200, 200, 200);
-    doc.text(`FACATATIVÁ, ${fmt(lay.createdAt)}`, pageWidth / 2, y, {
+    doc.text(`Facatativá, ${fmt(lay.createdAt)}`, pageWidth / 2, y, {
       align: "center",
     });
 
-    // ==== TABLA RESUMEN (tipo ficha) ====
+    // ==== TABLA RESUMEN, CLARA ====
     y += 6;
 
     const resumenBody = [
@@ -532,34 +539,36 @@ export default function LayawaysPage() {
     autoTable(doc, {
       startY: y,
       margin: { left: marginX, right: marginX },
+      theme: "grid",
       head: [["DATO", "VALOR"]],
       body: resumenBody,
       styles: {
+        font: "helvetica",
         fontSize: 8,
         cellPadding: 2,
-        lineColor: [30, 31, 75],
+        lineColor: [200, 200, 200],
         lineWidth: 0.1,
-        textColor: [255, 255, 255],
-        fillColor: [15, 16, 48],
+        textColor: [0, 0, 0],
+        fillColor: [255, 255, 255],
       },
       headStyles: {
         fillColor: [0, 255, 255],
-        textColor: [0, 16, 20],
+        textColor: [0, 0, 0],
         fontStyle: "bold",
       },
       alternateRowStyles: {
-        fillColor: [10, 11, 38],
+        fillColor: [245, 248, 255],
       },
     });
 
-    // posición después de la tabla
     const lastY = doc.lastAutoTable?.finalY ?? y;
     y = lastY + 8;
 
+    // ==== CUERPO LEGAL: TEXTO NEGRO, TÍTULOS EN NEGRILLA ====
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(0, 0, 0);
 
-    // Helper para escribir párrafos con salto automático
     const writeParagraph = (text: string, extraSpace = 3) => {
       const maxWidth = pageWidth - marginX * 2;
       const lines = doc.splitTextToSize(text, maxWidth);
@@ -567,17 +576,20 @@ export default function LayawaysPage() {
       y += lines.length * 4 + extraSpace;
     };
 
-    // ==== CUERPO LEGAL (CLÁUSULAS) ====
+    // Intro
     writeParagraph(
       `Entre GAMERLAND PC, identificado con NIT 1003511062-1, ubicado en Facatativá, Cundinamarca, en adelante "LA TIENDA", y el(la) cliente ${lay.customerName}, identificado para efectos de contacto con el número de WhatsApp ${lay.customerPhone}, en adelante "EL CLIENTE", se celebra el presente contrato de sistema de apartado, el cual se regirá por las siguientes cláusulas:`,
       5
     );
 
-    doc.setFontSize(10);
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA PRIMERA – OBJETO", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    const tituloClausula = (t: string) => {
+      doc.setFont("helvetica", "bold");
+      doc.text(t, marginX, y);
+      y += 5;
+      doc.setFont("helvetica", "normal");
+    };
+
+    tituloClausula("CLÁUSULA PRIMERA – OBJETO");
     writeParagraph(
       `El objeto del presente contrato es la reserva, a favor de EL CLIENTE, del producto ${
         lay.productName
@@ -586,64 +598,47 @@ export default function LayawaysPage() {
       )}, mediante el sistema de apartado ofrecido por LA TIENDA.`
     );
 
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA SEGUNDA – VALOR Y FORMA DE PAGO", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    tituloClausula("CLÁUSULA SEGUNDA – VALOR Y FORMA DE PAGO");
     writeParagraph(
       `EL CLIENTE realiza un abono inicial de ${toCOP(
         lay.initialDeposit
       )}, el cual constituye parte del precio total del producto y no corresponde a una reserva gratuita. EL CLIENTE se compromete a efectuar los abonos posteriores hasta completar el valor total del producto, en los plazos y montos que libremente acuerde con LA TIENDA.`
     );
 
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA TERCERA – CANCELACIÓN DEL SISTEMA", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    tituloClausula("CLÁUSULA TERCERA – CANCELACIÓN DEL SISTEMA");
     writeParagraph(
       `En caso de que EL CLIENTE decida cancelar el sistema de apartado en cualquier momento, acepta y reconoce que LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del valor total abonado hasta la fecha de la cancelación. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales asumidos por LA TIENDA.`
     );
 
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA CUARTA – AVISO PARA RECLAMAR EL PRODUCTO", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    tituloClausula("CLÁUSULA CUARTA – AVISO PARA RECLAMAR EL PRODUCTO");
     writeParagraph(
       `Para reclamar el producto apartado, EL CLIENTE deberá informar a LA TIENDA con un mínimo de una (1) semana de anticipación, a través de los medios de contacto disponibles, con el fin de garantizar la disponibilidad del producto en inventario y su correcta preparación para la entrega.`
     );
 
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA QUINTA – GARANTÍA DEL PRODUCTO", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    tituloClausula("CLÁUSULA QUINTA – GARANTÍA DEL PRODUCTO");
     writeParagraph(
       `La garantía legal y/o comercial aplicable al producto comenzará a regir a partir de la fecha efectiva de entrega del mismo a EL CLIENTE. La cobertura, plazos y condiciones de garantía se sujetarán a las políticas vigentes de LA TIENDA y, en lo pertinente, a la normatividad de protección al consumidor.`
     );
 
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA SEXTA – VARIACIÓN DEL PRECIO", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    tituloClausula("CLÁUSULA SEXTA – VARIACIÓN DEL PRECIO");
     writeParagraph(
       `EL CLIENTE reconoce que el precio del producto puede estar sujeto a variación según las condiciones del mercado, la tasa de cambio y otros factores externos. En caso de que el tiempo transcurrido para completar el pago sea considerable, LA TIENDA podrá actualizar el valor del producto. En todo caso, LA TIENDA informará previamente a EL CLIENTE sobre cualquier ajuste de precio antes de la cancelación del saldo final.`
     );
 
-    doc.setTextColor(0, 255, 255);
-    doc.text("CLÁUSULA SÉPTIMA – ACEPTACIÓN", marginX, y);
-    y += 5;
-    doc.setTextColor(255, 255, 255);
+    tituloClausula("CLÁUSULA SÉPTIMA – ACEPTACIÓN");
     writeParagraph(
       `Firmado el presente documento, EL CLIENTE manifiesta que ha leído, entendido y aceptado en su totalidad las cláusulas del contrato de sistema de apartado, y declara recibir una copia de este documento generado en la tienda.`,
-      8
+      10
     );
 
-    // ==== FIRMAS ====
-    const firmaY = doc.internal.pageSize.getHeight() - 40;
+    // ==== FIRMAS (NEGRO) ====
+    const firmaY = pageHeight - 40;
 
-    doc.setDrawColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
     doc.line(marginX, firmaY, marginX + 70, firmaY);
     doc.line(pageWidth - marginX - 70, firmaY, pageWidth - marginX, firmaY);
 
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.text("EL CLIENTE", marginX + 35, firmaY + 5, { align: "center" });
     doc.text("GAMERLAND PC", pageWidth - marginX - 35, firmaY + 5, {
@@ -732,6 +727,7 @@ export default function LayawaysPage() {
     autoTable(doc, {
       startY: y,
       margin: { left: marginX, right: marginX },
+      theme: "grid",
       head: [["CONCEPTO", "VALOR"]],
       body: [
         ["Fecha del abono", fmt(payment.createdAt)],
@@ -741,20 +737,21 @@ export default function LayawaysPage() {
         ["Saldo pendiente", toCOP(saldo)],
       ],
       styles: {
+        font: "helvetica",
         fontSize: 8,
         cellPadding: 2,
-        lineColor: [30, 31, 75],
+        lineColor: [200, 200, 200],
         lineWidth: 0.1,
-        textColor: [255, 255, 255],
-        fillColor: [15, 16, 48],
+        textColor: [0, 0, 0],
+        fillColor: [255, 255, 255],
       },
       headStyles: {
         fillColor: [0, 255, 255],
-        textColor: [0, 16, 20],
+        textColor: [0, 0, 0],
         fontStyle: "bold",
       },
       alternateRowStyles: {
-        fillColor: [10, 11, 38],
+        fillColor: [245, 248, 255],
       },
     });
 
@@ -776,6 +773,7 @@ export default function LayawaysPage() {
     }
 
     // Pequeña sección de firma opcional dentro de la media carta
+    doc.setTextColor(0, 0, 0);
     const firmaY = Math.min(usableHeight - 10, y + 6);
 
     doc.setDrawColor(255, 255, 255);
