@@ -10,6 +10,14 @@ type Product = {
   cost?: string | number;
 };
 
+type ProductApiRow = {
+  id: number;
+  sku: string;
+  name: string;
+  stock?: number;
+  cost?: string | number | null;
+};
+
 const COLORS = {
   bgCard: "#14163A",
   border: "#1E1F4B",
@@ -30,22 +38,41 @@ export default function StockInPage() {
   // Buscar productos
   useEffect(() => {
     let abort = false;
+
     const run = async () => {
-      if (!q) {
+      if (!q.trim()) {
         setFound([]);
         return;
       }
-      const url = new URL(`/products`, window.location.origin);
-      url.searchParams.set("q", q);
-      url.searchParams.set("withStock", "true");
+
+      const params = new URLSearchParams();
+      params.set("q", q.trim());
+      params.set("withStock", "true");
+      params.set("includeInactive", "false");
+      params.set("pageSize", "50");
+
       try {
-        const r = await apiFetch(`/products?${url.searchParams.toString()}`);
-        const data: Product[] = await r.json();
-        if (!abort) setFound(data);
+        const r = await apiFetch(`/products?${params.toString()}`);
+        const json = (await r.json()) as {
+          total: number;
+          rows: ProductApiRow[];
+        };
+
+        if (!abort) {
+          const mapped: Product[] = json.rows.map((p) => ({
+            id: p.id,
+            sku: p.sku,
+            name: p.name,
+            stock: p.stock,
+            cost: p.cost ?? undefined,
+          }));
+          setFound(mapped);
+        }
       } catch {
         if (!abort) setFound([]);
       }
     };
+
     const t = setTimeout(run, 200);
     return () => {
       abort = true;
