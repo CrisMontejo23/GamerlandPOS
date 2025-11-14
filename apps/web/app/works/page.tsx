@@ -23,8 +23,12 @@ type WorkOrder = {
   createdAt: string;
   updatedAt: string;
 
-  // 👇 nuevo
+  // 👇 ya estaba
   informedCustomer?: boolean;
+
+  // 👇 NUEVO: marca si esta orden es de garantía y referencia opcional
+  isWarranty?: boolean;
+  parentId?: number | null;
 };
 
 const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030" };
@@ -65,7 +69,9 @@ const toNum = (v: unknown): number | null => {
 };
 const fmt = (d: string | Date) => new Date(d).toLocaleString();
 
+// AnyRow incluye los nuevos campos (por ser Partial<WorkOrder>)
 type AnyRow = Partial<WorkOrder> & { id: number; code: string };
+
 function normalizeRows(rows: AnyRow[]): WorkOrder[] {
   return rows.map((r) => ({
     id: r.id,
@@ -84,6 +90,8 @@ function normalizeRows(rows: AnyRow[]): WorkOrder[] {
     updatedAt: r.updatedAt ?? new Date().toISOString(),
 
     informedCustomer: !!r.informedCustomer,
+    isWarranty: !!r.isWarranty,
+    parentId: typeof r.parentId === "number" ? r.parentId : null,
   }));
 }
 
@@ -99,6 +107,10 @@ type Patch = {
   quote?: number | null;
   quotation?: number | null;
   informedCustomer?: boolean;
+
+  // 👇 NUEVO: campos que podemos mandar al backend para garantías
+  isWarranty?: boolean;
+  parentId?: number | null;
 };
 
 const PAGE_SIZE = 5;
@@ -116,11 +128,6 @@ export default function WorksPage() {
   const [rows, setRows] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
-
-  // Track de cuáles trabajos ya se les dio "INFORMAR AL CLIENTE"
-  const [informedIds, setInformedIds] = useState<Set<number>>(
-    () => new Set<number>()
-  );
 
   const [visibleByStatus, setVisibleByStatus] = useState<
     Record<WorkStatus, number>
@@ -165,6 +172,11 @@ export default function WorksPage() {
   const [editTarget, setEditTarget] = useState<WorkOrder | null>(null);
   const [editItem, setEditItem] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  // === Modal GARANTÍA ===
+  const [warrantyModalOpen, setWarrantyModalOpen] = useState(false);
+  const [warrantyTarget, setWarrantyTarget] = useState<WorkOrder | null>(null);
+  const [warrantyDescription, setWarrantyDescription] = useState("");
 
   function openEditDetails(w: WorkOrder) {
     setEditTarget(w);
@@ -212,6 +224,11 @@ export default function WorksPage() {
     setEditDepositValue("");
     setEditDepositMethod("EFECTIVO");
     setEditDepositNote("");
+  }
+  function resetWarrantyModal() {
+    setWarrantyModalOpen(false);
+    setWarrantyTarget(null);
+    setWarrantyDescription("");
   }
 
   const load = async () => {
@@ -270,7 +287,7 @@ export default function WorksPage() {
       await load();
       return true;
     } else {
-      const e = await r.json().catch(() => ({}));
+      const e = (await r.json().catch(() => ({}))) as { error?: string };
       setMsg(
         "ERROR: " +
           UDATA((e as { error?: string })?.error || "NO SE PUDO ACTUALIZAR")
@@ -288,8 +305,8 @@ export default function WorksPage() {
     const ok = await update(w.id, { status: newStatus, ...(extraPatch || {}) });
     if (!ok) return;
 
-    const msg = buildStatusMsg(w, newStatus);
-    openWhatsApp(w.customerPhone, msg);
+    const msgToSend = buildStatusMsg(w, newStatus);
+    openWhatsApp(w.customerPhone, msgToSend);
     await load();
   }
 
@@ -301,7 +318,7 @@ export default function WorksPage() {
       setMsg("TRABAJO ELIMINADO ✅");
       load();
     } else {
-      const e = await r.json().catch(() => ({}));
+      const e = (await r.json().catch(() => ({}))) as { error?: string };
       setMsg(
         "ERROR: " +
           UDATA((e as { error?: string })?.error || "NO SE PUDO ELIMINAR")
@@ -375,19 +392,19 @@ export default function WorksPage() {
       return;
     }
 
-    const q = Number(editQuoteValue);
-    if (!Number.isFinite(q) || q <= 0) {
+    const qNum = Number(editQuoteValue);
+    if (!Number.isFinite(qNum) || qNum <= 0) {
       setMsg("COTIZACIÓN INVÁLIDA");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
-    const ok = await update(editQDTarget.id, { quotation: q, quote: q });
+    const ok = await update(editQDTarget.id, { quotation: qNum, quote: qNum });
     if (ok === false) return;
 
     // 2) (Opcional) Registrar abono como pago real
     if (editHasDeposit === "YES") {
-      const d = Number(editDepositValue);
-      if (!Number.isFinite(d) || d < 0 || d > q) {
+      const dNum = Number(editDepositValue);
+      if (!Number.isFinite(dNum) || dNum < 0 || dNum > qNum) {
         setMsg("ABONO INVÁLIDO (≥ 0 y ≤ cotización)");
         setTimeout(() => setMsg(""), 2200);
         return;
@@ -395,14 +412,14 @@ export default function WorksPage() {
       const pr = await apiFetch(`/works/${editQDTarget.id}/payments`, {
         method: "POST",
         body: JSON.stringify({
-          amount: d,
+          amount: dNum,
           method: editDepositMethod,
           note: editDepositNote,
           createdBy: username || undefined,
         }),
       });
       if (!pr.ok) {
-        const e = await pr.json().catch(() => ({}));
+        const e = (await pr.json().catch(() => ({}))) as { error?: string };
         setMsg("ERROR AL REGISTRAR ABONO: " + UDATA(e?.error || ""));
         setTimeout(() => setMsg(""), 2500);
         return;
@@ -425,9 +442,7 @@ export default function WorksPage() {
     const ok = await update(w.id, { informedCustomer: true });
     if (!ok) return;
 
-    // 🔥 Recarga las filas para que la UI se actualice
     await load();
-
     openWhatsApp(w.customerPhone, buildReceivedMsg(w));
   }
 
@@ -446,9 +461,7 @@ export default function WorksPage() {
   function normalizeCOPhone(raw: string) {
     const d = onlyDigits(raw);
     if (d.startsWith("57")) return d;
-    // si son 10 dígitos locales, anteponer 57
     if (d.length === 10) return "57" + d;
-    // fallback: si ya viene en 57xxxxxxxxxx o algo raro, intenta 57 + últimos 10
     return d.length >= 10 ? "57" + d.slice(-10) : d;
   }
   function toCOP(n?: number | null) {
@@ -469,6 +482,20 @@ export default function WorksPage() {
     const dep = Number(w.deposit || 0);
     const quote = Number(w.quote ?? 0);
     const saldo = Math.max(quote - dep, 0);
+
+    // Mensaje especial si es garantía
+    if (w.isWarranty) {
+      const lineasGarantia: string[] = [
+        `Hola ${UU(w.customerName)} 🎮`,
+        `Tu equipo ${UU(w.code)} fue recibido POR GARANTÍA. 🛠️`,
+        `Equipo: ${UU(w.item)} 🕹️`,
+        `Descripción: ${UU(w.description)}`,
+        `Este servicio NO genera cobro adicional por el mismo daño reportado.`,
+        `Si se detecta un daño diferente te informaremos antes de hacer cualquier cobro.`,
+        `Gracias por confiar en Gamerland.`,
+      ];
+      return lineasGarantia.join("\n");
+    }
 
     const partes: string[] = [
       `Hola ${UU(w.customerName)} 🎮`,
@@ -499,30 +526,49 @@ export default function WorksPage() {
       const lineas: string[] = [];
       lineas.push(
         `Hola ${UU(w.customerName)} 🎮`,
-        `Tu trabajo ${base} está FINALIZADO. ✅`
+        w.isWarranty
+          ? `Tu trabajo ${base} (GARANTÍA) está FINALIZADO. ✅`
+          : `Tu trabajo ${base} está FINALIZADO. ✅`
       );
-      if (quoteNum != null) {
+
+      if (!w.isWarranty && quoteNum != null) {
         lineas.push(
           `Cotización: ${toCOP(quoteNum)}`,
           `Abono: ${toCOP(dep)}`,
           `Saldo: ${toCOP(saldo ?? 0)}`
         );
       }
+
+      if (w.isWarranty) {
+        lineas.push(
+          `Servicio en garantía SIN costo adicional por el mismo daño reportado.`
+        );
+      }
+
       lineas.push(
         `Puedes pasar por tu equipo en horario de atención. ¡Gracias por elegir Gamerland!`
       );
       return lineas.join("\n");
     }
 
-    if (newStatus === "DELIVERED")
+    if (newStatus === "DELIVERED") {
+      if (w.isWarranty) {
+        return [
+          `Hola ${UU(w.customerName)} 🎮`,
+          `Tu equipo ${base} fue ENTREGADO por garantía. ✅`,
+          `Recuerda: este servicio NO tuvo costo adicional.`,
+          `Si vuelve a presentar fallas, contáctanos para ayudarte.`,
+        ].join("\n");
+      }
       return `${base} ENTREGADO. ✅ Recuerda: para cualquier garantía avísanos con tiempo para gestionarla.`;
+    }
 
     return `${base} ahora está ${niceStatus[newStatus]}`;
   }
 
-  // ====== Ordenar trabajos por fecha (antiguos primero) ======
+  // ====== Ordenar trabajos por fecha (NUEVO: recientes primero) ======
   const sortedRows = [...rows].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
   const statusOrder: WorkStatus[] = [
@@ -534,7 +580,51 @@ export default function WorksPage() {
 
   const visibleStatuses: WorkStatus[] = status === "" ? statusOrder : [status];
 
-  // Render de una tarjeta de trabajo (con la nueva lógica de botones)
+  function openWarranty(w: WorkOrder) {
+    setWarrantyTarget(w);
+    setWarrantyDescription(
+      `GARANTÍA: ${UU(w.description || "REVISIÓN GARANTÍA")}`
+    );
+    setWarrantyModalOpen(true);
+  }
+
+  async function createWarrantyOrder() {
+    if (!warrantyTarget) return;
+
+    const desc =
+      warrantyDescription.trim() ||
+      `GARANTÍA: ${UU(warrantyTarget.description)}`;
+
+    const payload: Patch = {
+      item: UDATA(warrantyTarget.item),
+      description: UDATA(desc),
+      customerName: UDATA(warrantyTarget.customerName),
+      customerPhone: UDATA(warrantyTarget.customerPhone),
+      location: warrantyTarget.location,
+      quotation: null,
+      quote: null,
+      isWarranty: true,
+      parentId: warrantyTarget.id,
+    };
+
+    const r = await apiFetch("/works", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (r.ok) {
+      setMsg("ORDEN POR GARANTÍA CREADA ✅");
+      resetWarrantyModal();
+      await load();
+    } else {
+      const e = (await r.json().catch(() => ({}))) as { error?: string };
+      setMsg(
+        "ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR LA ORDEN DE GARANTÍA")
+      );
+      setTimeout(() => setMsg(""), 2500);
+    }
+  }
+
   const renderWorkCard = (w: WorkOrder) => {
     const s = STATUS_STYLES[w.status] ?? STATUS_STYLES.RECEIVED;
     const delivered = w.status === "DELIVERED";
@@ -551,6 +641,11 @@ export default function WorksPage() {
         <header className="flex items-center justify-between">
           <div className="font-semibold text-cyan-300 uppercase">
             {UU(w.code)}
+            {w.isWarranty && (
+              <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded bg-pink-200 text-pink-800">
+                GARANTÍA
+              </span>
+            )}
           </div>
           <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
             {niceStatus[w.status]}
@@ -620,7 +715,11 @@ export default function WorksPage() {
             {w.status === "RECEIVED" && (
               <>
                 {!w.informedCustomer && (
-                  <button onClick={() => markInformedAndNotify(w)}>
+                  <button
+                    className="px-3 py-1 rounded border text-xs uppercase"
+                    style={{ borderColor: COLORS.border }}
+                    onClick={() => markInformedAndNotify(w)}
+                  >
                     INFORMAR AL CLIENTE
                   </button>
                 )}
@@ -634,7 +733,7 @@ export default function WorksPage() {
                   >
                     EN PROCESO
                   </button>
-                )}                
+                )}
               </>
             )}
 
@@ -707,21 +806,44 @@ export default function WorksPage() {
           </div>
         )}
 
-        {delivered && canDelete && (
+        {delivered && (
           <div className="flex flex-wrap gap-2 pt-2">
+            {/* Botón GARANTÍA disponible para cualquier rol */}
             <button
-              className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+              className="px-3 py-1 rounded border text-xs uppercase"
               style={{ borderColor: COLORS.border }}
-              onClick={() => onDelete(w.id)}
-              title="Eliminar definitivamente este trabajo (ADMIN)"
+              onClick={() => openWarranty(w)}
+              title="Ver historial y crear nueva orden por garantía"
             >
-              ELIMINAR
+              GARANTÍA
             </button>
+
+            {canDelete && (
+              <button
+                className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => onDelete(w.id)}
+                title="Eliminar definitivamente este trabajo (ADMIN)"
+              >
+                ELIMINAR
+              </button>
+            )}
           </div>
         )}
       </article>
     );
   };
+
+  // ===== Historial para el modal de garantía =====
+  const warrantyHistory: WorkOrder[] =
+    warrantyTarget == null
+      ? []
+      : [...rows]
+          .filter((w) => w.code === warrantyTarget.code)
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
 
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
@@ -1133,7 +1255,6 @@ export default function WorksPage() {
                     }
                   }
 
-                  // Crear orden
                   const payload: Patch = {
                     item: UDATA(item),
                     description: UDATA(description),
@@ -1508,6 +1629,128 @@ export default function WorksPage() {
                 onClick={saveEditDetails}
               >
                 GUARDAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal GARANTÍA */}
+      {warrantyModalOpen && warrantyTarget && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-2xl rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="warranty-title"
+          >
+            <h3
+              id="warranty-title"
+              className="text-lg font-semibold text-cyan-300 uppercase"
+            >
+              GARANTÍA — {UU(warrantyTarget.code)}
+            </h3>
+
+            <div className="text-sm text-gray-200 uppercase space-y-1">
+              <div>
+                <b>EQUIPO:</b> {UU(warrantyTarget.item)}
+              </div>
+              <div>
+                <b>ÚLTIMO TRABAJO:</b> {UU(warrantyTarget.description)}
+              </div>
+              <div>
+                <b>CLIENTE:</b> {UU(warrantyTarget.customerName)} •{" "}
+                {UU(warrantyTarget.customerPhone)}
+              </div>
+              <div>
+                <b>FECHA ENTREGA (ÚLTIMA):</b> {fmt(warrantyTarget.updatedAt)}
+              </div>
+              <div>
+                <b>VALOR PAGADO:</b>{" "}
+                {warrantyTarget.total != null
+                  ? toCOP(warrantyTarget.total)
+                  : "—"}
+              </div>
+            </div>
+
+            <div className="mt-2">
+              <h4 className="text-xs font-semibold text-gray-300 uppercase">
+                Historial de trabajos de este código
+              </h4>
+              <div
+                className="mt-1 max-h-40 overflow-y-auto text-xs text-gray-300 border border-dashed rounded p-2"
+                style={{ borderColor: COLORS.border }}
+              >
+                {warrantyHistory.length === 0 && (
+                  <div>Sin otros registros para este código.</div>
+                )}
+                {warrantyHistory.map((h) => (
+                  <div
+                    key={h.id}
+                    className="flex justify-between border-b border-white/10 py-1 last:border-b-0"
+                  >
+                    <div className="pr-2">
+                      <div>
+                        <b>{niceStatus[h.status]}</b>
+                        {h.isWarranty && " · GARANTÍA"}
+                      </div>
+                      <div>{fmt(h.createdAt)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div>{UU(h.description)}</div>
+                      <div className="text-[11px] text-gray-400">
+                        Total: {h.total != null ? toCOP(h.total) : "—"}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <h4 className="text-xs font-semibold text-gray-300 uppercase">
+                Crear nueva orden por GARANTÍA
+              </h4>
+              <p className="text-[11px] text-gray-400 mb-1">
+                Esta nueva orden se creará SIN cotización ni abono, marcada como
+                garantía para este mismo código.
+              </p>
+              <input
+                className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                value={warrantyDescription}
+                onChange={(e) => setWarrantyDescription(UU(e.target.value))}
+                placeholder="GARANTÍA: DESCRIPCIÓN DEL NUEVO PROBLEMA / REVISIÓN"
+              />
+            </div>
+
+            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase text-xs"
+                style={{ borderColor: COLORS.border }}
+                onClick={resetWarrantyModal}
+              >
+                CERRAR
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase text-xs"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={createWarrantyOrder}
+              >
+                CREAR ORDEN DE GARANTÍA
               </button>
             </div>
           </div>
