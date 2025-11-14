@@ -109,6 +109,7 @@ export default function LayawaysPage() {
   const [city, setCity] = useState("");
   const [initialDeposit, setInitialDeposit] = useState<string>("");
   const [initialMethod, setInitialMethod] = useState<PayMethod>("EFECTIVO");
+  const [productSearch, setProductSearch] = useState("");
 
   // modal contrato obligatorio
   const [contractLayaway, setContractLayaway] = useState<Layaway | null>(null);
@@ -951,6 +952,20 @@ export default function LayawaysPage() {
                 <label className="block text-sm mb-1 uppercase">
                   PRODUCTO *
                 </label>
+
+                {/* Input de búsqueda */}
+                <input
+                  placeholder="Buscar por SKU o nombre..."
+                  className="mb-2 w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(U(e.target.value))}
+                />
+
+                {/* Select filtrado */}
                 <select
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{
@@ -965,11 +980,18 @@ export default function LayawaysPage() {
                   }
                 >
                   <option value="">SELECCIONE PRODUCTO</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku} — {p.name} ({toCOP(p.price)})
-                    </option>
-                  ))}
+                  {products
+                    .filter((p) => {
+                      if (!productSearch.trim()) return true;
+                      const term = productSearch.trim().toUpperCase();
+                      const hay = `${p.sku} ${p.name}`.toUpperCase();
+                      return hay.includes(term);
+                    })
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.sku} — {p.name} ({toCOP(p.price)})
+                      </option>
+                    ))}
                 </select>
               </div>
 
