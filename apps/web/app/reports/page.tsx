@@ -86,6 +86,27 @@ function isRealExpense(e: ExpenseRow) {
   return REAL_EXPENSE_CATEGORIES.includes(cat);
 }
 
+function sumRealExpensesByMethod(list: ExpenseRow[]) {
+  const out = { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0 };
+
+  for (const e of list || []) {
+    if (!isRealExpense(e)) continue;
+
+    const method = String(e.paymentMethod || "")
+      .toUpperCase()
+      .trim();
+    const amt = Number(e.amount || 0);
+
+    if (method === "EFECTIVO") out.EFECTIVO += amt;
+    else if (method === "QR_LLAVE" || method === "QR / LLAVE")
+      out.QR_LLAVE += amt;
+    else if (method === "DATAFONO" || method === "DATÁFONO")
+      out.DATAFONO += amt;
+  }
+
+  return out;
+}
+
 type ExpenseRow = {
   id: number;
   description?: string | null;
@@ -219,7 +240,7 @@ const costFromLine = (s: SaleLine) =>
 /** Suma SOLO los gastos que cuentan en métricas (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ) */
 function sumOperativeExpensesExcludingInternos(list: ExpenseRow[]) {
   return (list || [])
-    .filter(isRealExpense) // sólo las categorías "reales" de gasto
+    .filter(isRealExpense)
     .reduce((a, e) => a + Number(e.amount || 0), 0);
 }
 
@@ -379,6 +400,9 @@ export default function ReportsPage() {
   const [dailySeries, setDailySeries] = useState<DailyWithMA[]>([]);
   const [weeklySeries, setWeeklySeries] = useState<WeeklyPoint[]>([]);
 
+  // Gastos del rango (para recalcular NETO por método de pago)
+  const [rangeExpenses, setRangeExpenses] = useState<ExpenseRow[]>([]);
+
   /* ===== Estado de CAJA ===== */
   const [cashbox, setCashbox] = useState<CashboxState>({
     ok: false,
@@ -462,6 +486,8 @@ export default function ReportsPage() {
         rExpMonth.json() as Promise<ExpenseRow[]>,
         rExpYear.json() as Promise<ExpenseRow[]>,
       ]);
+
+      setRangeExpenses(expDay || []);
 
       // Estados base (por si quieres ver lo que dice el backend)
       setSumDay(dSumDay);
@@ -612,15 +638,32 @@ export default function ReportsPage() {
     };
   }, [dailySeries, opsDay, from, to]);
 
-  const payForChart = payDay?.neto ?? {
-    EFECTIVO: payDay?.EFECTIVO || 0,
-    QR_LLAVE: payDay?.QR_LLAVE || 0,
-    DATAFONO: payDay?.DATAFONO || 0,
-    total:
-      (payDay?.EFECTIVO || 0) +
-      (payDay?.QR_LLAVE || 0) +
-      (payDay?.DATAFONO || 0),
-  };
+  const payForChart = useMemo(() => {
+    if (!payDay) {
+      return { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, total: 0 };
+    }
+
+    // Cobros brutos que vienen del backend
+    const bruto = {
+      EFECTIVO: Number(payDay.EFECTIVO || 0),
+      QR_LLAVE: Number(payDay.QR_LLAVE || 0),
+      DATAFONO: Number(payDay.DATAFONO || 0),
+    };
+
+    // Gastos "reales" (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ) por método
+    const gastosReal = sumRealExpensesByMethod(rangeExpenses);
+
+    const neto = {
+      EFECTIVO: bruto.EFECTIVO - gastosReal.EFECTIVO,
+      QR_LLAVE: bruto.QR_LLAVE - gastosReal.QR_LLAVE,
+      DATAFONO: bruto.DATAFONO - gastosReal.DATAFONO,
+    };
+
+    return {
+      ...neto,
+      total: neto.EFECTIVO + neto.QR_LLAVE + neto.DATAFONO,
+    };
+  }, [payDay, rangeExpenses]);
 
   const rangeWord =
     rangeType === "day" ? "DÍA" : rangeType === "month" ? "MES" : "AÑO";
@@ -1019,23 +1062,28 @@ export default function ReportsPage() {
       pdf.line(marginX, curY, pageW - marginX, curY);
       curY += 8;
 
+      // --- Caja por método de pago (usando SOLO gastos reales) ---
       const bruto = {
-        EFECTIVO: payments?.EFECTIVO || 0,
-        QR_LLAVE: payments?.QR_LLAVE || 0,
-        DATAFONO: payments?.DATAFONO || 0,
-        total: payments?.total || 0,
+        EFECTIVO: Number(payments?.EFECTIVO || 0),
+        QR_LLAVE: Number(payments?.QR_LLAVE || 0),
+        DATAFONO: Number(payments?.DATAFONO || 0),
       };
+      const brutoTotal = bruto.EFECTIVO + bruto.QR_LLAVE + bruto.DATAFONO;
+
+      // Gastos "reales" del periodo del PDF (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ)
+      const gastosReal = sumRealExpensesByMethod(expenses);
       const gastos = {
-        EFECTIVO: payments?.gastos?.EFECTIVO || 0,
-        QR_LLAVE: payments?.gastos?.QR_LLAVE || 0,
-        DATAFONO: payments?.gastos?.DATAFONO || 0,
-        total: payments?.gastos?.total || 0,
+        EFECTIVO: gastosReal.EFECTIVO,
+        QR_LLAVE: gastosReal.QR_LLAVE,
+        DATAFONO: gastosReal.DATAFONO,
+        total: gastosReal.EFECTIVO + gastosReal.QR_LLAVE + gastosReal.DATAFONO,
       };
+
       const neto = {
-        EFECTIVO: payments?.neto?.EFECTIVO ?? bruto.EFECTIVO - gastos.EFECTIVO,
-        QR_LLAVE: payments?.neto?.QR_LLAVE ?? bruto.QR_LLAVE - gastos.QR_LLAVE,
-        DATAFONO: payments?.neto?.DATAFONO ?? bruto.DATAFONO - gastos.DATAFONO,
-        total: payments?.neto?.total ?? bruto.total - gastos.total,
+        EFECTIVO: bruto.EFECTIVO - gastos.EFECTIVO,
+        QR_LLAVE: bruto.QR_LLAVE - gastos.QR_LLAVE,
+        DATAFONO: bruto.DATAFONO - gastos.DATAFONO,
+        total: brutoTotal - gastos.total,
       };
 
       autoTable(pdf, {
@@ -1060,7 +1108,7 @@ export default function ReportsPage() {
             toCOP(gastos.DATAFONO),
             toCOP(neto.DATAFONO),
           ],
-          ["TOTAL", toCOP(bruto.total), toCOP(gastos.total), toCOP(neto.total)],
+          ["TOTAL", toCOP(brutoTotal), toCOP(gastos.total), toCOP(neto.total)],
         ],
         theme: "grid",
         styles: {
@@ -1078,6 +1126,7 @@ export default function ReportsPage() {
         alternateRowStyles: { fillColor: [25, 27, 75] },
         margin: { left: marginX, right: marginX },
       });
+
       const lastYPayments =
         (pdf as JsPDFWithAutoTable).lastAutoTable?.finalY ?? curY;
       curY = lastYPayments + 24;
