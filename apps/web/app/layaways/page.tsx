@@ -545,29 +545,29 @@ export default function LayawaysPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 15;
+    const firmaY = pageHeight - 40; // zona reservada para firmas
     let y = 12;
 
     // ==== ENCABEZADO GAMER MINIMALISTA ====
-    // Barra primero (para que NO tape el logo)
     doc.setFillColor(5, 10, 40);
     doc.rect(0, 0, pageWidth, 24, "F");
 
-    // Logo
+    // Logo cuadrado (mantiene proporción visual)
     try {
       const imgSrc = (logo as StaticImageData).src;
-      doc.addImage(imgSrc, "PNG", marginX, 4, 26, 16);
+      doc.addImage(imgSrc, "PNG", marginX, 3.5, 18, 18); // 18x18 "cuadrado"
     } catch {
       /* noop */
     }
 
     // Texto encabezado
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(0, 255, 255);
     doc.text("GAMERLAND PC", pageWidth / 2, 9, { align: "center" });
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(255, 255, 255);
     doc.text("Facatativá, Cundinamarca", pageWidth / 2, 13, {
       align: "center",
@@ -579,28 +579,28 @@ export default function LayawaysPage() {
 
     // Línea neón
     doc.setDrawColor(0, 255, 255);
-    doc.setLineWidth(0.5);
+    doc.setLineWidth(0.4);
     doc.line(marginX, 26, pageWidth - marginX, 26);
 
     // ==== TÍTULO ====
-    y = 32;
+    y = 31;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0); // títulos en negro
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
     doc.text("CONTRATO DE SISTEMA DE APARTADO", pageWidth / 2, y, {
       align: "center",
     });
 
     // Fecha
-    y += 6;
+    y += 5;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.text(`Facatativá, ${fmt(lay.createdAt)}`, pageWidth / 2, y, {
       align: "center",
     });
 
-    // ==== TABLA RESUMEN, CLARA ====
-    y += 6;
+    // ==== TABLA RESUMEN MÁS COMPACTA ====
+    y += 5;
 
     const resumenBody = [
       ["CÓDIGO", lay.code],
@@ -621,8 +621,8 @@ export default function LayawaysPage() {
       body: resumenBody,
       styles: {
         font: "helvetica",
-        fontSize: 8,
-        cellPadding: 2,
+        fontSize: 7.5,
+        cellPadding: 1.8,
         lineColor: [200, 200, 200],
         lineWidth: 0.1,
         textColor: [0, 0, 0],
@@ -632,6 +632,7 @@ export default function LayawaysPage() {
         fillColor: [0, 255, 255],
         textColor: [0, 0, 0],
         fontStyle: "bold",
+        fontSize: 8,
       },
       alternateRowStyles: {
         fillColor: [245, 248, 255],
@@ -639,32 +640,35 @@ export default function LayawaysPage() {
     });
 
     const lastY = doc.lastAutoTable?.finalY ?? y;
-    y = lastY + 8;
+    y = lastY + 6;
 
-    // ==== CUERPO LEGAL: TEXTO NEGRO, TÍTULOS EN NEGRILLA ====
+    // ==== CUERPO LEGAL MÁS PEQUEÑO ====
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+    doc.setFontSize(9); // antes 10
     doc.setTextColor(0, 0, 0);
 
-    const writeParagraph = (text: string, extraSpace = 3) => {
-      const maxWidth = pageWidth - marginX * 2;
-      const lines = doc.splitTextToSize(text, maxWidth);
-      doc.text(lines, marginX, y, { maxWidth, lineHeightFactor: 1.4 });
-      y += lines.length * 4 + extraSpace;
-    };
+    const maxWidth = pageWidth - marginX * 2;
 
-    // Intro
-    writeParagraph(
-      `Entre GAMERLAND PC, identificado con NIT 1003511062-1, ubicado en Facatativá, Cundinamarca, en adelante "LA TIENDA", y el(la) cliente ${lay.customerName}, identificado para efectos de contacto con el número de WhatsApp ${lay.customerPhone}, en adelante "EL CLIENTE", se celebra el presente contrato de sistema de apartado, el cual se regirá por las siguientes cláusulas:`,
-      5
-    );
+    const writeParagraph = (text: string, extraSpace = 2) => {
+      const lines = doc.splitTextToSize(text, maxWidth);
+      doc.text(lines, marginX, y, {
+        maxWidth,
+        lineHeightFactor: 1.25, // antes 1.4 → más compacto
+      });
+      y += lines.length * 3.4 + extraSpace;
+    };
 
     const tituloClausula = (t: string) => {
       doc.setFont("helvetica", "bold");
       doc.text(t, marginX, y);
-      y += 5;
+      y += 4;
       doc.setFont("helvetica", "normal");
     };
+
+    writeParagraph(
+      `Entre GAMERLAND PC, identificado con NIT 1003511062-1, ubicado en Facatativá, Cundinamarca, en adelante "LA TIENDA", y el(la) cliente ${lay.customerName}, identificado para efectos de contacto con el número de WhatsApp ${lay.customerPhone}, en adelante "EL CLIENTE", se celebra el presente contrato de sistema de apartado, el cual se regirá por las siguientes cláusulas:`,
+      4
+    );
 
     tituloClausula("CLÁUSULA PRIMERA – OBJETO");
     writeParagraph(
@@ -705,12 +709,15 @@ export default function LayawaysPage() {
     tituloClausula("CLÁUSULA SÉPTIMA – ACEPTACIÓN");
     writeParagraph(
       `Firmado el presente documento, EL CLIENTE manifiesta que ha leído, entendido y aceptado en su totalidad las cláusulas del contrato de sistema de apartado, y declara recibir una copia de este documento generado en la tienda.`,
-      10
+      6
     );
 
-    // ==== FIRMAS (NEGRO) ====
-    const firmaY = pageHeight - 40;
+    // Por si acaso, si el texto se pasa, evitamos pintar firmas muy encima
+    if (y > firmaY - 15) {
+      y = firmaY - 15;
+    }
 
+    // ==== FIRMAS ====
     doc.setDrawColor(0, 0, 0);
     doc.line(marginX, firmaY, marginX + 70, firmaY);
     doc.line(pageWidth - marginX - 70, firmaY, pageWidth - marginX, firmaY);
@@ -739,44 +746,47 @@ export default function LayawaysPage() {
 
     let y = 8;
 
-    // Fondo barra gamer superior
+    // Barra gamer superior
     doc.setFillColor(5, 10, 40);
     doc.rect(0, 0, pageWidth, 20, "F");
 
+    // Logo cuadrado
     try {
       const imgSrc = (logo as StaticImageData).src;
-      doc.addImage(imgSrc, "PNG", marginX, y - 2, 22, 14);
+      doc.addImage(imgSrc, "PNG", marginX, 3.5, 18, 18); // 18x18
     } catch {
       /* noop */
     }
 
-    // Encabezado texto
+    // Encabezado texto centrado
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(0, 255, 255);
-    doc.text("RECIBO DE ABONO – SISTEMA DE APARTADO", pageWidth / 2 + 10, 9, {
+    doc.text("RECIBO DE ABONO – SISTEMA DE APARTADO", pageWidth / 2, 9, {
       align: "center",
     });
 
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(255, 255, 255);
-    doc.text("GAMERLAND PC", pageWidth / 2 + 10, 13, { align: "center" });
-    doc.text("Facatativá, Cundinamarca", pageWidth / 2 + 10, 16, {
+    doc.text("GAMERLAND PC", pageWidth / 2, 13, { align: "center" });
+    doc.text("Facatativá, Cundinamarca", pageWidth / 2, 16, {
       align: "center",
     });
-    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2 + 10, 19, {
+    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 19, {
       align: "center",
     });
-    doc.text("NIT 1003511062-1", pageWidth / 2 + 10, 22, { align: "center" });
+    doc.text("NIT 1003511062-1", pageWidth / 2, 22, { align: "center" });
 
     // Línea separadora
     doc.setDrawColor(0, 255, 255);
     doc.setLineWidth(0.4);
     doc.line(marginX, 26, pageWidth - marginX, 26);
 
-    // Datos básicos
+    // ==== CUERPO EN NEGRO SOBRE BLANCO ====
     y = 32;
     doc.setFontSize(8.5);
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(0, 0, 0); // antes blanco → no se veía
 
     doc.text(`Sistema de apartado: ${lay.code}`, marginX, y);
     y += 4;
@@ -798,7 +808,7 @@ export default function LayawaysPage() {
     );
     y += 5;
 
-    // Tabla tipo resumen del abono
+    // Tabla resumen del abono
     const saldo = lay.totalPrice - lay.totalPaid;
 
     autoTable(doc, {
@@ -835,9 +845,10 @@ export default function LayawaysPage() {
     const lastY = doc.lastAutoTable?.finalY ?? y;
     y = lastY + 4;
 
+    // Nota legal (si cabe dentro de la media carta)
     if (y < usableHeight - 16) {
       doc.setFontSize(7.5);
-      doc.setTextColor(200, 200, 200);
+      doc.setTextColor(80, 80, 80);
       const notaLines = doc.splitTextToSize(
         `Este comprobante acredita el abono realizado al sistema de apartado indicado. La suma abonada hace parte del valor total del producto y se rige por las condiciones establecidas en el contrato de sistema de apartado firmado por el cliente.`,
         pageWidth - marginX * 2
@@ -849,18 +860,17 @@ export default function LayawaysPage() {
       y += notaLines.length * 3.5 + 4;
     }
 
-    // Pequeña sección de firma opcional dentro de la media carta
+    // Firma dentro de la media carta
     doc.setTextColor(0, 0, 0);
     const firmaY = Math.min(usableHeight - 10, y + 6);
 
-    doc.setDrawColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
     doc.line(marginX, firmaY, marginX + 60, firmaY);
     doc.setFontSize(8);
     doc.text("Firma recibido cliente", marginX + 30, firmaY + 4, {
       align: "center",
     });
 
-    // (La parte inferior de la hoja queda libre, por si luego quieres imprimir otro medio recibo)
     doc.save(`Recibo_Abono_${lay.code}.pdf`);
   }
 
