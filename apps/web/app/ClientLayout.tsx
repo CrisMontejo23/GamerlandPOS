@@ -23,7 +23,7 @@ const NAV_ALL: Array<{
   // 👇 Nueva entrada
   {
     href: "/layaways",
-    label: "📜 Sistemas de apartado",
+    label: "📜 Sistemas de Apartado",
     allow: ["ADMIN", "EMPLOYEE"],
   },
   { href: "/reports", label: "📄 Reportes", allow: ["ADMIN", "EMPLOYEE"] },
