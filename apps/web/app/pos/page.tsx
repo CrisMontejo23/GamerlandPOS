@@ -16,6 +16,15 @@ type Product = {
 type CartItem = { product: Product; qty: number; unitPrice: number };
 type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 
+type PosPreloadPayload = {
+  source: "LAYAWAY";
+  layawayId: number;
+  productId: number;
+  productName: string;
+  price: number;
+  customerName?: string;
+};
+
 // ===== Helpers UI =====
 const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
 const parseMoneyInput = (v: string) => Number(v.replace(/[^\d]/g, "")) || 0;
@@ -326,6 +335,76 @@ export default function POSPage() {
 
     setTimeout(() => setMsg(""), 2500);
   }, [cart, payMethod, subtotal, received, uiTotal]);
+
+  // === PRELOAD DESDE SISTEMA DE APARTADOS ===
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("POS_PRELOAD");
+      if (!raw) return;
+
+      const data = JSON.parse(raw) as Partial<PosPreloadPayload>;
+      if (data?.source !== "LAYAWAY" || !data.productId) return;
+
+      (async () => {
+        try {
+          // Traemos el producto desde el backend para tener costo / stock actual
+          const r = await apiFetch(`/products/${data.productId}`);
+          if (!r.ok) return;
+
+          const p = await r.json();
+          const prod: Product = {
+            id: p.id,
+            sku: p.sku,
+            name: p.name,
+            // Usamos el precio que viene del apartado (negociado),
+            // si no viene, caemos al price del producto
+            price: Number(data.price ?? p.price ?? 0),
+            cost: Number(p.cost ?? 0),
+            stock: Number(p.stock ?? 0),
+          };
+
+          // Llenamos el carrito SOLO con ese producto del apartado
+          setCart([
+            {
+              product: prod,
+              qty: 1,
+              unitPrice: prod.price,
+            },
+          ]);
+
+          setMsg(
+            `Producto de SISTEMA DE APARTADO cargado: ${prod.name} (${fmt(
+              prod.price
+            )})`
+          );
+
+          setToast({
+            open: true,
+            kind: "info",
+            title: "Apartado cargado en POS",
+            subtitle: `Sistema ${data.layawayId} – Cliente ${
+              data.customerName ?? ""
+            }`,
+          });
+
+          setTimeout(
+            () =>
+              setToast((t) => ({
+                ...t,
+                open: false,
+              })),
+            2500
+          );
+        } finally {
+          // Limpieza para que no se vuelva a cargar
+          window.localStorage.removeItem("POS_PRELOAD");
+        }
+      })();
+    } catch {
+      // Si algo sale mal con el JSON, limpiamos y seguimos normal
+      window.localStorage.removeItem("POS_PRELOAD");
+    }
+  }, []);
 
   // Atajos
   useEffect(() => {

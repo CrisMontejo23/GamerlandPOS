@@ -10,6 +10,10 @@ import logo from "../../assets/logo.png";
 type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 type LayawayStatus = "OPEN" | "CLOSED";
 
+type JsPDFWithAutoTable = jsPDF & {
+  lastAutoTable?: { finalY: number };
+};
+
 type Product = {
   id: number;
   sku: string;
@@ -375,140 +379,333 @@ export default function LayawaysPage() {
   // ==== PDFs ====
 
   function generateContractPdf(lay: Layaway) {
-    const doc = new jsPDF();
-
-    // Logo + encabezado gamer
-    try {
-      const imgSrc = (logo as StaticImageData).src;
-      doc.addImage(imgSrc, "PNG", 10, 8, 30, 18);
-    } catch {
-      // si falla el logo, no rompemos el PDF
-    }
-
-    doc.setFontSize(14);
-    doc.setTextColor(0, 255, 255);
-    doc.text("GAMERLAND PC", 105, 12, { align: "center" });
-    doc.setFontSize(9);
-    doc.setTextColor(255, 255, 255);
-    doc.text("Facatativá, Cundinamarca", 105, 17, { align: "center" });
-    doc.text("Carrera 3 #4-13 Local 1", 105, 21, { align: "center" });
-    doc.text("NIT 1003511062-1", 105, 25, { align: "center" });
-
-    doc.setDrawColor(0, 255, 255);
-    doc.setLineWidth(0.5);
-    doc.line(10, 30, 200, 30);
-
-    // Título
-    doc.setFontSize(12);
-    doc.text("CONTRATO SISTEMA DE APARTADO", 105, 38, { align: "center" });
-
-    const startY = 46;
-    doc.setFontSize(10);
-    doc.setTextColor(255, 255, 255);
-
-    const bodyLines: string[] = [];
-
-    bodyLines.push(
-      `En Facatativá, a la fecha ${fmt(
-        lay.createdAt
-      )}, se establece el presente contrato de sistema de apartado entre GAMERLAND PC y el(la) cliente ${
-        lay.customerName
-      }.`
-    );
-    bodyLines.push(
-      `GAMERLAND PC abre un sistema de apartado a favor del cliente para el producto ${
-        lay.productName
-      }, con un valor de ${toCOP(
-        lay.totalPrice
-      )}. El cliente registra un abono inicial de ${toCOP(
-        lay.initialDeposit
-      )}, el cual hace parte del pago total del producto.`
-    );
-    bodyLines.push(
-      `El cliente se compromete a realizar los abonos necesarios hasta completar el valor total del producto. En caso de que el cliente decida cancelar el sistema de apartado en cualquier momento, GAMERLAND PC devolverá únicamente el 50% del valor total abonado hasta la fecha de cancelación.`
-    );
-    bodyLines.push(
-      `Para reclamar el producto, el cliente deberá informar a la tienda con mínimo una (1) semana de anticipación, con el fin de asegurar la existencia del producto en inventario y su correcta alistamiento.`
-    );
-    bodyLines.push(
-      `La garantía del producto comenzará a regir a partir del día en que el mismo sea entregado al cliente, y se sujetará a las políticas de garantía vigentes en la tienda.`
-    );
-    bodyLines.push(
-      `El cliente reconoce y acepta que el precio del producto puede variar según el tiempo que tarde en completar el pago total, debido a cambios en el mercado y en las condiciones de adquisición. En todo caso, GAMERLAND PC informará al cliente sobre cualquier ajuste de precio antes del pago final.`
-    );
-    bodyLines.push(
-      `El cliente declara haber leído y aceptado todos los términos y condiciones aquí descritos, y recibe una copia del presente documento generado en la tienda.`
-    );
-
-    doc.text(bodyLines.join("\n\n"), 14, startY, {
-      maxWidth: 182,
-      lineHeightFactor: 1.4,
-    });
-
-    const footerY = 250;
-    doc.setDrawColor(255, 255, 255);
-    doc.line(20, footerY, 90, footerY);
-    doc.line(120, footerY, 190, footerY);
-
-    doc.setFontSize(9);
-    doc.text("Firma Cliente", 55, footerY + 5, { align: "center" });
-    doc.text("Firma GAMERLAND PC", 155, footerY + 5, { align: "center" });
-
-    doc.output("dataurlnewwindow"); // abre en nueva pestaña
-  }
-
-  function generatePaymentReceiptPdf(lay: Layaway, payment: LayawayPayment) {
-    // media carta en mm (aprox 140 x 216)
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [140, 216],
-    });
+      format: "letter", // carta
+    }) as JsPDFWithAutoTable;
 
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const marginX = 15;
+    let y = 12;
+
+    // ==== ENCABEZADO GAMER ====
     try {
       const imgSrc = (logo as StaticImageData).src;
-      doc.addImage(imgSrc, "PNG", 8, 6, 24, 14);
+      // logo a la izquierda
+      doc.addImage(imgSrc, "PNG", marginX, y - 4, 28, 18);
     } catch {
       /* noop */
     }
 
-    doc.setFontSize(12);
+    // barra gamer superior
+    doc.setFillColor(5, 10, 40);
+    doc.rect(0, 0, pageWidth, 20, "F");
+
+    doc.setFontSize(14);
     doc.setTextColor(0, 255, 255);
-    doc.text("RECIBO DE ABONO SISTEMA DE APARTADO", 108, 10, {
-      align: "right",
-    });
+    doc.text("GAMERLAND PC", pageWidth / 2, 9, { align: "center" });
 
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
-    doc.text("GAMERLAND PC", 108, 15, { align: "right" });
-    doc.text("Facatativá, Cundinamarca", 108, 19, { align: "right" });
-    doc.text("Carrera 3 #4-13 Local 1", 108, 23, { align: "right" });
-    doc.text("NIT 1003511062-1", 108, 27, { align: "right" });
+    doc.text("Facatativá, Cundinamarca", pageWidth / 2, 13, {
+      align: "center",
+    });
+    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 17, { align: "center" });
+    doc.text("NIT 1003511062-1", pageWidth / 2, 21, { align: "center" });
 
+    // línea neon
     doc.setDrawColor(0, 255, 255);
-    doc.line(8, 32, 132, 32);
+    doc.setLineWidth(0.5);
+    doc.line(marginX, 25, pageWidth - marginX, 25);
+
+    // Título
+    y = 32;
+    doc.setFontSize(12);
+    doc.setTextColor(0, 255, 255);
+    doc.text("CONTRATO DE SISTEMA DE APARTADO", pageWidth / 2, y, {
+      align: "center",
+    });
+
+    // Subtítulo
+    y += 6;
+    doc.setFontSize(9);
+    doc.setTextColor(200, 200, 200);
+    doc.text(`FACATATIVÁ, ${fmt(lay.createdAt)}`, pageWidth / 2, y, {
+      align: "center",
+    });
+
+    // ==== TABLA RESUMEN (tipo ficha) ====
+    y += 6;
+
+    const resumenBody = [
+      ["CÓDIGO", lay.code],
+      ["CLIENTE", lay.customerName],
+      ["WHATSAPP", lay.customerPhone],
+      ["CIUDAD", lay.city || "NO REGISTRA"],
+      ["PRODUCTO", lay.productName],
+      ["PRECIO DEL PRODUCTO", toCOP(lay.totalPrice)],
+      ["ABONO INICIAL", toCOP(lay.initialDeposit)],
+      ["TOTAL ABONADO A LA FECHA", toCOP(lay.totalPaid)],
+    ];
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [["DATO", "VALOR"]],
+      body: resumenBody,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        lineColor: [30, 31, 75],
+        lineWidth: 0.1,
+        textColor: [255, 255, 255],
+        fillColor: [15, 16, 48],
+      },
+      headStyles: {
+        fillColor: [0, 255, 255],
+        textColor: [0, 16, 20],
+        fontStyle: "bold",
+      },
+      alternateRowStyles: {
+        fillColor: [10, 11, 38],
+      },
+    });
+
+    // posición después de la tabla
+    const lastY = doc.lastAutoTable?.finalY ?? y;
+    y = lastY + 8;
+
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+
+    // Helper para escribir párrafos con salto automático
+    const writeParagraph = (text: string, extraSpace = 3) => {
+      const maxWidth = pageWidth - marginX * 2;
+      const lines = doc.splitTextToSize(text, maxWidth);
+      doc.text(lines, marginX, y, { maxWidth, lineHeightFactor: 1.4 });
+      y += lines.length * 4 + extraSpace;
+    };
+
+    // ==== CUERPO LEGAL (CLÁUSULAS) ====
+    writeParagraph(
+      `Entre GAMERLAND PC, identificado con NIT 1003511062-1, ubicado en Facatativá, Cundinamarca, en adelante "LA TIENDA", y el(la) cliente ${lay.customerName}, identificado para efectos de contacto con el número de WhatsApp ${lay.customerPhone}, en adelante "EL CLIENTE", se celebra el presente contrato de sistema de apartado, el cual se regirá por las siguientes cláusulas:`,
+      5
+    );
+
+    doc.setFontSize(10);
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA PRIMERA – OBJETO", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `El objeto del presente contrato es la reserva, a favor de EL CLIENTE, del producto ${
+        lay.productName
+      }, por un valor estimado de ${toCOP(
+        lay.totalPrice
+      )}, mediante el sistema de apartado ofrecido por LA TIENDA.`
+    );
+
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA SEGUNDA – VALOR Y FORMA DE PAGO", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `EL CLIENTE realiza un abono inicial de ${toCOP(
+        lay.initialDeposit
+      )}, el cual constituye parte del precio total del producto y no corresponde a una reserva gratuita. EL CLIENTE se compromete a efectuar los abonos posteriores hasta completar el valor total del producto, en los plazos y montos que libremente acuerde con LA TIENDA.`
+    );
+
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA TERCERA – CANCELACIÓN DEL SISTEMA", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `En caso de que EL CLIENTE decida cancelar el sistema de apartado en cualquier momento, acepta y reconoce que LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del valor total abonado hasta la fecha de la cancelación. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales asumidos por LA TIENDA.`
+    );
+
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA CUARTA – AVISO PARA RECLAMAR EL PRODUCTO", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `Para reclamar el producto apartado, EL CLIENTE deberá informar a LA TIENDA con un mínimo de una (1) semana de anticipación, a través de los medios de contacto disponibles, con el fin de garantizar la disponibilidad del producto en inventario y su correcta preparación para la entrega.`
+    );
+
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA QUINTA – GARANTÍA DEL PRODUCTO", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `La garantía legal y/o comercial aplicable al producto comenzará a regir a partir de la fecha efectiva de entrega del mismo a EL CLIENTE. La cobertura, plazos y condiciones de garantía se sujetarán a las políticas vigentes de LA TIENDA y, en lo pertinente, a la normatividad de protección al consumidor.`
+    );
+
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA SEXTA – VARIACIÓN DEL PRECIO", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `EL CLIENTE reconoce que el precio del producto puede estar sujeto a variación según las condiciones del mercado, la tasa de cambio y otros factores externos. En caso de que el tiempo transcurrido para completar el pago sea considerable, LA TIENDA podrá actualizar el valor del producto. En todo caso, LA TIENDA informará previamente a EL CLIENTE sobre cualquier ajuste de precio antes de la cancelación del saldo final.`
+    );
+
+    doc.setTextColor(0, 255, 255);
+    doc.text("CLÁUSULA SÉPTIMA – ACEPTACIÓN", marginX, y);
+    y += 5;
+    doc.setTextColor(255, 255, 255);
+    writeParagraph(
+      `Firmado el presente documento, EL CLIENTE manifiesta que ha leído, entendido y aceptado en su totalidad las cláusulas del contrato de sistema de apartado, y declara recibir una copia de este documento generado en la tienda.`,
+      8
+    );
+
+    // ==== FIRMAS ====
+    const firmaY = doc.internal.pageSize.getHeight() - 40;
+
+    doc.setDrawColor(255, 255, 255);
+    doc.line(marginX, firmaY, marginX + 70, firmaY);
+    doc.line(pageWidth - marginX - 70, firmaY, pageWidth - marginX, firmaY);
 
     doc.setFontSize(9);
-    doc.text(`Sistema de apartado: ${lay.code}`, 8, 38);
-    doc.text(`Cliente: ${lay.customerName}`, 8, 43);
-    doc.text(`WhatsApp: ${lay.customerPhone}`, 8, 48);
-    if (lay.city) doc.text(`Ciudad: ${lay.city}`, 8, 53);
+    doc.text("EL CLIENTE", marginX + 35, firmaY + 5, { align: "center" });
+    doc.text("GAMERLAND PC", pageWidth - marginX - 35, firmaY + 5, {
+      align: "center",
+    });
 
-    doc.text(`Producto: ${lay.productName}`, 8, 60);
-    doc.text(`Precio producto: ${toCOP(lay.totalPrice)}`, 8, 65);
+    doc.output("dataurlnewwindow");
+  }
 
-    doc.text(`Fecha abono: ${fmt(payment.createdAt)}`, 8, 72);
-    doc.text(`Método: ${PaymentLabels[payment.method]}`, 8, 77);
-    doc.text(`Abono: ${toCOP(payment.amount)}`, 8, 82);
+  function generatePaymentReceiptPdf(lay: Layaway, payment: LayawayPayment) {
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "letter", // carta completa
+    }) as JsPDFWithAutoTable;
 
-    const saldo = lay.totalPrice - lay.totalPaid;
-    doc.text(`Total abonado: ${toCOP(lay.totalPaid)}`, 8, 89);
-    doc.text(`Saldo pendiente: ${toCOP(saldo)}`, 8, 94);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 10;
+    const usableHeight = pageHeight / 2 - 10; // solo media carta (zona superior)
 
-    if (payment.note) {
-      doc.text(`Nota: ${payment.note}`, 8, 101, { maxWidth: 120 });
+    let y = 8;
+
+    // Fondo barra gamer superior
+    doc.setFillColor(5, 10, 40);
+    doc.rect(0, 0, pageWidth, 20, "F");
+
+    try {
+      const imgSrc = (logo as StaticImageData).src;
+      doc.addImage(imgSrc, "PNG", marginX, y - 2, 22, 14);
+    } catch {
+      /* noop */
     }
 
+    // Encabezado texto
+    doc.setFontSize(11);
+    doc.setTextColor(0, 255, 255);
+    doc.text("RECIBO DE ABONO – SISTEMA DE APARTADO", pageWidth / 2 + 10, 9, {
+      align: "center",
+    });
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text("GAMERLAND PC", pageWidth / 2 + 10, 13, { align: "center" });
+    doc.text("Facatativá, Cundinamarca", pageWidth / 2 + 10, 16, {
+      align: "center",
+    });
+    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2 + 10, 19, {
+      align: "center",
+    });
+    doc.text("NIT 1003511062-1", pageWidth / 2 + 10, 22, { align: "center" });
+
+    // Línea separadora
+    doc.setDrawColor(0, 255, 255);
+    doc.setLineWidth(0.4);
+    doc.line(marginX, 26, pageWidth - marginX, 26);
+
+    // Datos básicos
+    y = 32;
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 255, 255);
+
+    doc.text(`Sistema de apartado: ${lay.code}`, marginX, y);
+    y += 4;
+    doc.text(`Cliente: ${lay.customerName}`, marginX, y);
+    y += 4;
+    doc.text(`WhatsApp: ${lay.customerPhone}`, marginX, y);
+    y += 4;
+    if (lay.city) {
+      doc.text(`Ciudad: ${lay.city}`, marginX, y);
+      y += 4;
+    }
+
+    doc.text(`Producto: ${lay.productName}`, marginX, y);
+    y += 4;
+    doc.text(
+      `Precio objetivo del producto: ${toCOP(lay.totalPrice)}`,
+      marginX,
+      y
+    );
+    y += 5;
+
+    // Tabla tipo resumen del abono
+    const saldo = lay.totalPrice - lay.totalPaid;
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [["CONCEPTO", "VALOR"]],
+      body: [
+        ["Fecha del abono", fmt(payment.createdAt)],
+        ["Método de pago", PaymentLabels[payment.method]],
+        ["Valor del abono", toCOP(payment.amount)],
+        ["Total abonado a la fecha", toCOP(lay.totalPaid)],
+        ["Saldo pendiente", toCOP(saldo)],
+      ],
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        lineColor: [30, 31, 75],
+        lineWidth: 0.1,
+        textColor: [255, 255, 255],
+        fillColor: [15, 16, 48],
+      },
+      headStyles: {
+        fillColor: [0, 255, 255],
+        textColor: [0, 16, 20],
+        fontStyle: "bold",
+      },
+      alternateRowStyles: {
+        fillColor: [10, 11, 38],
+      },
+    });
+
+    const lastY = doc.lastAutoTable?.finalY ?? y;
+    y = lastY + 4;
+
+    if (y < usableHeight - 16) {
+      doc.setFontSize(7.5);
+      doc.setTextColor(200, 200, 200);
+      const notaLines = doc.splitTextToSize(
+        `Este comprobante acredita el abono realizado al sistema de apartado indicado. La suma abonada hace parte del valor total del producto y se rige por las condiciones establecidas en el contrato de sistema de apartado firmado por el cliente.`,
+        pageWidth - marginX * 2
+      );
+      doc.text(notaLines, marginX, y, {
+        maxWidth: pageWidth - marginX * 2,
+        lineHeightFactor: 1.35,
+      });
+      y += notaLines.length * 3.5 + 4;
+    }
+
+    // Pequeña sección de firma opcional dentro de la media carta
+    const firmaY = Math.min(usableHeight - 10, y + 6);
+
+    doc.setDrawColor(255, 255, 255);
+    doc.line(marginX, firmaY, marginX + 60, firmaY);
+    doc.setFontSize(8);
+    doc.text("Firma recibido cliente", marginX + 30, firmaY + 4, {
+      align: "center",
+    });
+
+    // (La parte inferior de la hoja queda libre, por si luego quieres imprimir otro medio recibo)
     doc.output("dataurlnewwindow");
   }
 
