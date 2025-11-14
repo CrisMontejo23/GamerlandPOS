@@ -210,7 +210,7 @@ export default function LayawaysPage() {
 
   useEffect(() => {
     if (!ready) return;
-    loadProducts();
+    //loadProducts();
   }, [ready]);
 
   useEffect(() => {
@@ -252,6 +252,59 @@ export default function LayawaysPage() {
     }
   }, [productSearch]);
 
+  // Buscar productos para el modal de apartados (igual que stock-in)
+  useEffect(() => {
+    if (!ready) return;
+
+    let abort = false;
+
+    const run = async () => {
+      const term = productSearch.trim();
+      if (!term) {
+        setProducts([]);
+        return;
+      }
+
+      const params = new URLSearchParams();
+      params.set("q", term.toUpperCase()); // como en stock-in
+      params.set("withStock", "false"); // para apartados no necesitamos stock
+      params.set("includeInactive", "false");
+      params.set("pageSize", "50"); // o 100 si quieres
+
+      try {
+        const r = await apiFetch(`/products?${params.toString()}`);
+        type ProductApiRow = {
+          id: number;
+          sku: string;
+          name: string;
+          price?: number | string | null;
+        };
+        const json = (await r.json()) as {
+          total: number;
+          rows: ProductApiRow[];
+        };
+
+        if (!abort) {
+          const mapped: Product[] = json.rows.map((p) => ({
+            id: p.id,
+            sku: p.sku,
+            name: p.name,
+            price: Number(p.price ?? 0),
+          }));
+          setProducts(mapped);
+        }
+      } catch {
+        if (!abort) setProducts([]);
+      }
+    };
+
+    const t = setTimeout(run, 200); // pequeño debounce
+    return () => {
+      abort = true;
+      clearTimeout(t);
+    };
+  }, [ready, productSearch]);
+
   // ==== HELPERS ====
 
   const openPaymentsModal = async (lay: Layaway) => {
@@ -286,14 +339,7 @@ export default function LayawaysPage() {
     return paymentsCache[paymentsOpenId] ?? [];
   }, [paymentsOpenId, paymentsCache]);
 
-  const filteredProducts = useMemo(() => {
-    const term = productSearch.trim().toUpperCase();
-    if (!term) return products;
-    return products.filter((p) => {
-      const hay = `${p.sku} ${p.name}`.toUpperCase();
-      return hay.includes(term);
-    });
-  }, [products, productSearch]);
+  const filteredProducts = useMemo(() => products, [products]);
 
   function handleSelectProduct(p: Product) {
     setSelProductId(p.id);
