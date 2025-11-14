@@ -107,6 +107,28 @@ function sumRealExpensesByMethod(list: ExpenseRow[]) {
   return out;
 }
 
+function sumPaymentsFromLines(lines: SaleLine[]) {
+  const out = { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0 };
+
+  for (const s of lines || []) {
+    const methods = s.paymentMethods || [];
+    for (const pm of methods) {
+      const method = String(pm.method || "")
+        .toUpperCase()
+        .trim();
+      const amt = Number(pm.amount || 0);
+
+      if (method === "EFECTIVO") out.EFECTIVO += amt;
+      else if (method === "QR_LLAVE" || method === "QR / LLAVE")
+        out.QR_LLAVE += amt;
+      else if (method === "DATAFONO" || method === "DATÁFONO")
+        out.DATAFONO += amt;
+    }
+  }
+
+  return out;
+}
+
 type ExpenseRow = {
   id: number;
   description?: string | null;
@@ -407,6 +429,13 @@ export default function ReportsPage() {
   // Gastos del rango (para recalcular NETO por método de pago)
   const [rangeExpenses, setRangeExpenses] = useState<ExpenseRow[]>([]);
 
+  // Pagos brutos por método del rango (calculados desde sales-lines sin TRANSACCION)
+  const [payBrutoLines, setPayBrutoLines] = useState({
+    EFECTIVO: 0,
+    QR_LLAVE: 0,
+    DATAFONO: 0,
+  });
+
   /* ===== Estado de CAJA ===== */
   const [cashbox, setCashbox] = useState<CashboxState>({
     ok: false,
@@ -504,6 +533,10 @@ export default function ReportsPage() {
       const rangeNoTx = (linesRange || []).filter((s) => !isTransactionSale(s));
       const monthNoTx = (linesMonth || []).filter((s) => !isTransactionSale(s));
       const yearNoTx = (linesYear || []).filter((s) => !isTransactionSale(s));
+
+      // Pagos brutos por método, sólo de ventas reales (sin TRANSACCION)
+      const brutoLines = sumPaymentsFromLines(rangeNoTx);
+      setPayBrutoLines(brutoLines);
 
       const vRange = rangeNoTx.reduce((a, s) => a + revenueFromLine(s), 0);
       const vMonth = monthNoTx.reduce((a, s) => a + revenueFromLine(s), 0);
@@ -643,18 +676,14 @@ export default function ReportsPage() {
   }, [dailySeries, opsDay, from, to]);
 
   const payForChart = useMemo(() => {
-    if (!payDay) {
-      return { EFECTIVO: 0, QR_LLAVE: 0, DATAFONO: 0, total: 0 };
-    }
-
-    // Cobros brutos que vienen del backend
+    // Cobros brutos calculados desde sales-lines SIN TRANSACCION
     const bruto = {
-      EFECTIVO: Number(payDay.EFECTIVO || 0),
-      QR_LLAVE: Number(payDay.QR_LLAVE || 0),
-      DATAFONO: Number(payDay.DATAFONO || 0),
+      EFECTIVO: payBrutoLines.EFECTIVO || 0,
+      QR_LLAVE: payBrutoLines.QR_LLAVE || 0,
+      DATAFONO: payBrutoLines.DATAFONO || 0,
     };
 
-    // Gastos "reales" (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ) por método
+    // Gastos "reales" (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ) por método en el rango
     const gastosReal = sumRealExpensesByMethod(rangeExpenses);
 
     const neto = {
@@ -667,7 +696,7 @@ export default function ReportsPage() {
       ...neto,
       total: neto.EFECTIVO + neto.QR_LLAVE + neto.DATAFONO,
     };
-  }, [payDay, rangeExpenses]);
+  }, [payBrutoLines, rangeExpenses]);
 
   const rangeWord =
     rangeType === "day" ? "DÍA" : rangeType === "month" ? "MES" : "AÑO";
@@ -1066,15 +1095,16 @@ export default function ReportsPage() {
       pdf.line(marginX, curY, pageW - marginX, curY);
       curY += 8;
 
-      // --- Caja por método de pago (usando SOLO gastos reales) ---
+      // --- Caja por método de pago (usando SOLO ventas reales) ---
+      const brutoFromLines = sumPaymentsFromLines(salesNoTx);
       const bruto = {
-        EFECTIVO: Number(payments?.EFECTIVO || 0),
-        QR_LLAVE: Number(payments?.QR_LLAVE || 0),
-        DATAFONO: Number(payments?.DATAFONO || 0),
+        EFECTIVO: brutoFromLines.EFECTIVO,
+        QR_LLAVE: brutoFromLines.QR_LLAVE,
+        DATAFONO: brutoFromLines.DATAFONO,
       };
       const brutoTotal = bruto.EFECTIVO + bruto.QR_LLAVE + bruto.DATAFONO;
 
-      // Gastos "reales" del periodo del PDF (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ)
+      // Gastos "reales" del periodo del PDF
       const gastosReal = sumRealExpensesByMethod(expenses);
       const gastos = {
         EFECTIVO: gastosReal.EFECTIVO,
@@ -1114,6 +1144,7 @@ export default function ReportsPage() {
           ],
           ["TOTAL", toCOP(brutoTotal), toCOP(gastos.total), toCOP(neto.total)],
         ],
+
         theme: "grid",
         styles: {
           fontSize: 10,
