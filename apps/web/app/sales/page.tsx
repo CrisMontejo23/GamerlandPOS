@@ -330,12 +330,19 @@ export default function SalesPage() {
      GANANCIA = suma de GANANCIA de cada registro (misma regla que por fila)
      COSTO = suma de TOTAL COSTO de cada registro (útil para control) */
   const totals = useMemo(() => {
-    const revenue = rows.reduce(
+    // Filas que SÍ cuentan para resumen de Ventas / Costo / Ganancia
+    const summaryRows = rows.filter((r) => !isTransactionRow(r));
+
+    const revenue = summaryRows.reduce(
       (a, r) => a + (r.revenue ?? r.unitPrice * r.qty),
       0
     );
-    const cost = rows.reduce((a, r) => a + (r.cost ?? r.unitCost * r.qty), 0);
-    const profit = rows.reduce((a, r) => a + profitByRule(r), 0);
+    const cost = summaryRows.reduce(
+      (a, r) => a + (r.cost ?? r.unitCost * r.qty),
+      0
+    );
+    const profit = summaryRows.reduce((a, r) => a + profitByRule(r), 0);
+
     return { revenue, cost, profit };
   }, [rows]);
 
