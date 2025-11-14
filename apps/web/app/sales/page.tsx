@@ -247,11 +247,20 @@ function rangeFrom(period: Period, baseISO: string) {
   return { from: `${y}-01-01`, to: `${y}-12-31` };
 }
 
+/* ===== Helpers extra ===== */
+function isTransactionRow(r: Row) {
+  const name = (r.name || "").toUpperCase().trim();
+  return name === "TRANSACCION";
+}
+
 /* ===== Reglas de ganancia (Excel) ===== */
 function profitByRule(r: Row) {
   const name = (r.name || "").toUpperCase().trim();
   const total = r.revenue ?? r.unitPrice * r.qty;
   const costo = r.cost ?? r.unitCost * r.qty;
+
+  // TRANSACCION: no genera ganancia
+  if (name === "TRANSACCION") return 0;
 
   if (name === "REFACIL - RECARGA CELULAR") return Math.round(total * 0.055);
   if (name === "REFACIL - PAGO FACTURA") return 200;
@@ -262,7 +271,6 @@ function profitByRule(r: Row) {
   if (
     [
       "REFACIL - CARGA DE CUENTA",
-      "TRANSACCION",
       "TRANSACCION DATAFONO",
       "CUADRE DE CAJA",
     ].includes(name)
