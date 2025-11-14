@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { apiFetch } from "../lib/api";
 import jsPDF from "jspdf";
@@ -111,6 +111,7 @@ export default function LayawaysPage() {
   const [initialMethod, setInitialMethod] = useState<PayMethod>("EFECTIVO");
   const [productSearch, setProductSearch] = useState("");
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+  const productSearchRef = useRef<HTMLDivElement | null>(null);
 
   // modal contrato obligatorio
   const [contractLayaway, setContractLayaway] = useState<Layaway | null>(null);
@@ -196,6 +197,26 @@ export default function LayawaysPage() {
     const found = products.find((p) => p.id === selProductId);
     setProductPrice(found ? found.price : null);
   }, [selProductId, products]);
+
+  useEffect(() => {
+    function handleClickOutside(ev: MouseEvent) {
+      if (!productSearchRef.current) return;
+      if (!productSearchRef.current.contains(ev.target as Node)) {
+        setProductDropdownOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!productSearch.trim()) {
+      setProductDropdownOpen(false);
+    }
+  }, [productSearch]);
 
   // ==== HELPERS ====
 
@@ -972,7 +993,7 @@ export default function LayawaysPage() {
                   PRODUCTO *
                 </label>
 
-                <div className="relative">
+                <div className="relative" ref={productSearchRef}>
                   {/* Input de búsqueda / selección */}
                   <input
                     placeholder="Escribe para buscar por SKU o nombre..."
@@ -983,14 +1004,15 @@ export default function LayawaysPage() {
                     }}
                     value={productSearch}
                     onChange={(e) => {
-                      setProductSearch(U(e.target.value));
-                      setProductDropdownOpen(true);
+                      const value = U(e.target.value);
+                      setProductSearch(value);
+                      // solo mostramos opciones si hay texto
+                      setProductDropdownOpen(!!value.trim());
                     }}
-                    onFocus={() => setProductDropdownOpen(true)}
                   />
 
-                  {/* Dropdown de resultados */}
-                  {productDropdownOpen && (
+                  {/* Dropdown de resultados: solo si hay texto y está abierto */}
+                  {productDropdownOpen && productSearch.trim() && (
                     <div
                       className="absolute z-50 mt-1 w-full rounded-xl shadow-lg max-h-64 overflow-auto text-sm"
                       style={{
