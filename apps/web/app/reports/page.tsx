@@ -229,7 +229,11 @@ function profitByRuleFromSale(s: SaleLine) {
 /* ===== Flags especiales ===== */
 function isTransactionSale(s: SaleLine) {
   const name = (s.name || "").toUpperCase().trim();
-  return name === "TRANSACCION";
+  return (
+    name === "TRANSACCION" ||
+    name === "TRANSACCION DATAFONO" ||
+    name === "CUADRE DE CAJA"
+  );
 }
 
 const revenueFromLine = (s: SaleLine) =>
@@ -1156,7 +1160,7 @@ export default function ReportsPage() {
             "Método(s)",
           ],
         ],
-        body: sales.map((s) => {
+        body: salesNoTx.map((s) => {
           const profit = profitByRuleFromSale(s);
           const methods =
             s.payMethods ||
