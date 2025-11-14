@@ -71,6 +71,21 @@ type SaleLine = {
   payMethods?: string;
 };
 
+// ===== Gastos que SÍ cuentan como "gastos" en las métricas =====
+const REAL_EXPENSE_CATEGORIES = [
+  "OTRO",
+  "PAGO TRABAJADORES",
+  "VIAJE A BOGOTÁ",
+  "VIAJE A BOGOTA", // por si llega sin tilde
+];
+
+function isRealExpense(e: ExpenseRow) {
+  const cat = String(e.category || "")
+    .toUpperCase()
+    .trim();
+  return REAL_EXPENSE_CATEGORIES.includes(cat);
+}
+
 type ExpenseRow = {
   id: number;
   description?: string | null;
@@ -201,10 +216,10 @@ const revenueFromLine = (s: SaleLine) =>
 const costFromLine = (s: SaleLine) =>
   typeof s.cost === "number" ? s.cost : s.unitCost * s.qty;
 
-/** Suma gastos operativos EXTERNOS (excluye category === "INTERNO") */
+/** Suma SOLO los gastos que cuentan en métricas (OTRO, PAGO TRABAJADORES, VIAJE A BOGOTÁ) */
 function sumOperativeExpensesExcludingInternos(list: ExpenseRow[]) {
   return (list || [])
-    .filter((e) => String(e.category || "").toUpperCase() !== "INTERNO")
+    .filter(isRealExpense) // sólo las categorías "reales" de gasto
     .reduce((a, e) => a + Number(e.amount || 0), 0);
 }
 
