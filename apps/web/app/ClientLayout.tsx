@@ -14,22 +14,32 @@ const NAV_ALL: Array<{
   label: string;
   allow: ReadonlyArray<Role>;
 }> = [
-  { href: "/pos",       label: "💰 POS",       allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/products",  label: "📦 Productos", allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/stock-in",  label: "📥 Stock",     allow: ["ADMIN"] },
-  { href: "/sales",     label: "📈 Ventas",    allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/expenses",  label: "💸 Gastos",    allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/works", label: "🛠️ Trabajos", allow: ["ADMIN", "EMPLOYEE"] as const },
-  { href: "/reports",   label: "📄 Reportes",  allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/users", label: "👥 Usuarios", allow: ["ADMIN"] as const },
+  { href: "/pos", label: "💰 POS", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/products", label: "📦 Productos", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/stock-in", label: "📥 Stock", allow: ["ADMIN"] },
+  { href: "/sales", label: "📈 Ventas", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/expenses", label: "💸 Gastos", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/works", label: "🛠️ Trabajos", allow: ["ADMIN", "EMPLOYEE"] },
+  // 👇 Nueva entrada
+  {
+    href: "/layaways",
+    label: "📜 Sistemas de apartado",
+    allow: ["ADMIN", "EMPLOYEE"],
+  },
+  { href: "/reports", label: "📄 Reportes", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/users", label: "👥 Usuarios", allow: ["ADMIN"] },
 ];
 
-export default function ClientLayout({ children }: { children: React.ReactNode }) {
+export default function ClientLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
 
   const [open, setOpen] = useState(false);
-  const { role, username, logout, ready } = useAuth(); // role: Role | undefined
+  const { role, username, logout, ready } = useAuth(); // role: Role | null
 
   // Cerrar menú al navegar
   useEffect(() => {
@@ -37,9 +47,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     return () => clearTimeout(t);
   }, [pathname]);
 
-  // ✅ Con allow: ReadonlyArray<Role> ya no hay error en includes
   const nav = useMemo(
-    () => NAV_ALL.filter((i) => (role ? i.allow.includes(role as Role) : false)),
+    () =>
+      NAV_ALL.filter((i) => (role ? i.allow.includes(role as Role) : false)),
     [role]
   );
 
@@ -59,7 +69,13 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           ☰
         </button>
         <div className="flex items-center gap-2">
-          <Image src={logo} alt="Gamerland" width={28} height={28} className="rounded-full" />
+          <Image
+            src={logo}
+            alt="Gamerland"
+            width={28}
+            height={28}
+            className="rounded-full"
+          />
           <span className="font-bold text-neon">GAMERLAND POS</span>
         </div>
       </div>
@@ -73,14 +89,28 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         ].join(" ")}
       >
         <div className="p-6 flex flex-col items-center border-b border-eon">
-          <Image src={logo} alt="Gamerland Logo" width={140} height={140} className="rounded-full" />
-          <h1 className="mt-3 text-neon font-bold text-lg text-center">GAMERLAND POS</h1>
+          <Image
+            src={logo}
+            alt="Gamerland Logo"
+            width={140}
+            height={140}
+            className="rounded-full"
+          />
+          <h1 className="mt-3 text-neon font-bold text-lg text-center">
+            GAMERLAND POS
+          </h1>
           <p className="text-[11px] text-neon-2 tracking-wider mt-1 text-center">
             Tierra soñada de jugadores
           </p>
           {ready && (
             <div className="mt-3 text-xs text-gray-400">
-              {username ? <>👤 {username} • <b className="text-neon">{role}</b></> : "No autenticado"}
+              {username ? (
+                <>
+                  👤 {username} • <b className="text-neon">{role}</b>
+                </>
+              ) : (
+                "No autenticado"
+              )}
             </div>
           )}
         </div>
@@ -94,7 +124,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
                 href={item.href}
                 className={[
                   "block py-2 px-3 rounded-lg transition",
-                  active ? "bg-[#1E1F4B] text-neon" : "text-gray-300 hover:bg-[#1E1F4B] hover:text-neon",
+                  active
+                    ? "bg-[#1E1F4B] text-neon"
+                    : "text-gray-300 hover:bg-[#1E1F4B] hover:text-neon",
                 ].join(" ")}
               >
                 {item.label}
@@ -109,8 +141,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             className="w-full mb-2 py-2 rounded-lg font-semibold"
             style={{
               color: "#001014",
-              background: "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-              boxShadow: "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
+              background:
+                "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+              boxShadow:
+                "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
             }}
           >
             Cerrar sesión

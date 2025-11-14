@@ -24,6 +24,7 @@ model Product {
   createdAt DateTime         @default(now())
   SaleItem  SaleItem[]
   StockMove StockMovement[]
+  Layaway   Layaway[]
 
   @@index([sku])
   @@index([name])
@@ -43,6 +44,7 @@ model Sale {
   createdAt DateTime   @default(now())
   items     SaleItem[]
   payments  Payment[]
+  Layaway   Layaway[]
 }
 
 model SaleItem {
@@ -156,4 +158,64 @@ model WorkOrderPayment {
   createdBy   String?                                // usuario que registró
 
   @@index([workOrderId, createdAt])
+}
+
+enum LayawayStatus {
+  OPEN   // ABIERTO
+  CLOSED // CERRADO
+}
+
+model Layaway {
+  id           Int            @id @default(autoincrement())
+  code         String         @unique                 // AP-00001
+  status       LayawayStatus  @default(OPEN)
+
+  // Producto asociado al apartado (1 producto por sistema)
+  product      Product        @relation(fields: [productId], references: [id])
+  productId    Int
+
+  // Snapshot de info del producto al abrir el apartado
+  productName  String
+  productPrice Decimal        @db.Decimal(12, 2)      // precio que se usa en el contrato
+
+  // Datos del cliente
+  customerName  String
+  customerPhone String
+  city          String?                               // ciudad de residencia (opcional)
+
+  // Dinero
+  initialDeposit Decimal      @db.Decimal(12, 2)      // abono inicial obligatorio
+  totalPrice     Decimal      @db.Decimal(12, 2)      // valor objetivo a pagar (puede = productPrice)
+  totalPaid      Decimal      @db.Decimal(12, 2) @default(0) // suma de todos los pagos (incluye inicial)
+
+  // Fechas
+  createdAt  DateTime     @default(now())            // fecha de apertura del sistema de apartado
+  updatedAt  DateTime     @updatedAt
+  closedAt   DateTime?                               // cuando se cierra (se completó o se canceló)
+
+  notes      String?                                 // notas internas si las necesitas
+
+  // Relación con abonos
+  payments   LayawayPayment[]
+
+  // Link opcional a la venta final en POS (cuando hagas FINALIZAR VENTA)
+  saleId     Int?
+  sale       Sale?         @relation(fields: [saleId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([customerPhone])
+}
+
+model LayawayPayment {
+  id         Int      @id @default(autoincrement())
+  layaway    Layaway  @relation(fields: [layawayId], references: [id], onDelete: Cascade)
+  layawayId  Int
+
+  amount     Decimal  @db.Decimal(12, 2)             // valor del abono
+  method     String                                  // EFECTIVO | QR_LLAVE | DATAFONO
+  note       String?
+  createdAt  DateTime @default(now())
+  createdBy  String?                                  // usuario que registró el abono
+
+  @@index([layawayId, createdAt])
 }

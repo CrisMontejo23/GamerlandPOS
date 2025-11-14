@@ -1638,6 +1638,228 @@ app.delete("/works/:id", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
+// ==================== APARTADOS ============================
+
+const layawayCreateSchema = z.object({
+  productId: z.coerce.number().int().positive(),
+  customerName: z.string().min(1),
+  customerPhone: z.string().min(3),
+  city: z.string().optional(),
+  initialDeposit: z.coerce.number().positive("Abono inicial requerido"),
+  method: z.enum(PaymentMethods), // EFECTIVO | QR_LLAVE | DATAFONO
+});
+
+const layawayPaymentSchema = z.object({
+  amount: z.coerce.number().positive("Monto inválido"),
+  method: z.enum(PaymentMethods),
+  note: z.string().optional(),
+  createdBy: z.string().optional(),
+});
+
+// (opcional, para futuro si quieres actualizar otras cosas)
+const layawayUpdateSchema = z.object({
+  status: z.enum(["OPEN", "CLOSED"] as const).optional(),
+  totalPrice: z.coerce.number().optional(),
+  saleId: z.coerce.number().int().optional(),
+});
+async function getNextLayawayCode() {
+  const prefix = "AP-";
+  const last = await prisma.layaway.findFirst({
+    where: { code: { startsWith: prefix } },
+    orderBy: { code: "desc" },
+    select: { code: true },
+  });
+
+  let next = 1;
+  if (last?.code) {
+    const m = last.code.match(/\d+$/);
+    if (m) next = parseInt(m[0], 10) + 1;
+  }
+  return `${prefix}${String(next).padStart(5, "0")}`;
+}
+
+app.get("/layaways", requireRole("EMPLOYEE"), async (req, res) => {
+  const status = String(req.query.status || "").toUpperCase();
+  const q = String(req.query.q || "").trim();
+
+  const where: Prisma.LayawayWhereInput = {};
+  if (["OPEN", "CLOSED"].includes(status)) {
+    where.status = status as any;
+  }
+
+  if (q) {
+    where.OR = [
+      { code: { contains: q, mode: "insensitive" } },
+      { customerName: { contains: q, mode: "insensitive" } },
+      { customerPhone: { contains: q, mode: "insensitive" } },
+      { productName: { contains: q, mode: "insensitive" } },
+    ];
+  }
+
+  const rows = await prisma.layaway.findMany({
+    where,
+    orderBy: { createdAt: "asc" }, // más antiguos primero
+    include: {
+      payments: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+    take: 200,
+  });
+
+  res.json(rows);
+});
+
+app.post("/layaways", requireRole("EMPLOYEE"), async (req, res) => {
+  const parsed = layawayCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const prod = await tx.product.findUnique({
+        where: { id: d.productId },
+      });
+      if (!prod) throw new Error("Producto no encontrado");
+
+      const code = await getNextLayawayCode();
+
+      const totalPrice = Number(prod.price); // puedes ajustar si quieres precio distinto
+
+      const lay = await tx.layaway.create({
+        data: {
+          code,
+          status: "OPEN",
+          productId: prod.id,
+          productName: U(prod.name),
+          productPrice: Number(prod.price),
+          customerName: U(d.customerName),
+          customerPhone: d.customerPhone,
+          city: d.city ? U(d.city) : null,
+          initialDeposit: d.initialDeposit,
+          totalPrice,
+          totalPaid: d.initialDeposit,
+        },
+      });
+
+      const pay = await tx.layawayPayment.create({
+        data: {
+          layawayId: lay.id,
+          amount: d.initialDeposit,
+          method: d.method,
+          note: "ABONO INICIAL",
+        },
+      });
+
+      return { lay, payments: [pay] };
+    });
+
+    res.status(201).json(result);
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    res.status(400).json({
+      error: err?.message || "No se pudo crear el sistema de apartado",
+    });
+  }
+});
+app.get("/layaways/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
+
+  const lay = await prisma.layaway.findUnique({ where: { id } });
+  if (!lay) return res.status(404).json({ error: "No encontrado" });
+
+  const pays = await prisma.layawayPayment.findMany({
+    where: { layawayId: id },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(pays);
+});
+
+app.post(
+  "/layaways/:id/payments",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
+
+    const parsed = layawayPaymentSchema.safeParse(req.body);
+    if (!parsed.success)
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+
+    try {
+      const { amount, method, note, createdBy } = parsed.data;
+
+      const result = await prisma.$transaction(async (tx) => {
+        const lay = await tx.layaway.findUnique({ where: { id } });
+        if (!lay) throw new Error("No encontrado");
+        if (lay.status !== "OPEN") throw new Error("El sistema está cerrado");
+
+        const pay = await tx.layawayPayment.create({
+          data: {
+            layawayId: id,
+            amount,
+            method,
+            note: note ? U(note) : undefined,
+            createdBy: createdBy ? U(createdBy) : undefined,
+          },
+        });
+
+        const agg = await tx.layawayPayment.aggregate({
+          where: { layawayId: id },
+          _sum: { amount: true },
+        });
+
+        const totalPaid = Number(agg._sum.amount ?? 0);
+
+        const updated = await tx.layaway.update({
+          where: { id },
+          data: { totalPaid },
+        });
+
+        return { layaway: updated, payment: pay };
+      });
+
+      res.status(201).json(result);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo registrar el abono" });
+    }
+  }
+);
+
+app.post("/layaways/:id/close", requireRole("EMPLOYEE"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const row = await prisma.layaway.update({
+      where: { id },
+      data: {
+        status: "CLOSED",
+        closedAt: new Date(),
+      },
+    });
+    res.json(row);
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
+    res.status(400).json({ error: err?.message || "No se pudo cerrar" });
+  }
+});
+
 // ==================== ADMIN (extra dev) ====================
 app.post("/admin/wipe", requireRole("ADMIN"), async (req, res) => {
   if (req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
