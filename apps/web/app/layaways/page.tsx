@@ -110,6 +110,7 @@ export default function LayawaysPage() {
   const [initialDeposit, setInitialDeposit] = useState<string>("");
   const [initialMethod, setInitialMethod] = useState<PayMethod>("EFECTIVO");
   const [productSearch, setProductSearch] = useState("");
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
 
   // modal contrato obligatorio
   const [contractLayaway, setContractLayaway] = useState<Layaway | null>(null);
@@ -227,6 +228,22 @@ export default function LayawaysPage() {
     return paymentsCache[paymentsOpenId] ?? [];
   }, [paymentsOpenId, paymentsCache]);
 
+  const filteredProducts = useMemo(() => {
+    const term = productSearch.trim().toUpperCase();
+    if (!term) return products;
+    return products.filter((p) => {
+      const hay = `${p.sku} ${p.name}`.toUpperCase();
+      return hay.includes(term);
+    });
+  }, [products, productSearch]);
+
+  function handleSelectProduct(p: Product) {
+    setSelProductId(p.id);
+    setProductPrice(p.price);
+    setProductSearch(`${p.sku} — ${p.name}`);
+    setProductDropdownOpen(false);
+  }
+
   // ==== CREAR APARTADO ====
 
   const resetForm = () => {
@@ -237,6 +254,8 @@ export default function LayawaysPage() {
     setCity("");
     setInitialDeposit("");
     setInitialMethod("EFECTIVO");
+    setProductSearch("");
+    setProductDropdownOpen(false);
   };
 
   const createLayaway = async () => {
@@ -953,46 +972,56 @@ export default function LayawaysPage() {
                   PRODUCTO *
                 </label>
 
-                {/* Input de búsqueda */}
-                <input
-                  placeholder="Buscar por SKU o nombre..."
-                  className="mb-2 w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(U(e.target.value))}
-                />
+                <div className="relative">
+                  {/* Input de búsqueda / selección */}
+                  <input
+                    placeholder="Escribe para buscar por SKU o nombre..."
+                    className="w-full rounded px-3 py-2 text-gray-100 uppercase text-sm"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(U(e.target.value));
+                      setProductDropdownOpen(true);
+                    }}
+                    onFocus={() => setProductDropdownOpen(true)}
+                  />
 
-                {/* Select filtrado */}
-                <select
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={selProductId || ""}
-                  onChange={(e) =>
-                    setSelProductId(
-                      e.target.value ? Number(e.target.value) : ("" as const)
-                    )
-                  }
-                >
-                  <option value="">SELECCIONE PRODUCTO</option>
-                  {products
-                    .filter((p) => {
-                      if (!productSearch.trim()) return true;
-                      const term = productSearch.trim().toUpperCase();
-                      const hay = `${p.sku} ${p.name}`.toUpperCase();
-                      return hay.includes(term);
-                    })
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.sku} — {p.name} ({toCOP(p.price)})
-                      </option>
-                    ))}
-                </select>
+                  {/* Dropdown de resultados */}
+                  {productDropdownOpen && (
+                    <div
+                      className="absolute z-50 mt-1 w-full rounded-xl shadow-lg max-h-64 overflow-auto text-sm"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                    >
+                      {filteredProducts.length === 0 && (
+                        <div className="px-3 py-2 text-xs text-gray-400">
+                          No se encontraron productos.
+                        </div>
+                      )}
+
+                      {filteredProducts.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleSelectProduct(p)}
+                          className="w-full text-left px-3 py-2 hover:bg-white/5 flex flex-col"
+                        >
+                          <span className="font-semibold text-cyan-300">
+                            {p.sku} — {p.name}
+                          </span>
+                          <span className="text-xs text-gray-300">
+                            {toCOP(p.price)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
