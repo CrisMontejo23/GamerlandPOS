@@ -49,6 +49,20 @@ type Layaway = {
   payments?: LayawayPayment[];
 };
 
+type LayawayApi = Omit<
+  Layaway,
+  "productPrice" | "initialDeposit" | "totalPrice" | "totalPaid"
+> & {
+  productPrice: number | string | null;
+  initialDeposit: number | string | null;
+  totalPrice: number | string | null;
+  totalPaid: number | string | null;
+};
+
+type LayawayPaymentApi = Omit<LayawayPayment, "amount"> & {
+  amount: number | string | null;
+};
+
 const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030" };
 
 const STATUS_LABEL: Record<LayawayStatus, string> = {
@@ -65,7 +79,7 @@ const PaymentLabels: Record<PayMethod, string> = {
 const PAGE_SIZE = 5;
 
 const U = (s: unknown) =>
-  (typeof s === "string" ? s.trim().toUpperCase() : s) as string;
+  (typeof s === "string" ? s.toUpperCase() : s) as string;
 
 function toCOP(n: number | null | undefined) {
   if (typeof n !== "number" || !Number.isFinite(n)) return "—";
@@ -74,6 +88,23 @@ function toCOP(n: number | null | undefined) {
     currency: "COP",
     maximumFractionDigits: 0,
   });
+}
+
+function normalizeLayaway(raw: LayawayApi): Layaway {
+  return {
+    ...raw,
+    productPrice: Number(raw.productPrice ?? 0),
+    initialDeposit: Number(raw.initialDeposit ?? 0),
+    totalPrice: Number(raw.totalPrice ?? 0),
+    totalPaid: Number(raw.totalPaid ?? 0),
+  };
+}
+
+function normalizePayment(raw: LayawayPaymentApi): LayawayPayment {
+  return {
+    ...raw,
+    amount: Number(raw.amount ?? 0),
+  };
 }
 
 function fmt(d: string | Date) {
@@ -161,11 +192,11 @@ export default function LayawaysPage() {
     try {
       const p = new URLSearchParams();
       if (statusFilter) p.set("status", statusFilter);
-      if (q.trim()) p.set("q", U(q));
+      if (q.trim()) p.set("q", q.trim().toUpperCase());
 
       const r = await apiFetch(`/layaways?${p.toString()}`);
-      const data = (await r.json()) as Layaway[];
-      setRows(data);
+      const data = (await r.json()) as LayawayApi[];
+      setRows(data.map(normalizeLayaway));
     } catch {
       setMsg("NO SE PUDIERON CARGAR LOS SISTEMAS DE APARTADO");
       setTimeout(() => setMsg(""), 2200);
@@ -229,8 +260,11 @@ export default function LayawaysPage() {
     if (!paymentsCache[lay.id]) {
       try {
         const r = await apiFetch(`/layaways/${lay.id}/payments`);
-        const data = (await r.json()) as LayawayPayment[];
-        setPaymentsCache((prev) => ({ ...prev, [lay.id]: data }));
+        const data = (await r.json()) as LayawayPaymentApi[];
+        setPaymentsCache((prev) => ({
+          ...prev,
+          [lay.id]: data.map(normalizePayment),
+        }));
       } catch {
         setMsg("NO SE PUDIERON CARGAR LOS ABONOS");
         setTimeout(() => setMsg(""), 2200);
@@ -299,9 +333,9 @@ export default function LayawaysPage() {
 
     const body = {
       productId: selProductId,
-      customerName: U(customerName),
+      customerName: customerName.trim().toUpperCase(),
       customerPhone: customerPhone.trim(),
-      city: city.trim() ? U(city) : undefined,
+      city: city.trim() ? city.trim().toUpperCase() : undefined,
       initialDeposit: dep,
       method: initialMethod,
     };
@@ -319,17 +353,19 @@ export default function LayawaysPage() {
     }
 
     const result = (await r.json()) as {
-      lay: Layaway;
-      payments: LayawayPayment[];
+      lay: LayawayApi;
+      payments: LayawayPaymentApi[];
     };
+
+    const layNorm = normalizeLayaway(result.lay);
 
     setMsg("SISTEMA DE APARTADO CREADO ✅");
     setOpenForm(false);
     resetForm();
     await loadLayaways();
 
-    // abrimos modal de contrato
-    setContractLayaway(result.lay);
+    // abrimos modal de contrato con datos normalizados
+    setContractLayaway(layNorm);
   };
 
   // ==== ABONO NUEVO + FACTURA PDF ====
@@ -360,20 +396,23 @@ export default function LayawaysPage() {
     }
 
     const result = (await r.json()) as {
-      layaway: Layaway;
-      payment: LayawayPayment;
+      layaway: LayawayApi;
+      payment: LayawayPaymentApi;
     };
+
+    const layNorm = normalizeLayaway(result.layaway);
+    const payNorm = normalizePayment(result.payment);
 
     // recargar caches
     setPaymentsCache((prev) => ({
       ...prev,
-      [result.layaway.id]: [...(prev[result.layaway.id] || []), result.payment],
+      [layNorm.id]: [...(prev[layNorm.id] || []), payNorm],
     }));
 
     await loadLayaways();
 
-    // generar factura media carta
-    generatePaymentReceiptPdf(result.layaway, result.payment);
+    // generar factura media carta con números reales
+    generatePaymentReceiptPdf(layNorm, payNorm);
 
     setMsg("ABONO REGISTRADO ✅");
     setNewPayAmount("");
@@ -611,7 +650,7 @@ export default function LayawaysPage() {
       align: "center",
     });
 
-    doc.output("dataurlnewwindow");
+    doc.save(`Contrato_Apartado_${lay.code}.pdf`);
   }
 
   function generatePaymentReceiptPdf(lay: Layaway, payment: LayawayPayment) {
@@ -747,7 +786,7 @@ export default function LayawaysPage() {
     });
 
     // (La parte inferior de la hoja queda libre, por si luego quieres imprimir otro medio recibo)
-    doc.output("dataurlnewwindow");
+    doc.save(`Recibo_Abono_${lay.code}.pdf`);
   }
 
   // ==== RENDER ====
@@ -793,7 +832,7 @@ export default function LayawaysPage() {
               border: `1px solid ${COLORS.border}`,
             }}
             value={q}
-            onChange={(e) => setQ(U(e.target.value))}
+            onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && loadLayaways()}
           />
 
@@ -1004,7 +1043,7 @@ export default function LayawaysPage() {
                     }}
                     value={productSearch}
                     onChange={(e) => {
-                      const value = U(e.target.value);
+                      const value = e.target.value;
                       setProductSearch(value);
                       // solo mostramos opciones si hay texto
                       setProductDropdownOpen(!!value.trim());
@@ -1072,7 +1111,7 @@ export default function LayawaysPage() {
                     border: `1px solid ${COLORS.border}`,
                   }}
                   value={customerName}
-                  onChange={(e) => setCustomerName(U(e.target.value))}
+                  onChange={(e) => setCustomerName(e.target.value)}
                 />
               </div>
 
@@ -1102,7 +1141,7 @@ export default function LayawaysPage() {
                     border: `1px solid ${COLORS.border}`,
                   }}
                   value={city}
-                  onChange={(e) => setCity(U(e.target.value))}
+                  onChange={(e) => setCity(e.target.value)}
                 />
               </div>
 
