@@ -228,8 +228,13 @@ export default function LayawaysPage() {
       setProductPrice(null);
       return;
     }
+
     const found = products.find((p) => p.id === selProductId);
-    setProductPrice(found ? found.price : null);
+
+    // Solo actualiza si encuentra el producto, si no, deja el precio como está
+    if (found) {
+      setProductPrice(found.price);
+    }
   }, [selProductId, products]);
 
   useEffect(() => {
