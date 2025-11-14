@@ -349,9 +349,16 @@ export default function SalesPage() {
   /* ===== Breakdown por métodos de pago (rango completo) ===== */
   const payBreakdown = useMemo(() => {
     const acc = new Map<string, number>();
-    for (const r of rows)
-      for (const p of r.paymentMethods || [])
+
+    for (const r of rows) {
+      // ❌ No contar TRANSACCION en el breakdown de métodos
+      if (isTransactionRow(r)) continue;
+
+      for (const p of r.paymentMethods || []) {
         acc.set(p.method, (acc.get(p.method) || 0) + p.amount);
+      }
+    }
+
     return Array.from(acc.entries()).map(([method, amount]) => ({
       method,
       amount,

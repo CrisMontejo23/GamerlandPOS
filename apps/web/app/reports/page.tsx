@@ -189,6 +189,13 @@ function profitByRuleFromSale(s: SaleLine) {
 
   return Math.round(total - costo);
 }
+
+/* ===== Flags especiales ===== */
+function isTransactionSale(s: SaleLine) {
+  const name = (s.name || "").toUpperCase().trim();
+  return name === "TRANSACCION";
+}
+
 const revenueFromLine = (s: SaleLine) =>
   typeof s.revenue === "number" ? s.revenue : s.unitPrice * s.qty;
 const costFromLine = (s: SaleLine) =>
@@ -449,34 +456,20 @@ export default function ReportsPage() {
       setPapTotal(Number(dPap?.total || 0));
 
       // ===== NUEVO: totales por líneas (mismo criterio que Sales) =====
-      const vRange = (linesRange || []).reduce(
-        (a, s) => a + revenueFromLine(s),
-        0
-      );
-      const vMonth = (linesMonth || []).reduce(
-        (a, s) => a + revenueFromLine(s),
-        0
-      );
-      const vYear = (linesYear || []).reduce(
-        (a, s) => a + revenueFromLine(s),
-        0
-      );
+      const rangeNoTx = (linesRange || []).filter((s) => !isTransactionSale(s));
+      const monthNoTx = (linesMonth || []).filter((s) => !isTransactionSale(s));
+      const yearNoTx = (linesYear || []).filter((s) => !isTransactionSale(s));
+
+      const vRange = rangeNoTx.reduce((a, s) => a + revenueFromLine(s), 0);
+      const vMonth = monthNoTx.reduce((a, s) => a + revenueFromLine(s), 0);
+      const vYear = yearNoTx.reduce((a, s) => a + revenueFromLine(s), 0);
       setVentasRange(vRange);
       setVentasMonth(vMonth);
       setVentasYear(vYear);
 
-      const uRange = (linesRange || []).reduce(
-        (a, s) => a + profitByRuleFromSale(s),
-        0
-      );
-      const uMonth = (linesMonth || []).reduce(
-        (a, s) => a + profitByRuleFromSale(s),
-        0
-      );
-      const uYear = (linesYear || []).reduce(
-        (a, s) => a + profitByRuleFromSale(s),
-        0
-      );
+      const uRange = rangeNoTx.reduce((a, s) => a + profitByRuleFromSale(s), 0);
+      const uMonth = monthNoTx.reduce((a, s) => a + profitByRuleFromSale(s), 0);
+      const uYear = yearNoTx.reduce((a, s) => a + profitByRuleFromSale(s), 0);
       setUtilDayByRule(uRange);
       setUtilMonthByRule(uMonth);
       setUtilYearByRule(uYear);
@@ -489,10 +482,11 @@ export default function ReportsPage() {
       setOpsMonth(gMonth);
       setOpsYear(gYear);
 
-      // Series
-      const daily = buildDailySeries(linesRange || []);
+      // Series (ignorando TRANSACCION para ingresos/utilidad)
+      const linesNoTx = (linesRange || []).filter((s) => !isTransactionSale(s));
+      const daily = buildDailySeries(linesNoTx);
       setDailySeries(addRolling7(daily));
-      setWeeklySeries(buildWeeklySeries(linesRange || []));
+      setWeeklySeries(buildWeeklySeries(linesNoTx));
 
       setMsg("");
     } catch (e) {
@@ -928,15 +922,15 @@ export default function ReportsPage() {
       ]);
 
       // ===== NUEVO: totales por líneas (mismo criterio que en pantalla)
-      const ventasPdf = (sales || []).reduce(
-        (a, s) => a + revenueFromLine(s),
-        0
-      );
-      const costoPdf = (sales || []).reduce((a, s) => a + costFromLine(s), 0);
-      const utilPdf = (sales || []).reduce(
+      const salesNoTx = (sales || []).filter((s) => !isTransactionSale(s));
+
+      const ventasPdf = salesNoTx.reduce((a, s) => a + revenueFromLine(s), 0);
+      const costoPdf = salesNoTx.reduce((a, s) => a + costFromLine(s), 0);
+      const utilPdf = salesNoTx.reduce(
         (a, s) => a + profitByRuleFromSale(s),
         0
       );
+
       const gastosOperativosPdf =
         sumOperativeExpensesExcludingInternos(expenses);
       const fixedPdf = prorateFixed(from, to);
