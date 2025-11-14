@@ -112,7 +112,7 @@ function fmt(d: string | Date) {
 }
 
 export default function LayawaysPage() {
-  const { ready } = useAuth();
+  const { ready, role } = useAuth();
 
   const [rows, setRows] = useState<Layaway[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,6 +146,9 @@ export default function LayawaysPage() {
 
   // modal contrato obligatorio
   const [contractLayaway, setContractLayaway] = useState<Layaway | null>(null);
+
+  // modal devolución
+  const [refundLayaway, setRefundLayaway] = useState<Layaway | null>(null);
 
   // modal abonos
   const [paymentsOpenId, setPaymentsOpenId] = useState<number | null>(null);
@@ -454,6 +457,80 @@ export default function LayawaysPage() {
 
     // Redirigir a POS
     window.location.href = "/pos";
+  };
+
+  // ==== ELIMINAR APARTADO (ADMIN) ====
+  const deleteLayaway = async (lay: Layaway) => {
+    const ok = confirm(
+      `¿Eliminar el sistema de apartado ${lay.code} y todos sus abonos? Esta acción no se puede deshacer.`
+    );
+    if (!ok) return;
+
+    try {
+      const r = await apiFetch(`/layaways/${lay.id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR"));
+        setTimeout(() => setMsg(""), 2500);
+        return;
+      }
+      setMsg("SISTEMA DE APARTADO ELIMINADO ✅");
+      await loadLayaways();
+    } catch {
+      setMsg("ERROR: NO SE PUDO ELIMINAR");
+      setTimeout(() => setMsg(""), 2500);
+    }
+  };
+
+  // ==== DEVOLUCIÓN 50% Y PASAR A POS ====
+  const openRefundModal = (lay: Layaway) => {
+    setRefundLayaway(lay);
+  };
+
+  const confirmRefund = async () => {
+    if (!refundLayaway) return;
+
+    const half = Math.round(refundLayaway.totalPaid * 0.5);
+    if (!Number.isFinite(half) || half <= 0) {
+      setMsg("NO HAY ABONOS PARA DEVOLVER");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    try {
+      // Cerramos el sistema de apartado (queda como CERRADO)
+      const r = await apiFetch(`/layaways/${refundLayaway.id}/close`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        setMsg("ERROR: " + U(e?.error || "NO SE PUDO CERRAR"));
+        setTimeout(() => setMsg(""), 2500);
+        return;
+      }
+
+      // Guardamos payload para que POS precargue el ítem SALDO VENTA
+      try {
+        const payload = {
+          source: "LAYAWAY_REFUND",
+          layawayId: refundLayaway.id,
+          code: refundLayaway.code,
+          customerName: refundLayaway.customerName,
+          // este es el valor que se debe cobrar en POS
+          refundAmount: half,
+        };
+        window.localStorage.setItem("POS_PRELOAD", JSON.stringify(payload));
+      } catch {
+        /* ignore */
+      }
+
+      setRefundLayaway(null);
+      // Redirigimos a POS
+      window.location.href = "/pos";
+    } catch {
+      setMsg("ERROR: NO SE PUDO PROCESAR LA DEVOLUCIÓN");
+      setTimeout(() => setMsg(""), 2500);
+    }
   };
 
   // ==== PDFs ====
@@ -961,13 +1038,24 @@ export default function LayawaysPage() {
                           </button>
 
                           {lay.status === "OPEN" && (
-                            <button
-                              className="px-3 py-1 rounded border text-xs uppercase"
-                              style={{ borderColor: COLORS.border }}
-                              onClick={() => generateContractPdf(lay)}
-                            >
-                              IMPRIMIR CONTRATO
-                            </button>
+                            <>
+                              <button
+                                className="px-3 py-1 rounded border text-xs uppercase"
+                                style={{ borderColor: COLORS.border }}
+                                onClick={() => generateContractPdf(lay)}
+                              >
+                                IMPRIMIR CONTRATO
+                              </button>
+
+                              {/* DEVOLUCIÓN 50% (EMPLOYEE + ADMIN) */}
+                              <button
+                                className="px-3 py-1 rounded border text-xs uppercase text-pink-300"
+                                style={{ borderColor: COLORS.border }}
+                                onClick={() => openRefundModal(lay)}
+                              >
+                                DEVOLUCIÓN 50%
+                              </button>
+                            </>
                           )}
 
                           {canFinalize && (
@@ -977,6 +1065,17 @@ export default function LayawaysPage() {
                               onClick={() => finalizeLayaway(lay)}
                             >
                               FINALIZAR VENTA → POS
+                            </button>
+                          )}
+
+                          {/* ELIMINAR SOLO ADMIN */}
+                          {role === "ADMIN" && (
+                            <button
+                              className="px-3 py-1 rounded border text-xs uppercase text-red-300"
+                              style={{ borderColor: COLORS.border }}
+                              onClick={() => deleteLayaway(lay)}
+                            >
+                              ELIMINAR
                             </button>
                           )}
                         </div>
@@ -1390,6 +1489,59 @@ export default function LayawaysPage() {
             >
               IMPRIMIR CONTRATO
             </button>
+          </div>
+        </div>
+      )}
+      {/* Modal devolución 50% */}
+      {refundLayaway && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-md rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <h3 className="text-lg font-semibold text-cyan-300 uppercase text-center">
+              DEVOLUCIÓN SISTEMA {refundLayaway.code}
+            </h3>
+
+            <p className="text-sm text-gray-200">
+              Total abonado a la fecha: <b>{toCOP(refundLayaway.totalPaid)}</b>
+            </p>
+            <p className="text-sm text-gray-200">
+              Valor a devolver al cliente (50% acordado):{" "}
+              <b>{toCOP(Math.round(refundLayaway.totalPaid * 0.5))}</b>
+            </p>
+            <p className="text-xs text-gray-400">
+              Al confirmar, el sistema de apartado se marcará como{" "}
+              <b>CERRADO</b> y se abrirá la ventana POS con un ítem
+              <b> SALDO VENTA</b> por este valor para registrar la venta en el
+              sistema.
+            </p>
+
+            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => setRefundLayaway(null)}
+              >
+                CANCELAR
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={confirmRefund}
+              >
+                CONFIRMAR DEVOLUCIÓN
+              </button>
+            </div>
           </div>
         </div>
       )}

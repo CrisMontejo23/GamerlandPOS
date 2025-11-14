@@ -16,14 +16,22 @@ type Product = {
 type CartItem = { product: Product; qty: number; unitPrice: number };
 type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 
-type PosPreloadPayload = {
-  source: "LAYAWAY";
-  layawayId: number;
-  productId: number;
-  productName: string;
-  price: number;
-  customerName?: string;
-};
+// 👇 ahora es una unión: finalización de apartado y devolución 50%
+type PosPreloadPayload =
+  | {
+      source: "LAYAWAY";
+      layawayId: number;
+      productId: number;
+      productName: string;
+      price: number;
+      customerName?: string;
+    }
+  | {
+      source: "LAYAWAY_REFUND";
+      layawayId: number;
+      refundAmount: number;
+      customerName?: string;
+    };
 
 // ===== Helpers UI =====
 const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
@@ -102,7 +110,6 @@ function GamerToast({
               border: `1px solid ${COLORS.border}`,
             }}
           >
-            {/* Icono simple con CSS (✔ / ! / i) */}
             <span
               className="text-2xl"
               style={{
@@ -323,7 +330,6 @@ export default function POSPage() {
     } else {
       const e = await r.json().catch(() => ({}));
       setMsg("Error: " + (e?.error || "No se pudo crear la venta"));
-      // (opcional) toast de error
       setToast({
         open: true,
         kind: "error",
@@ -336,75 +342,169 @@ export default function POSPage() {
     setTimeout(() => setMsg(""), 2500);
   }, [cart, payMethod, subtotal, received, uiTotal]);
 
-  // === PRELOAD DESDE SISTEMA DE APARTADOS ===
+  // === PRELOAD DESDE SISTEMA DE APARTADOS (FINALIZACIÓN Y DEVOLUCIÓN) ===
   useEffect(() => {
+    if (!role) return; // esperamos a conocer el rol (para crear SALDO VENTA si hace falta)
+
     try {
       const raw = window.localStorage.getItem("POS_PRELOAD");
       if (!raw) return;
 
-      const data = JSON.parse(raw) as Partial<PosPreloadPayload>;
-      if (data?.source !== "LAYAWAY" || !data.productId) return;
+      const data = JSON.parse(raw) as PosPreloadPayload;
+      if (
+        !data ||
+        (data.source !== "LAYAWAY" && data.source !== "LAYAWAY_REFUND")
+      ) {
+        return;
+      }
 
       (async () => {
         try {
-          // Traemos el producto desde el backend para tener costo / stock actual
-          const r = await apiFetch(`/products/${data.productId}`);
-          if (!r.ok) return;
+          // ----- Caso 1: FINALIZAR VENTA DE APARTADO (ya existente) -----
+          if (data.source === "LAYAWAY") {
+            const r = await apiFetch(`/products/${data.productId}`);
+            if (!r.ok) return;
 
-          const p = await r.json();
-          const prod: Product = {
-            id: p.id,
-            sku: p.sku,
-            name: p.name,
-            // Usamos el precio que viene del apartado (negociado),
-            // si no viene, caemos al price del producto
-            price: Number(data.price ?? p.price ?? 0),
-            cost: Number(p.cost ?? 0),
-            stock: Number(p.stock ?? 0),
-          };
+            const p = await r.json();
+            const prod: Product = {
+              id: p.id,
+              sku: p.sku,
+              name: p.name,
+              // Usamos el precio enviado desde el apartado (negociado),
+              // si no viene, caemos al price del producto
+              price: Number(data.price ?? p.price ?? 0),
+              cost: Number(p.cost ?? 0),
+              stock: Number(p.stock ?? 0),
+            };
 
-          // Llenamos el carrito SOLO con ese producto del apartado
-          setCart([
-            {
-              product: prod,
-              qty: 1,
-              unitPrice: prod.price,
-            },
-          ]);
+            setCart([
+              {
+                product: prod,
+                qty: 1,
+                unitPrice: prod.price,
+              },
+            ]);
 
-          setMsg(
-            `Producto de SISTEMA DE APARTADO cargado: ${prod.name} (${fmt(
-              prod.price
-            )})`
-          );
+            setMsg(
+              `Producto de SISTEMA DE APARTADO cargado: ${prod.name} (${fmt(
+                prod.price
+              )})`
+            );
 
-          setToast({
-            open: true,
-            kind: "info",
-            title: "Apartado cargado en POS",
-            subtitle: `Sistema ${data.layawayId} – Cliente ${
-              data.customerName ?? ""
-            }`,
-          });
+            setToast({
+              open: true,
+              kind: "info",
+              title: "Apartado cargado en POS",
+              subtitle: `Sistema ${data.layawayId} – Cliente ${
+                data.customerName ?? ""
+              }`,
+            });
 
-          setTimeout(
-            () =>
-              setToast((t) => ({
-                ...t,
-                open: false,
-              })),
-            2500
-          );
+            setTimeout(() => hideToast(), 2500);
+          }
+
+          // ----- Caso 2: DEVOLUCIÓN 50% (SALDO VENTA) -----
+          if (data.source === "LAYAWAY_REFUND") {
+            const amount = Number(data.refundAmount ?? 0);
+            if (!amount || amount <= 0) return;
+
+            // helper local para encontrar o crear producto SALDO VENTA
+            const findOrCreateSaldoVenta =
+              async (): Promise<Product | null> => {
+                const r = await apiFetch(
+                  `/products?q=SALDO%20VENTA&withStock=true`
+                );
+                const rawList = await r.json();
+                const list: Product[] = Array.isArray(rawList)
+                  ? rawList
+                  : rawList?.rows ?? [];
+
+                let p = list.find(
+                  (x) =>
+                    x &&
+                    typeof x.name === "string" &&
+                    x.name.toUpperCase() === "SALDO VENTA"
+                );
+
+                // Si no existe y eres ADMIN, lo creamos como servicio sin stock
+                if (!p) {
+                  if (role !== "ADMIN") {
+                    alert(
+                      "No existe el producto 'SALDO VENTA'. Pídele al administrador que lo cree en Productos."
+                    );
+                    return null;
+                  }
+
+                  const created = await apiFetch(`/products`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      name: "SALDO VENTA",
+                      sku: "", // se autogenera en el backend
+                      category: "SERVICIOS",
+                      cost: 0,
+                      price: 0,
+                      taxRate: 0,
+                      active: true,
+                      minStock: 0,
+                    }),
+                  });
+
+                  if (!created.ok) {
+                    const err = await created.json().catch(() => ({}));
+                    alert(
+                      err?.error ||
+                        "No se pudo crear el producto SALDO VENTA (se requiere rol ADMIN)."
+                    );
+                    return null;
+                  }
+
+                  const createdRaw = await created.json();
+                  p = {
+                    id: Number(createdRaw.id ?? 0),
+                    sku: String(createdRaw.sku ?? ""),
+                    name: String(createdRaw.name ?? "SALDO VENTA"),
+                    price: Number(createdRaw.price ?? 0),
+                    cost: Number(createdRaw.cost ?? 0),
+                    stock: Number(createdRaw.stock ?? 0),
+                  };
+                }
+
+                return p || null;
+              };
+
+            const baseProd = await findOrCreateSaldoVenta();
+            if (!baseProd) return;
+
+            const prod: Product = {
+              ...baseProd,
+              price: amount,
+              stock: 9999, // servicio, sin control real de stock
+            };
+
+            // Carrito con 1 línea SALDO VENTA por el valor de la devolución
+            setCart([{ product: prod, qty: 1, unitPrice: amount }]);
+            setPayMethod("EFECTIVO"); // por defecto, luego lo puedes cambiar
+
+            setMsg(`SALDO VENTA por devolución de apartado: ${fmt(amount)}`);
+            setToast({
+              open: true,
+              kind: "info",
+              title: "Devolución de apartado",
+              subtitle: `Sistema ${data.layawayId} – Cliente ${
+                data.customerName ?? ""
+              }`,
+            });
+            setTimeout(() => hideToast(), 2500);
+          }
         } finally {
           // Limpieza para que no se vuelva a cargar
           window.localStorage.removeItem("POS_PRELOAD");
         }
       })();
     } catch {
-      // Si algo sale mal con el JSON, limpiamos y seguimos normal
       window.localStorage.removeItem("POS_PRELOAD");
     }
-  }, []);
+  }, [role]); // 👈 se dispara cuando ya se conoce el rol
 
   // Atajos
   useEffect(() => {
@@ -424,7 +524,6 @@ export default function POSPage() {
   }, [checkout]);
 
   // PAPELERÍA
-  // Tipos auxiliares del backend
   type ProductsResp = Product[] | { total: number; rows: Product[] };
 
   function asProduct(raw: unknown): Product | null {
@@ -469,7 +568,6 @@ export default function POSPage() {
 
       if (!created.ok) {
         const err = await created.json().catch(() => ({}));
-        // Puedes mostrar tu GamerToast de error si prefieres
         alert(
           err?.error ||
             "No se pudo crear el item PAPELERIA (se requiere rol ADMIN)."

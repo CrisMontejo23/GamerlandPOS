@@ -1860,6 +1860,30 @@ app.post("/layaways/:id/close", requireRole("EMPLOYEE"), async (req, res) => {
   }
 });
 
+app.delete("/layaways/:id", requireRole("ADMIN"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id inválido" });
+  }
+
+  try {
+    // Primero borro abonos asociados
+    await prisma.layawayPayment.deleteMany({ where: { layawayId: id } });
+    // Luego el sistema de apartado
+    await prisma.layaway.delete({ where: { id } });
+
+    res.json({ ok: true, id });
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025") {
+      return res.status(404).json({ error: "No encontrado" });
+    }
+    res
+      .status(400)
+      .json({ error: err?.message || "No se pudo eliminar el apartado" });
+  }
+});
+
 // ==================== ADMIN (extra dev) ====================
 app.post("/admin/wipe", requireRole("ADMIN"), async (req, res) => {
   if (req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
