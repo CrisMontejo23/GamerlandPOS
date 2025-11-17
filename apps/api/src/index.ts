@@ -1405,9 +1405,15 @@ const workCreateSchema = z.object({
   quote: z.coerce.number().optional(),
   notes: z.string().optional(),
 
-  // 👇 opcional (por defecto false)
+  // 👇 NUEVOS CAMPOS
+  code: z.string().optional(), // para reutilizar códigos existentes
+  isWarranty: z.coerce.boolean().optional(), // marca si es garantía
+  parentId: z.coerce.number().int().optional(), // referencia al trabajo original
+
+  // 👇 ya estaba
   informedCustomer: z.coerce.boolean().optional(),
 });
+
 const workUpdateSchema = z.object({
   item: z.string().optional(),
   description: z.string().optional(),
@@ -1422,9 +1428,13 @@ const workUpdateSchema = z.object({
   total: z.coerce.number().nullable().optional(),
   notes: z.string().nullable().optional(),
 
-  // 👇 nuevo en update
+  // 👇 NUEVO (por si quieres marcar manualmente)
+  isWarranty: z.coerce.boolean().optional(),
+  parentId: z.coerce.number().int().nullable().optional(),
+
   informedCustomer: z.coerce.boolean().optional(),
 });
+
 const workPaymentSchema = z.object({
   amount: z.coerce.number().positive("Monto inválido"),
   method: z.enum(PaymentMethods).default("EFECTIVO"),
@@ -1552,25 +1562,40 @@ app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
     return res
       .status(400)
       .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
-  const code = await getNextWorkCode();
-  const d = parsed.data;
-  const row = await prisma.workOrder.create({
-    data: {
-      code,
-      item: U(d.item),
-      description: U(d.description),
-      customerName: U(d.customerName),
-      customerPhone: d.customerPhone,
-      reviewPaid: d.reviewPaid,
-      location: d.location,
-      quote: d.quote ?? null,
-      notes: d.notes ? U(d.notes) : null,
 
-      // 👇 si viene, úsalo; si no, false
-      informedCustomer: d.informedCustomer ?? false,
-    },
-  });
-  res.status(201).json(row);
+  const d = parsed.data;
+
+  // Si viene code (garantía), lo uso. Si no, genero uno nuevo.
+  const code = d.code?.trim() ? U(d.code) : await getNextWorkCode();
+
+  try {
+    const row = await prisma.workOrder.create({
+      data: {
+        code,
+        item: U(d.item),
+        description: U(d.description),
+        customerName: U(d.customerName),
+        customerPhone: d.customerPhone,
+        reviewPaid: d.reviewPaid,
+        location: d.location,
+        quote: d.quote ?? null,
+        notes: d.notes ? U(d.notes) : null,
+
+        // 👇 ahora sí existen en el modelo
+        isWarranty: d.isWarranty ?? false,
+        parentId: d.parentId ?? null,
+
+        informedCustomer: d.informedCustomer ?? false,
+      },
+    });
+
+    res.status(201).json(row);
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    res
+      .status(400)
+      .json({ error: err?.message || "No se pudo crear la orden de trabajo" });
+  }
 });
 
 app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
