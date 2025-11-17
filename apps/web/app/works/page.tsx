@@ -111,6 +111,9 @@ type Patch = {
   // 👇 NUEVO: campos que podemos mandar al backend para garantías
   isWarranty?: boolean;
   parentId?: number | null;
+
+  // 👇 NUEVO: solo se usa al CREAR (garantía) para reusar el mismo código
+  code?: string;
 };
 
 const PAGE_SIZE = 5;
@@ -596,6 +599,9 @@ export default function WorksPage() {
       `GARANTÍA: ${UU(warrantyTarget.description)}`;
 
     const payload: Patch = {
+      // 👇 Reutilizamos el mismo código del trabajo original
+      code: warrantyTarget.code,
+
       item: UDATA(warrantyTarget.item),
       description: UDATA(desc),
       customerName: UDATA(warrantyTarget.customerName),
