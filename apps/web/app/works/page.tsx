@@ -574,6 +574,17 @@ export default function WorksPage() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
+  // sortedRows ya está ordenado de más nuevo a más viejo
+  const latestByCode = new Map<string, WorkOrder>();
+
+  for (const w of sortedRows) {
+    if (!latestByCode.has(w.code)) {
+      latestByCode.set(w.code, w); // primera vez que vemos ese code = más reciente
+    }
+  }
+
+  const boardRows = Array.from(latestByCode.values());
+
   const statusOrder: WorkStatus[] = [
     "RECEIVED",
     "IN_PROGRESS",
@@ -951,7 +962,7 @@ export default function WorksPage() {
           {statusOrder
             .filter((st) => visibleStatuses.includes(st))
             .map((st) => {
-              const colRowsAll = sortedRows.filter((w) => w.status === st);
+              const colRowsAll = boardRows.filter((w) => w.status === st);
               const limit = visibleByStatus[st] ?? PAGE_SIZE;
               const colRows = colRowsAll.slice(0, limit);
               const hasMore = colRowsAll.length > limit;

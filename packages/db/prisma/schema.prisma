@@ -126,7 +126,7 @@ enum WorkLocation {
 
 model WorkOrder {
   id            Int           @id @default(autoincrement())
-  code          String        @unique                // WK-00001
+  code          String                               // WK-00001
   item          String                               // qué se recibe
   description   String                               // descripción del caso
   customerName  String

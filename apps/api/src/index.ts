@@ -1396,6 +1396,7 @@ app.get("/reports/cashbox", requireRole("EMPLOYEE"), async (_req, res) => {
 
 // =================== WORK ORDERS ==================
 const workCreateSchema = z.object({
+  code: z.string().optional(), // 👈 NUEVO (para garantía)
   item: z.string().min(1),
   description: z.string().min(1),
   customerName: z.string().min(1),
@@ -1405,13 +1406,11 @@ const workCreateSchema = z.object({
   quote: z.coerce.number().optional(),
   notes: z.string().optional(),
 
-  // 👇 NUEVOS CAMPOS
-  code: z.string().optional(), // para reutilizar códigos existentes
-  isWarranty: z.coerce.boolean().optional(), // marca si es garantía
-  parentId: z.coerce.number().int().optional(), // referencia al trabajo original
-
-  // 👇 ya estaba
   informedCustomer: z.coerce.boolean().optional(),
+
+  // 👇 para que el back guarde estos campos también
+  isWarranty: z.coerce.boolean().optional(),
+  parentId: z.coerce.number().int().optional(),
 });
 
 const workUpdateSchema = z.object({
@@ -1558,44 +1557,36 @@ app.get("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
 
 app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const parsed = workCreateSchema.safeParse(req.body);
-  if (!parsed.success)
+  if (!parsed.success) {
     return res
       .status(400)
       .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+  }
 
   const d = parsed.data;
 
-  // Si viene code (garantía), lo uso. Si no, genero uno nuevo.
+  // 👇 si viene code en el body (garantía), se usa ese; si no, se genera nuevo
   const code = d.code?.trim() ? U(d.code) : await getNextWorkCode();
 
-  try {
-    const row = await prisma.workOrder.create({
-      data: {
-        code,
-        item: U(d.item),
-        description: U(d.description),
-        customerName: U(d.customerName),
-        customerPhone: d.customerPhone,
-        reviewPaid: d.reviewPaid,
-        location: d.location,
-        quote: d.quote ?? null,
-        notes: d.notes ? U(d.notes) : null,
+  const row = await prisma.workOrder.create({
+    data: {
+      code,
+      item: U(d.item),
+      description: U(d.description),
+      customerName: U(d.customerName),
+      customerPhone: d.customerPhone,
+      reviewPaid: d.reviewPaid,
+      location: d.location,
+      quote: d.quote ?? null,
+      notes: d.notes ? U(d.notes) : null,
+      informedCustomer: d.informedCustomer ?? false,
 
-        // 👇 ahora sí existen en el modelo
-        isWarranty: d.isWarranty ?? false,
-        parentId: d.parentId ?? null,
+      isWarranty: d.isWarranty ?? false,
+      parentId: d.parentId ?? null,
+    },
+  });
 
-        informedCustomer: d.informedCustomer ?? false,
-      },
-    });
-
-    res.status(201).json(row);
-  } catch (e: unknown) {
-    const err = e as { message?: string };
-    res
-      .status(400)
-      .json({ error: err?.message || "No se pudo crear la orden de trabajo" });
-  }
+  res.status(201).json(row);
 });
 
 app.patch("/works/:id", requireRole("EMPLOYEE"), async (req, res) => {
