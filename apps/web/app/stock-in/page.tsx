@@ -27,6 +27,8 @@ const COLORS = {
   text: "#E5E5E5",
 };
 
+type MovementType = "in" | "out";
+
 export default function StockInPage() {
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Product[]>([]);
@@ -34,6 +36,9 @@ export default function StockInPage() {
   const [qty, setQty] = useState<number | "">("");
   const [unitCost, setUnitCost] = useState<number | "">("");
   const [msg, setMsg] = useState("");
+
+  // NUEVO: tipo de movimiento (entrada/salida)
+  const [movementType, setMovementType] = useState<MovementType>("in");
 
   // Buscar productos
   useEffect(() => {
@@ -101,31 +106,61 @@ export default function StockInPage() {
     setUnitCost("");
     setQ("");
     setFound([]);
+    setMovementType("in");
   };
 
   const save = async () => {
     if (!selected || !qty) return;
-    if (unitCost === "" || unitCost < 0) return;
+    if (Number(qty) <= 0) return;
 
-    const payload = {
-      productId: selected.id,
-      qty: Number(qty),
-      unitCost: Number(unitCost),
-      reference: "COMPRA",
-    };
+    try {
+      if (movementType === "in") {
+        if (unitCost === "" || Number(unitCost) < 0) return;
 
-    const r = await apiFetch(`/stock/in`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+        const payload = {
+          productId: selected.id,
+          qty: Number(qty),
+          unitCost: Number(unitCost),
+          reference: "COMPRA",
+        };
 
-    if (r.ok) {
-      setMsg("Ingreso registrado ✅");
-      resetAll();
-    } else {
-      const e = await r.json().catch(() => ({}));
-      setMsg("Error: " + (e?.error || "No se pudo registrar"));
+        const r = await apiFetch(`/stock/in`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          setMsg("Error: " + (e?.error || "No se pudo registrar el ingreso"));
+        } else {
+          setMsg("Ingreso registrado ✅");
+          resetAll();
+        }
+      } else {
+        // movementType === "out"
+        const payload = {
+          productId: selected.id,
+          qty: Number(qty),
+          reference: "AJUSTE",
+        };
+
+        const r = await apiFetch(`/stock/out`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          setMsg("Error: " + (e?.error || "No se pudo registrar la salida"));
+        } else {
+          setMsg("Salida de stock registrada ✅");
+          resetAll();
+        }
+      }
+    } catch {
+      setMsg("Error de comunicación con el servidor");
     }
+
     setTimeout(() => setMsg(""), 2500);
   };
 
@@ -134,9 +169,43 @@ export default function StockInPage() {
     return isNaN(n) ? "—" : `$${n.toLocaleString("es-CO")}`;
   };
 
+  const saveDisabled =
+    !selected ||
+    !qty ||
+    Number(qty) <= 0 ||
+    (movementType === "in" &&
+      (unitCost === "" || Number(unitCost) < 0 || isNaN(Number(unitCost))));
+
   return (
     <div className="max-w-3xl mx-auto text-gray-200 space-y-6">
-      <h1 className="text-2xl font-bold text-cyan-400">Ingreso de stock</h1>
+      <h1 className="text-2xl font-bold text-cyan-400">Ajuste de stock</h1>
+
+      {/* Selector tipo de movimiento */}
+      <div className="flex gap-3 items-center">
+        <span className="text-sm text-gray-300">Tipo de movimiento:</span>
+        <div className="flex gap-2">
+          <button
+            className={[
+              "px-3 py-1.5 rounded-lg text-sm",
+              movementType === "in" ? "bg-[#1E1F4B] text-cyan-300" : "border",
+            ].join(" ")}
+            style={{ borderColor: COLORS.border }}
+            onClick={() => setMovementType("in")}
+          >
+            Entrada
+          </button>
+          <button
+            className={[
+              "px-3 py-1.5 rounded-lg text-sm",
+              movementType === "out" ? "bg-[#1E1F4B] text-pink-300" : "border",
+            ].join(" ")}
+            style={{ borderColor: COLORS.border }}
+            onClick={() => setMovementType("out")}
+          >
+            Salida
+          </button>
+        </div>
+      </div>
 
       {/* Buscador */}
       <div
@@ -228,7 +297,7 @@ export default function StockInPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
             <div>
               <label className="block text-sm text-gray-300 mb-1">
-                Cantidad a ingresar
+                Cantidad a {movementType === "in" ? "ingresar" : "retirar"}
               </label>
               <input
                 className="rounded px-3 py-2 w-full text-gray-100 outline-none"
@@ -245,26 +314,28 @@ export default function StockInPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Nuevo costo unitario (COP)
-              </label>
-              <input
-                className="rounded px-3 py-2 w-full text-gray-100 outline-none"
-                style={{
-                  backgroundColor: COLORS.input,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-                type="number"
-                placeholder="Costo unitario"
-                value={unitCost}
-                onChange={(e) =>
-                  setUnitCost(
-                    e.target.value === "" ? "" : Number(e.target.value)
-                  )
-                }
-              />
-            </div>
+            {movementType === "in" && (
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">
+                  Nuevo costo unitario (COP)
+                </label>
+                <input
+                  className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  type="number"
+                  placeholder="Costo unitario"
+                  value={unitCost}
+                  onChange={(e) =>
+                    setUnitCost(
+                      e.target.value === "" ? "" : Number(e.target.value)
+                    )
+                  }
+                />
+              </div>
+            )}
 
             <div className="mt-2 sm:mt-0">
               <button
@@ -277,12 +348,7 @@ export default function StockInPage() {
                     "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={save}
-                disabled={
-                  !qty ||
-                  unitCost === "" ||
-                  Number(qty) <= 0 ||
-                  Number(unitCost) < 0
-                }
+                disabled={saveDisabled}
               >
                 Guardar
               </button>

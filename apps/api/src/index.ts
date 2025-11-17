@@ -834,6 +834,56 @@ app.post("/stock/in", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
+// ==================== STOCK OUT (ADMIN) ====================
+const stockOutSchema = z.object({
+  productId: z.coerce.number().int().positive(),
+  qty: z.coerce.number().int().positive(),
+  reference: z.string().optional(),
+});
+
+app.post("/stock/out", requireRole("ADMIN"), async (req, res) => {
+  const parsed = stockOutSchema.safeParse(req.body);
+  if (!parsed.success)
+    return res.status(400).json({ error: "Datos inválidos" });
+
+  const { productId, qty, reference } = parsed.data;
+
+  try {
+    const mov = await prisma.$transaction(async (tx) => {
+      const prevStock = await getCurrentStock(tx, productId);
+      if (prevStock < qty) {
+        throw new Error("Stock insuficiente para realizar la salida");
+      }
+
+      const prod = await tx.product.findUnique({
+        where: { id: productId },
+        select: { cost: true },
+      });
+      const unitCost = Number(prod?.cost ?? 0);
+
+      const m = await tx.stockMovement.create({
+        data: {
+          productId,
+          type: "out",
+          qty,
+          unitCost,
+          reference: reference ? U(reference) : "AJUSTE",
+        },
+      });
+
+      // No se toca el costo promedio en una salida manual
+      return m;
+    });
+
+    res.status(201).json(mov);
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    res.status(400).json({
+      error: err?.message || "No se pudo registrar la salida de stock",
+    });
+  }
+});
+
 // ==================== STOCK SUMMARY (EMPLOYEE) ====================
 app.get("/stock/summary", requireRole("EMPLOYEE"), async (_req, res) => {
   const rows = (await prisma.stockMovement.groupBy({
