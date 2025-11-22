@@ -143,12 +143,27 @@ model WorkOrder {
   payments      WorkOrderPayment[]                   // 👈 inversa para pagos
   informedCustomer Boolean @default(false)
 
-  // 👇 NUEVOS CAMPOS PARA GARANTÍAS
   isWarranty    Boolean   @default(false)
   parentId      Int?      // id del trabajo original (trazabilidad simple)
 
+  items         WorkItem[]
+
   @@index([status, location, createdAt])
   @@index([code])
+}
+
+model WorkItem {
+  id          Int        @id @default(autoincrement())
+  workOrder   WorkOrder  @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrderId Int
+
+  label       String
+  done        Boolean    @default(false)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([workOrderId])
 }
 
 model WorkOrderPayment {

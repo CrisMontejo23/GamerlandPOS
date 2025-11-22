@@ -31,7 +31,32 @@ type WorkOrder = {
   parentId?: number | null;
 };
 
-const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030" };
+type WorkPayment = {
+  id: number;
+  amount: number;
+  method: PayMethod;
+  note?: string | null;
+  createdAt: string;
+  createdBy?: string | null;
+};
+
+type WorkItem = {
+  id: number;
+  workOrderId: number;
+  label: string;
+  done: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const COLORS = {
+  bgCard: "#14163A",
+  border: "#1E1F4B",
+  input: "#0F1030",
+  cyan: "#00FFFF",
+  pink: "#FF00FF",
+  text: "#E5E5E5",
+};
 
 const niceStatus: Record<WorkStatus, string> = {
   RECEIVED: "RECIBIDO",
@@ -158,6 +183,9 @@ export default function WorksPage() {
   const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [finishAmount, setFinishAmount] = useState<string>("");
   const [finishTarget, setFinishTarget] = useState<WorkOrder | null>(null);
+  const [finishUseExtra, setFinishUseExtra] = useState<"NO" | "YES">("NO");
+  const [finishExtraDescription, setFinishExtraDescription] = useState("");
+  const [finishExtraValue, setFinishExtraValue] = useState("");
 
   // Editar COT/ABONO (abono persistente)
   const [editQDOpen, setEditQDOpen] = useState(false);
@@ -180,6 +208,31 @@ export default function WorksPage() {
   const [warrantyModalOpen, setWarrantyModalOpen] = useState(false);
   const [warrantyTarget, setWarrantyTarget] = useState<WorkOrder | null>(null);
   const [warrantyDescription, setWarrantyDescription] = useState("");
+
+  // Historial de abonos
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const [paymentsTarget, setPaymentsTarget] = useState<WorkOrder | null>(null);
+  const [payments, setPayments] = useState<WorkPayment[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [newPaymentAmount, setNewPaymentAmount] = useState("");
+  const [newPaymentMethod, setNewPaymentMethod] =
+    useState<PayMethod>("EFECTIVO");
+  const [newPaymentNote, setNewPaymentNote] = useState("");
+
+  // === CHECKLIST POR TRABAJO ===
+  const [itemsByWork, setItemsByWork] = useState<Record<number, WorkItem[]>>(
+    {}
+  );
+  const [itemsLoading, setItemsLoading] = useState<Record<number, boolean>>({});
+  const [itemsError, setItemsError] = useState<
+    Record<number, string | undefined>
+  >({});
+  const [newItemLabelByWork, setNewItemLabelByWork] = useState<
+    Record<number, string>
+  >({});
+  const [openChecklist, setOpenChecklist] = useState<Record<number, boolean>>(
+    {}
+  );
 
   function openEditDetails(w: WorkOrder) {
     setEditTarget(w);
@@ -331,32 +384,113 @@ export default function WorksPage() {
   };
 
   // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
-  const openFinish = async (w: WorkOrder) => {
-    if (w.quote != null) {
-      const dep = Number(w.deposit || 0);
-      const saldo = Math.max(Number(w.quote) - dep, 0);
-      await updateStatusAndNotify(w, "FINISHED", { total: saldo });
-      setMsg("TRABAJO FINALIZADO ✅");
-      return;
-    }
-    // (sigue el modal para los que no tienen cotización)
+  // FINALIZAR: siempre abre modal con opción de ajuste final
+  const openFinish = (w: WorkOrder) => {
     setFinishTarget(w);
-    setFinishAmount(w.total != null ? String(Number(w.total)) : "");
+
+    if (w.quote != null) {
+      setFinishAmount(String(Number(w.quote)));
+    } else if (w.total != null) {
+      setFinishAmount(String(Number(w.total)));
+    } else {
+      setFinishAmount("");
+    }
+
+    setFinishUseExtra("NO");
+    setFinishExtraDescription("");
+    setFinishExtraValue("");
     setFinishModalOpen(true);
   };
 
   const confirmFinish = async () => {
     if (!finishTarget) return;
-    const val = Number(finishAmount);
-    if (!Number.isFinite(val) || val < 0) {
-      setMsg("VALOR INVÁLIDO");
-      setTimeout(() => setMsg(""), 2000);
+    const w = finishTarget;
+    const dep = Number(w.deposit || 0);
+
+    // SIN info adicional: usa cotización/saldo o valor manual
+    if (finishUseExtra === "NO") {
+      let totalValue: number;
+
+      if (w.quote != null) {
+        const quoteNum = Number(w.quote);
+        if (!Number.isFinite(quoteNum) || quoteNum < 0) {
+          setMsg("COTIZACIÓN INVÁLIDA");
+          setTimeout(() => setMsg(""), 2200);
+          return;
+        }
+        totalValue = Math.max(quoteNum - dep, 0);
+      } else {
+        const val = Number(finishAmount);
+        if (!Number.isFinite(val) || val < 0) {
+          setMsg("VALOR INVÁLIDO");
+          setTimeout(() => setMsg(""), 2000);
+          return;
+        }
+        totalValue = val;
+      }
+
+      const ok = await update(w.id, {
+        status: "FINISHED",
+        total: totalValue,
+      });
+      if (!ok) return;
+
+      const wForMsg: WorkOrder = {
+        ...w,
+        status: "FINISHED",
+        total: totalValue,
+      };
+
+      openWhatsApp(w.customerPhone, buildStatusMsg(wForMsg, "FINISHED"));
+
+      setFinishModalOpen(false);
+      setFinishTarget(null);
+      setFinishAmount("");
+      await load();
       return;
     }
-    await updateStatusAndNotify(finishTarget, "FINISHED", { total: val });
+
+    // CON ajuste de descripción / valor
+    const extraValNum = Number(finishExtraValue || finishAmount);
+    if (!Number.isFinite(extraValNum) || extraValNum < 0) {
+      setMsg("VALOR FINAL INVÁLIDO");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    const finalDesc =
+      finishExtraDescription.trim() !== ""
+        ? finishExtraDescription
+        : w.description;
+
+    const newQuote = extraValNum;
+    const saldo = Math.max(newQuote - dep, 0);
+
+    const ok = await update(w.id, {
+      status: "FINISHED",
+      description: finalDesc,
+      quote: newQuote,
+      quotation: newQuote,
+      total: saldo,
+    });
+    if (!ok) return;
+
+    const wForMsg: WorkOrder = {
+      ...w,
+      status: "FINISHED",
+      description: finalDesc,
+      quote: newQuote,
+      total: saldo,
+    };
+
+    openWhatsApp(w.customerPhone, buildStatusMsg(wForMsg, "FINISHED"));
+
     setFinishModalOpen(false);
     setFinishTarget(null);
     setFinishAmount("");
+    setFinishExtraDescription("");
+    setFinishExtraValue("");
+    await load();
   };
 
   // Editar/Agregar COT y ABONO (abono se persiste via /works/:id/payments)
@@ -433,6 +567,184 @@ export default function WorksPage() {
     setEditQDOpen(false);
     resetEditQD();
     load();
+  }
+
+  async function openPaymentsModal(w: WorkOrder) {
+    setPaymentsTarget(w);
+    setPaymentsOpen(true);
+    setPayments([]);
+    setPaymentsLoading(true);
+    setNewPaymentAmount("");
+    setNewPaymentMethod("EFECTIVO");
+    setNewPaymentNote("");
+
+    try {
+      const r = await apiFetch(`/works/${w.id}/payments`);
+      if (!r.ok) throw new Error();
+      const data = (await r.json()) as WorkPayment[];
+      setPayments(data);
+    } catch {
+      setMsg("NO SE PUDIERON CARGAR LOS ABONOS");
+      setTimeout(() => setMsg(""), 2200);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
+
+  async function addPaymentFromModal() {
+    if (!paymentsTarget) return;
+    const amount = Number(newPaymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMsg("ABONO INVÁLIDO");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    try {
+      const r = await apiFetch(`/works/${paymentsTarget.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount,
+          method: newPaymentMethod,
+          note: newPaymentNote,
+          createdBy: username || undefined,
+        }),
+      });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        setMsg("ERROR AL REGISTRAR ABONO: " + UDATA(e?.error || ""));
+        setTimeout(() => setMsg(""), 2500);
+        return;
+      }
+
+      const created = (await r.json().catch(() => null)) as WorkPayment | null;
+      if (created) {
+        // lo ponemos al inicio (ya que el back ordena DESC por createdAt)
+        setPayments((prev) => [created, ...prev]);
+      }
+
+      setNewPaymentAmount("");
+      setNewPaymentNote("");
+      setMsg("ABONO REGISTRADO ✅");
+      setTimeout(() => setMsg(""), 1800);
+      await load(); // para refrescar depósito en las tarjetas
+    } catch {
+      setMsg("ERROR AL REGISTRAR ABONO");
+      setTimeout(() => setMsg(""), 2500);
+    }
+  }
+
+  async function deletePayment(paymentId: number) {
+    if (!canDelete) return;
+    if (!paymentsTarget) return;
+    if (!confirm("¿ELIMINAR ESTE ABONO? ESTA ACCIÓN ES PERMANENTE.")) return;
+
+    try {
+      const r = await apiFetch(
+        `/works/${paymentsTarget.id}/payments/${paymentId}`,
+        { method: "DELETE" }
+      );
+      if (!r.ok) throw new Error();
+
+      setPayments((prev) => prev.filter((p) => p.id !== paymentId));
+      setMsg("ABONO ELIMINADO ✅");
+      setTimeout(() => setMsg(""), 1800);
+      await load();
+    } catch {
+      setMsg("ERROR: NO SE PUDO ELIMINAR EL ABONO");
+      setTimeout(() => setMsg(""), 2500);
+    }
+  }
+
+  // ===== CHECKLIST HELPERS =====
+  async function loadWorkItems(workId: number) {
+    setItemsLoading((prev) => ({ ...prev, [workId]: true }));
+    try {
+      const r = await apiFetch(`/works/${workId}/items`);
+      if (!r.ok) throw new Error();
+      const data = (await r.json()) as WorkItem[];
+      setItemsByWork((prev) => ({ ...prev, [workId]: data }));
+      setItemsError((prev) => ({ ...prev, [workId]: undefined }));
+    } catch {
+      setItemsError((prev) => ({
+        ...prev,
+        [workId]: "NO SE PUDIERON CARGAR LAS TAREAS",
+      }));
+    } finally {
+      setItemsLoading((prev) => ({ ...prev, [workId]: false }));
+    }
+  }
+
+  async function addWorkItem(workId: number) {
+    const label = (newItemLabelByWork[workId] || "").trim();
+    if (!label) {
+      setMsg("ESCRIBE LA TAREA ANTES DE AGREGARLA");
+      setTimeout(() => setMsg(""), 2000);
+      return;
+    }
+
+    try {
+      const r = await apiFetch(`/works/${workId}/items`, {
+        method: "POST",
+        body: JSON.stringify({ label }),
+      });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        setMsg("ERROR AL CREAR TAREA: " + UDATA(e?.error || ""));
+        setTimeout(() => setMsg(""), 2200);
+        return;
+      }
+      const created = (await r.json()) as WorkItem;
+      setItemsByWork((prev) => ({
+        ...prev,
+        [workId]: prev[workId] ? [...prev[workId], created] : [created],
+      }));
+      setNewItemLabelByWork((prev) => ({ ...prev, [workId]: "" }));
+    } catch {
+      setMsg("ERROR AL CREAR TAREA");
+      setTimeout(() => setMsg(""), 2200);
+    }
+  }
+
+  function buildChecklistMsg(w: WorkOrder, label: string) {
+    return [
+      `Hola ${UU(w.customerName)} 🎮`,
+      `Avance en tu trabajo ${UU(w.code)}:`,
+      `✔ ${UU(label)}`,
+      `Te avisaremos cuando esté FINALIZADO.`,
+    ].join("\n");
+  }
+
+  async function toggleWorkItem(w: WorkOrder, item: WorkItem) {
+    const nextDone = !item.done;
+    try {
+      const r = await apiFetch(`/works/${w.id}/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ done: nextDone }),
+      });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        setMsg("ERROR AL ACTUALIZAR TAREA: " + UDATA(e?.error || ""));
+        setTimeout(() => setMsg(""), 2200);
+        return;
+      }
+
+      // Actualizar en memoria
+      setItemsByWork((prev) => ({
+        ...prev,
+        [w.id]: (prev[w.id] || []).map((it) =>
+          it.id === item.id ? { ...it, done: nextDone } : it
+        ),
+      }));
+
+      // Si se marcó como completada, mandar mensaje parcial al cliente
+      if (nextDone) {
+        openWhatsApp(w.customerPhone, buildChecklistMsg(w, item.label));
+      }
+    } catch {
+      setMsg("ERROR AL ACTUALIZAR TAREA");
+      setTimeout(() => setMsg(""), 2200);
+    }
   }
 
   async function markInformedAndNotify(w: WorkOrder) {
@@ -523,7 +835,13 @@ export default function WorksPage() {
     const quoteNum = w.quote != null ? Number(w.quote) : null;
     const saldo = quoteNum != null ? Math.max(quoteNum - dep, 0) : null;
 
-    if (newStatus === "IN_PROGRESS") return `${base} ahora está EN PROCESO. 👨‍🔧`;
+    if (newStatus === "IN_PROGRESS") {
+      return [
+        `Hola ${UU(w.customerName)} 🎮`,
+        `Tu trabajo ${base} ha entrado EN PROCESO. 👨‍🔧`,
+        `Cuando esté FINALIZADO te enviaremos otro mensaje para que puedas pasar a recoger tu equipo.`,
+      ].join("\n");
+    }
 
     if (newStatus === "FINISHED") {
       const lineas: string[] = [];
@@ -533,6 +851,8 @@ export default function WorksPage() {
           ? `Tu trabajo ${base} (GARANTÍA) está FINALIZADO. ✅`
           : `Tu trabajo ${base} está FINALIZADO. ✅`
       );
+
+      lineas.push(`Descripción del trabajo: ${UU(w.description)}`);
 
       if (!w.isWarranty && quoteNum != null) {
         lineas.push(
@@ -617,7 +937,7 @@ export default function WorksPage() {
       description: UDATA(desc),
       customerName: UDATA(warrantyTarget.customerName),
       customerPhone: UDATA(warrantyTarget.customerPhone),
-      location: warrantyTarget.location,
+      //location: warrantyTarget.location,
       quotation: null,
       quote: null,
       isWarranty: true,
@@ -723,6 +1043,124 @@ export default function WorksPage() {
               <b>NOTAS:</b> {UU(w.notes)}
             </div>
           )}
+
+          {/* CHECKLIST DE TAREAS */}
+          <section className="mt-2 pt-2 border-t border-white/10">
+            {(() => {
+              const checklistOpen = openChecklist[w.id] ?? false;
+              const items = itemsByWork[w.id] || [];
+              const loadingItems = itemsLoading[w.id];
+              const errorItems = itemsError[w.id];
+              const draft = newItemLabelByWork[w.id] || "";
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs uppercase text-gray-300">
+                    <span className="font-semibold">CHECKLIST</span>
+                    <button
+                      className="px-2 py-0.5 rounded border text-[11px]"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => {
+                        const next = !checklistOpen;
+                        setOpenChecklist((prev) => ({ ...prev, [w.id]: next }));
+                        if (next && !itemsByWork[w.id] && !itemsLoading[w.id]) {
+                          // carga perezosa
+                          loadWorkItems(w.id);
+                        }
+                      }}
+                    >
+                      {checklistOpen ? "OCULTAR" : "VER"}
+                    </button>
+                  </div>
+
+                  {checklistOpen && (
+                    <div className="space-y-2">
+                      {/* Input para nueva tarea */}
+                      <div className="flex gap-2 items-center">
+                        <input
+                          className="flex-1 rounded px-2 py-1 text-[11px] text-gray-100 uppercase"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          placeholder="AGREGAR TAREA (EJ: REVISAR FUENTE, LIMPIEZA INTERNA...)"
+                          value={draft}
+                          onChange={(e) =>
+                            setNewItemLabelByWork((prev) => ({
+                              ...prev,
+                              [w.id]: UU(e.target.value),
+                            }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addWorkItem(w.id);
+                            }
+                          }}
+                        />
+                        <button
+                          className="px-3 py-1 rounded text-[11px] font-semibold uppercase"
+                          style={{
+                            color: "#001014",
+                            background:
+                              "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                          }}
+                          onClick={() => addWorkItem(w.id)}
+                        >
+                          + TAREA
+                        </button>
+                      </div>
+
+                      {loadingItems && (
+                        <div className="text-[11px] text-gray-400">
+                          CARGANDO TAREAS…
+                        </div>
+                      )}
+
+                      {errorItems && (
+                        <div className="text-[11px] text-pink-300">
+                          {errorItems}
+                        </div>
+                      )}
+
+                      {!loadingItems && items.length === 0 && !errorItems && (
+                        <div className="text-[11px] text-gray-400">
+                          Sin tareas registradas. Agrega la primera arriba.
+                        </div>
+                      )}
+
+                      {items.length > 0 && (
+                        <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                          {items.map((it) => (
+                            <li
+                              key={it.id}
+                              className="flex items-center gap-2 text-[11px] text-gray-200"
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3 accent-cyan-400"
+                                checked={it.done}
+                                onChange={() => toggleWorkItem(w, it)}
+                              />
+                              <span
+                                className={
+                                  it.done
+                                    ? "line-through text-gray-500"
+                                    : "text-gray-200"
+                                }
+                              >
+                                {UU(it.label)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </section>
         </div>
 
         {/* Botonera según estado (sin retornos) */}
@@ -797,17 +1235,13 @@ export default function WorksPage() {
               {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
             </button>
 
-            {/* Toggle ubicación */}
             <button
               className="px-3 py-1 rounded border text-xs uppercase"
               style={{ borderColor: COLORS.border }}
-              onClick={() =>
-                update(w.id, {
-                  location: w.location === "LOCAL" ? "BOGOTA" : "LOCAL",
-                })
-              }
+              onClick={() => openPaymentsModal(w)}
+              title="Ver historial de abonos"
             >
-              {w.location === "LOCAL" ? "→ BOGOTÁ" : "→ LOCAL"}
+              ABONOS
             </button>
 
             {/* Eliminar (solo ADMIN) */}
@@ -833,6 +1267,15 @@ export default function WorksPage() {
               title="Ver historial y crear nueva orden por garantía"
             >
               GARANTÍA
+            </button>
+
+            <button
+              className="px-3 py-1 rounded border text-xs uppercase"
+              style={{ borderColor: COLORS.border }}
+              onClick={() => openPaymentsModal(w)}
+              title="Ver historial de abonos"
+            >
+              ABONOS
             </button>
 
             {canDelete && (
@@ -1036,22 +1479,18 @@ export default function WorksPage() {
               </div>
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  UBICACIÓN *
+                  DESCRIPCIÓN DEL CASO *
                 </label>
-                <select
+                <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
                   }}
-                  value={newLocation}
-                  onChange={(e) =>
-                    setNewLocation(e.target.value as WorkLocation)
-                  }
-                >
-                  <option value="LOCAL">EN LOCAL</option>
-                  <option value="BOGOTA">EN BOGOTÁ</option>
-                </select>
+                  placeholder="NO PRENDE / MANTENIMIENTO / ACTUALIZACIÓN / JOYSTICK DERECHO..."
+                  value={description}
+                  onChange={(e) => setDescription(UU(e.target.value))}
+                />
               </div>
 
               {/* COTIZACIÓN (crear) */}
@@ -1365,6 +1804,66 @@ export default function WorksPage() {
               placeholder="0"
               autoFocus
             />
+
+            <div className="mt-3">
+              <label className="block text-sm mb-1 uppercase">
+                ¿AGREGAR DESCRIPCIÓN / VALOR FINAL?
+              </label>
+              <select
+                className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                value={finishUseExtra}
+                onChange={(e) =>
+                  setFinishUseExtra(e.target.value as "YES" | "NO")
+                }
+              >
+                <option value="NO">NO</option>
+                <option value="YES">SÍ</option>
+              </select>
+            </div>
+
+            {finishUseExtra === "YES" && (
+              <div className="grid grid-cols-1 gap-3 mt-2">
+                <div>
+                  <label className="block text-sm mb-1 uppercase">
+                    DESCRIPCIÓN FINAL DEL TRABAJO
+                  </label>
+                  <input
+                    className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    value={finishExtraDescription}
+                    onChange={(e) =>
+                      setFinishExtraDescription(UU(e.target.value))
+                    }
+                    placeholder="EJ: CAMBIO DE DISCO Y FORMATEO, REPARACIÓN EXTRA, ETC."
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1 uppercase">
+                    VALOR FINAL (SOBREESCRIBE LA COTIZACIÓN)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className="w-full rounded px-3 py-2 text-gray-100"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    value={finishExtraValue}
+                    onChange={(e) => setFinishExtraValue(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-1">
               <button
@@ -1768,6 +2267,171 @@ export default function WorksPage() {
                 onClick={createWarrantyOrder}
               >
                 CREAR ORDEN DE GARANTÍA
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ABONOS */}
+      {paymentsOpen && paymentsTarget && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-xl rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payments-title"
+          >
+            <h3
+              id="payments-title"
+              className="text-lg font-semibold text-cyan-300 uppercase"
+            >
+              ABONOS — {UU(paymentsTarget.code)}
+            </h3>
+
+            {/* Formulario para nuevo abono */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div>
+                <label className="block mb-1 uppercase">VALOR ABONO</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  className="w-full rounded px-2 py-1 text-gray-100"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={newPaymentAmount}
+                  onChange={(e) => setNewPaymentAmount(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block mb-1 uppercase">MÉTODO</label>
+                <select
+                  className="w-full rounded px-2 py-1 text-gray-100 uppercase"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={newPaymentMethod}
+                  onChange={(e) =>
+                    setNewPaymentMethod(e.target.value as PayMethod)
+                  }
+                >
+                  <option value="EFECTIVO">EFECTIVO</option>
+                  <option value="QR_LLAVE">QR_LLAVE</option>
+                  <option value="DATAFONO">DATAFONO</option>
+                </select>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block mb-1 uppercase">NOTA (opcional)</label>
+                <input
+                  className="w-full rounded px-2 py-1 text-gray-100 uppercase"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={newPaymentNote}
+                  onChange={(e) => setNewPaymentNote(UU(e.target.value))}
+                  placeholder="ABONO A COTIZACIÓN / ACEPTACIÓN / ..."
+                />
+              </div>
+              <div className="md:col-span-3 flex justify-end">
+                <button
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold uppercase"
+                  style={{
+                    color: "#001014",
+                    background:
+                      "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                    boxShadow:
+                      "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                  }}
+                  onClick={addPaymentFromModal}
+                >
+                  REGISTRAR ABONO
+                </button>
+              </div>
+            </div>
+
+            <hr className="border-white/10" />
+
+            {paymentsLoading && (
+              <div className="text-sm text-gray-300">CARGANDO ABONOS…</div>
+            )}
+
+            {!paymentsLoading && payments.length === 0 && (
+              <div className="text-sm text-gray-400">
+                Este trabajo no tiene abonos registrados.
+              </div>
+            )}
+
+            {!paymentsLoading && payments.length > 0 && (
+              <div className="max-h-64 overflow-y-auto text-sm">
+                <table className="w-full text-xs">
+                  <thead className="text-gray-400 border-b border-white/10">
+                    <tr>
+                      <th className="text-left py-1 pr-2">FECHA</th>
+                      <th className="text-right py-1 pr-2">VALOR</th>
+                      <th className="text-left py-1 pr-2">MÉTODO</th>
+                      <th className="text-left py-1 pr-2">NOTA</th>
+                      <th className="text-left py-1">USUARIO</th>
+                      {canDelete && (
+                        <th className="py-1 text-right">ACCIONES</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map((p) => (
+                      <tr
+                        key={p.id}
+                        className="border-b border-white/5 last:border-b-0"
+                      >
+                        <td className="py-1 pr-2">{fmt(p.createdAt)}</td>
+                        <td className="py-1 pr-2 text-right">
+                          {toCOP(p.amount)}
+                        </td>
+                        <td className="py-1 pr-2">{p.method}</td>
+                        <td className="py-1 pr-2">
+                          {p.note ? UU(p.note) : "—"}
+                        </td>
+                        <td className="py-1 pr-2">
+                          {p.createdBy ? UU(p.createdBy) : "—"}
+                        </td>
+                        {canDelete && (
+                          <td className="py-1 text-right">
+                            <button
+                              className="px-2 py-0.5 rounded border text-[11px] text-pink-400 uppercase"
+                              style={{ borderColor: COLORS.border }}
+                              onClick={() => deletePayment(p.id)}
+                            >
+                              ELIMINAR
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase text-xs"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => {
+                  setPaymentsOpen(false);
+                  setPaymentsTarget(null);
+                  setPayments([]);
+                }}
+              >
+                CERRAR
               </button>
             </div>
           </div>

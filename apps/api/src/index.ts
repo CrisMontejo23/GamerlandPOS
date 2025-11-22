@@ -1491,6 +1491,15 @@ const workPaymentSchema = z.object({
   createdBy: z.string().optional(),
 });
 
+const workItemCreateSchema = z.object({
+  label: z.string().min(1, "Texto requerido"),
+});
+
+const workItemUpdateSchema = z.object({
+  label: z.string().min(1).optional(),
+  done: z.coerce.boolean().optional(),
+});
+
 app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const q = String(req.query.q || "").trim();
   const status = String(req.query.status || "").toUpperCase();
@@ -1604,6 +1613,174 @@ app.get("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
   });
   res.json(pays);
 });
+
+app.delete(
+  "/works/:workId/payments/:paymentId",
+  requireRole("ADMIN"),
+  async (req, res) => {
+    const workId = Number(req.params.workId);
+    const paymentId = Number(req.params.paymentId);
+
+    if (!Number.isInteger(workId) || !Number.isInteger(paymentId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    try {
+      // Verificamos que el pago exista y pertenezca a esa orden
+      const pay = await prisma.workOrderPayment.findUnique({
+        where: { id: paymentId },
+        select: { id: true, workOrderId: true },
+      });
+
+      if (!pay || pay.workOrderId !== workId) {
+        return res.status(404).json({ error: "Abono no encontrado" });
+      }
+
+      // Eliminamos el abono
+      await prisma.workOrderPayment.delete({ where: { id: paymentId } });
+
+      // Recalculamos el depósito total de la orden
+      const agg = await prisma.workOrderPayment.aggregate({
+        where: { workOrderId: workId },
+        _sum: { amount: true },
+      });
+
+      const newDeposit = Number(agg._sum.amount ?? 0);
+
+      await prisma.workOrder.update({
+        where: { id: workId },
+        data: { deposit: newDeposit },
+      });
+
+      res.json({
+        ok: true,
+        workOrderId: workId,
+        paymentId,
+        deposit: newDeposit,
+      });
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo eliminar el abono" });
+    }
+  }
+);
+
+app.get(
+  "/works/:id/items",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    const wo = await prisma.workOrder.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!wo) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    const items = await prisma.workItem.findMany({
+      where: { workOrderId: id },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json(items);
+  }
+);
+
+app.post(
+  "/works/:id/items",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    const parsed = workItemCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Datos inválidos",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const wo = await prisma.workOrder.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!wo) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    const item = await prisma.workItem.create({
+      data: {
+        workOrderId: id,
+        label: U(parsed.data.label),
+      },
+    });
+
+    res.status(201).json(item);
+  }
+);
+
+app.patch(
+  "/works/:workId/items/:itemId",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const workId = Number(req.params.workId);
+    const itemId = Number(req.params.itemId);
+
+    if (!Number.isInteger(workId) || !Number.isInteger(itemId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    const parsed = workItemUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Datos inválidos",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    try {
+      // opcional: garantizar que pertenece a esa orden
+      const existing = await prisma.workItem.findUnique({
+        where: { id: itemId },
+        select: { id: true, workOrderId: true },
+      });
+
+      if (!existing || existing.workOrderId !== workId) {
+        return res.status(404).json({ error: "Ítem no encontrado" });
+      }
+
+      const data: Prisma.WorkItemUpdateInput = {};
+      if (parsed.data.label !== undefined) {
+        data.label = U(parsed.data.label);
+      }
+      if (parsed.data.done !== undefined) {
+        data.done = parsed.data.done;
+      }
+
+      const updated = await prisma.workItem.update({
+        where: { id: itemId },
+        data,
+      });
+
+      res.json(updated);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res.status(400).json({
+        error: err?.message || "No se pudo actualizar el ítem",
+      });
+    }
+  }
+);
 
 app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const parsed = workCreateSchema.safeParse(req.body);
