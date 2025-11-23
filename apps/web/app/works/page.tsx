@@ -170,7 +170,6 @@ export default function WorksPage() {
 
   // Crear
   const [openForm, setOpenForm] = useState(false);
-  const [item, setItem] = useState("");
   const [description, setDescription] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -181,11 +180,12 @@ export default function WorksPage() {
   const [depositValue, setDepositValue] = useState<string>("");
   const [depositMethod, setDepositMethod] = useState<PayMethod>("EFECTIVO");
 
-  // Productos iniciales para un nuevo trabajo
-  type NewProductRow = { id: number; label: string; description: string };
-  const [initialProducts, setInitialProducts] = useState<NewProductRow[]>([]);
-  const [draftProductLabel, setDraftProductLabel] = useState("");
-  const [draftProductDescription, setDraftProductDescription] = useState("");
+  // PRODUCTOS RECIBIDOS (dinámicos)
+  type ProductRow = { id: number; label: string; description: string };
+
+  const [productRows, setProductRows] = useState<ProductRow[]>([
+    { id: Date.now(), label: "", description: "" }, // fila mínima
+  ]);
 
   // Modal gamer para valor del arreglo de un producto
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -251,6 +251,25 @@ export default function WorksPage() {
     {}
   );
 
+  function addProductRow() {
+    setProductRows((prev) => [
+      ...prev,
+      { id: Date.now(), label: "", description: "" },
+    ]);
+  }
+
+  function updateProductRow(
+    id: number,
+    field: "label" | "description",
+    value: string
+  ) {
+    setProductRows((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, [field]: value.toUpperCase() } : row
+      )
+    );
+  }
+
   function openEditDetails(w: WorkOrder) {
     setEditTarget(w);
     setEditItem(UU(w.item));
@@ -278,7 +297,6 @@ export default function WorksPage() {
   }
 
   function resetForm() {
-    setItem("");
     setDescription("");
     setCustomerName("");
     setCustomerPhone("");
@@ -288,9 +306,9 @@ export default function WorksPage() {
     setHasDeposit("NO");
     setDepositValue("");
     setDepositMethod("EFECTIVO");
-    setInitialProducts([]);
-    setDraftProductLabel("");
-    setDraftProductDescription("");
+
+    // resetear productos recibidos: mínimo una fila vacía
+    setProductRows([{ id: Date.now(), label: "", description: "" }]);
   }
 
   function resetEditQD() {
@@ -1607,142 +1625,68 @@ export default function WorksPage() {
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm mb-1 uppercase">
-                  ¿QUÉ SE RECIBE? *
-                </label>
-                <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  placeholder="EJ: XBOX 360, CONTROL"
-                  value={item}
-                  onChange={(e) => setItem(UU(e.target.value))}
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1 uppercase">
-                  DESCRIPCIÓN DEL CASO *
-                </label>
-                <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  placeholder="NO PRENDE / MANTENIMIENTO / ACTUALIZACIÓN / JOYSTICK DERECHO..."
-                  value={description}
-                  onChange={(e) => setDescription(UU(e.target.value))}
-                />
-              </div>
-
               {/* PRODUCTOS RECIBIDOS */}
               <div className="md:col-span-2 space-y-2 mt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold uppercase">
-                    PRODUCTOS RECIBIDOS
-                  </span>
-                  {initialProducts.length > 0 && (
-                    <span className="text-[11px] text-gray-400 uppercase">
-                      {initialProducts.length} producto
-                      {initialProducts.length > 1 ? "s" : ""} agregado
-                      {initialProducts.length > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
+                <span className="text-sm font-semibold uppercase">
+                  PRODUCTOS RECIBIDOS
+                </span>
 
-                <div className="grid grid-cols-1 md:grid-cols-[1.3fr,1.7fr,auto] gap-2">
-                  <input
-                    className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
-                    style={{
-                      backgroundColor: COLORS.input,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                    placeholder="QUÉ SE RECIBE (EJ: CONTROL, CONSOLA...)"
-                    value={draftProductLabel}
-                    onChange={(e) => setDraftProductLabel(UU(e.target.value))}
-                  />
-                  <input
-                    className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
-                    style={{
-                      backgroundColor: COLORS.input,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                    placeholder="DESCRIPCIÓN (COLOR, ESTADO, DETALLE...)"
-                    value={draftProductDescription}
-                    onChange={(e) =>
-                      setDraftProductDescription(UU(e.target.value))
-                    }
-                  />
-                  <button
-                    className="px-3 py-2 rounded text-[11px] font-semibold uppercase mt-1 md:mt-0"
-                    style={{
-                      color: "#001014",
-                      background:
-                        "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                      boxShadow:
-                        "0 0 12px rgba(0,255,255,.25), 0 0 20px rgba(255,0,255,.25)",
-                    }}
-                    onClick={() => {
-                      const lbl = draftProductLabel.trim();
-                      if (!lbl) {
-                        setMsg("INGRESA QUÉ SE RECIBE DEL PRODUCTO");
-                        setTimeout(() => setMsg(""), 2000);
-                        return;
-                      }
-                      setInitialProducts((prev) => [
-                        ...prev,
-                        {
-                          id: Date.now(),
-                          label: UDATA(lbl),
-                          description: UDATA(draftProductDescription.trim()),
-                        },
-                      ]);
-                      setDraftProductLabel("");
-                      setDraftProductDescription("");
-                    }}
+                {productRows.map((row, index) => (
+                  <div
+                    key={row.id}
+                    className="grid grid-cols-1 md:grid-cols-[1.5fr,1.5fr,auto] gap-2"
                   >
-                    + PRODUCTO
-                  </button>
-                </div>
+                    {/* QUÉ SE RECIBE */}
+                    <input
+                      value={row.label}
+                      onChange={(e) =>
+                        updateProductRow(row.id, "label", e.target.value)
+                      }
+                      placeholder="QUÉ SE RECIBE (EJ: CONTROL, CONSOLA...)"
+                      className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                    />
 
-                {initialProducts.length === 0 && (
+                    {/* DESCRIPCIÓN */}
+                    <input
+                      value={row.description}
+                      onChange={(e) =>
+                        updateProductRow(row.id, "description", e.target.value)
+                      }
+                      placeholder="DESCRIPCIÓN (COLOR, ESTADO, DETALLE...)"
+                      className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                    />
+
+                    {/* + PRODUCTO solo en la última fila */}
+                    {index === productRows.length - 1 && (
+                      <button
+                        className="px-3 py-2 rounded text-[11px] font-semibold uppercase mt-1 md:mt-0"
+                        style={{
+                          color: "#001014",
+                          background:
+                            "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                          boxShadow:
+                            "0 0 12px rgba(0,255,255,.25), 0 0 20px rgba(255,0,255,.25)",
+                        }}
+                        onClick={addProductRow}
+                      >
+                        + PRODUCTO
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {productRows.length === 0 && (
                   <p className="text-[11px] text-gray-400 uppercase">
                     Sin productos registrados. Agrega el primero arriba.
                   </p>
-                )}
-
-                {initialProducts.length > 0 && (
-                  <ul className="max-h-32 overflow-y-auto space-y-1 text-[11px] text-gray-200">
-                    {initialProducts.map((p) => (
-                      <li
-                        key={p.id}
-                        className="flex items-center justify-between gap-2 border border-white/10 rounded px-2 py-1"
-                      >
-                        <div className="flex-1">
-                          <span className="font-semibold">{UU(p.label)}</span>
-                          {p.description && (
-                            <span className="ml-1 text-gray-300">
-                              — {UU(p.description)}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          className="text-[10px] px-2 py-0.5 rounded border text-pink-300 uppercase"
-                          style={{ borderColor: COLORS.border }}
-                          onClick={() =>
-                            setInitialProducts((prev) =>
-                              prev.filter((x) => x.id !== p.id)
-                            )
-                          }
-                        >
-                          quitar
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
                 )}
               </div>
 
@@ -1931,12 +1875,21 @@ export default function WorksPage() {
                 onClick={async () => {
                   // Validación básica
                   if (
-                    !item.trim() ||
                     !description.trim() ||
                     !customerName.trim() ||
                     !customerPhone.trim()
                   ) {
                     setMsg("FALTAN CAMPOS OBLIGATORIOS");
+                    setTimeout(() => setMsg(""), 2200);
+                    return;
+                  }
+
+                  // validar productos recibidos
+                  if (
+                    productRows.length === 0 ||
+                    productRows.some((p) => !p.label.trim())
+                  ) {
+                    setMsg("AGREGA AL MENOS UN PRODUCTO (QUÉ SE RECIBE)");
                     setTimeout(() => setMsg(""), 2200);
                     return;
                   }
@@ -1964,9 +1917,12 @@ export default function WorksPage() {
                     }
                   }
 
+                  const firstProduct = productRows[0];
+                  const mainItemLabel = firstProduct?.label || "PRODUCTO";
+
                   const payload: Patch = {
-                    item: UDATA(item),
-                    description: UDATA(description),
+                    item: UDATA(mainItemLabel), // EQUIPO se toma del primer producto
+                    description: UDATA(description), // descripción general del caso
                     customerName: UDATA(customerName),
                     customerPhone: UDATA(customerPhone),
                     location: newLocation,
@@ -1988,9 +1944,9 @@ export default function WorksPage() {
                       const workId = created.id;
 
                       // 👇 crear productos iniciales (PRODUCTOS RECIBIDOS)
-                      if (initialProducts.length > 0) {
+                      if (productRows.length > 0) {
                         await Promise.all(
-                          initialProducts.map((p) => {
+                          productRows.map((p) => {
                             const fullLabel = p.description
                               ? `${UDATA(p.label)} — ${UDATA(p.description)}`
                               : UDATA(p.label);
