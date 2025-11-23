@@ -43,10 +43,10 @@ type WorkPayment = {
 type WorkItem = {
   id: number;
   workOrderId: number;
-  label: string; // NOMBRE DEL PRODUCTO (CONTROL, CONSOLA, ETC.)
+  label: string;
   done: boolean;
-  price?: number | null; // 👈 valor del arreglo de ESTE producto
-  detail?: string | null; // 👈 descripción específica del producto
+  price?: number | string | null; // 👈 puede venir como string o número
+  detail?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -872,8 +872,8 @@ export default function WorksPage() {
       if (pending.length === 0) {
         // 👉 ESTE ERA EL ÚLTIMO PRODUCTO: FINALIZAR TRABAJO Y ENVIAR MENSAJE GLOBAL
         const totalProducts = updatedItems.reduce((sum, it) => {
-          const p = it.price != null ? Number(it.price) : 0;
-          return Number.isFinite(p) ? sum + p : sum;
+          const p = toNum(it.price);
+          return p != null ? sum + p : sum;
         }, 0);
 
         const depAll = Number(w.deposit || 0);
@@ -1073,8 +1073,10 @@ export default function WorksPage() {
     items.forEach((it, idx) => {
       const partes: string[] = [`${idx + 1}. ${UU(it.label)}`];
       if (it.detail) partes.push(`Trabajo: ${UU(it.detail)}`);
-      if (typeof it.price === "number")
-        partes.push(`Valor: ${toCOP(it.price)}`);
+      const priceNum = toNum(it.price);
+      if (priceNum != null) {
+        partes.push(`Valor: ${toCOP(priceNum)}`);
+      }
       lineas.push(partes.join(" — "));
     });
 
@@ -1338,9 +1340,10 @@ export default function WorksPage() {
         </div>
 
         {/* CHECKLIST DE TAREAS */}
+        {/* CHECKLIST DE TAREAS */}
         <section className="mt-2 pt-2 border-t border-white/10">
           {(() => {
-            const checklistOpen = openChecklist[w.id] ?? false;
+            const inputOpen = openChecklist[w.id] ?? false;
             const items = itemsByWork[w.id] || [];
             const loadingItems = itemsLoading[w.id];
             const errorItems = itemsError[w.id];
@@ -1354,109 +1357,106 @@ export default function WorksPage() {
                     className="px-2 py-0.5 rounded border text-[11px]"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => {
-                      const next = !checklistOpen;
+                      const next = !inputOpen;
                       setOpenChecklist((prev) => ({ ...prev, [w.id]: next }));
-                      if (next && !itemsByWork[w.id] && !itemsLoading[w.id]) {
-                        // carga perezosa
+                      if (!itemsByWork[w.id] && !itemsLoading[w.id]) {
+                        // carga perezosa si aún no tenemos items
                         loadWorkItems(w.id);
                       }
                     }}
                   >
-                    {checklistOpen ? "OCULTAR" : "VER"}
+                    {inputOpen ? "CANCELAR" : "+ PRODUCTO"}
                   </button>
                 </div>
 
-                {checklistOpen && (
-                  <div className="space-y-2">
-                    {/* Input para nueva tarea */}
-                    <div className="flex gap-2 items-center">
-                      <input
-                        className="flex-1 rounded px-2 py-1 text-[11px] text-gray-100 uppercase"
-                        style={{
-                          backgroundColor: COLORS.input,
-                          border: `1px solid ${COLORS.border}`,
-                        }}
-                        placeholder="AGREGAR PRODUCTO (EJ: CONTROL, CONSOLA, CABLE HDMI...)"
-                        value={draft}
-                        onChange={(e) =>
-                          setNewItemLabelByWork((prev) => ({
-                            ...prev,
-                            [w.id]: UU(e.target.value),
-                          }))
+                {/* Input para nuevo producto SOLO cuando se abre el botón */}
+                {inputOpen && (
+                  <div className="flex gap-2 items-center">
+                    <input
+                      className="flex-1 rounded px-2 py-1 text-[11px] text-gray-100 uppercase"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      placeholder="AGREGAR PRODUCTO (EJ: CONTROL, CONSOLA, CABLE HDMI...)"
+                      value={draft}
+                      onChange={(e) =>
+                        setNewItemLabelByWork((prev) => ({
+                          ...prev,
+                          [w.id]: UU(e.target.value),
+                        }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addWorkItem(w.id);
                         }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addWorkItem(w.id);
-                          }
-                        }}
-                      />
-                      <button
-                        className="px-3 py-1 rounded text-[11px] font-semibold uppercase"
-                        style={{
-                          color: "#001014",
-                          background:
-                            "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                        }}
-                        onClick={() => addWorkItem(w.id)}
-                      >
-                        + PRODUCTO
-                      </button>
-                    </div>
-
-                    {loadingItems && (
-                      <div className="text-[11px] text-gray-400">
-                        CARGANDO PRODUCTOS…
-                      </div>
-                    )}
-
-                    {errorItems && (
-                      <div className="text-[11px] text-pink-300">
-                        {errorItems}
-                      </div>
-                    )}
-
-                    {!loadingItems && items.length === 0 && !errorItems && (
-                      <div className="text-[11px] text-gray-400">
-                        Sin productos registrados. Agrega el primero arriba.
-                      </div>
-                    )}
-
-                    {items.length > 0 && (
-                      <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                        {items.map((it) => (
-                          <li
-                            key={it.id}
-                            className="flex items-center gap-2 text-[11px] text-gray-200"
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-3 w-3 accent-cyan-400"
-                              checked={it.done}
-                              onChange={() => toggleWorkItem(w, it)}
-                            />
-                            <div className="flex flex-col">
-                              <span
-                                className={
-                                  it.done
-                                    ? "line-through text-gray-500"
-                                    : "text-gray-200"
-                                }
-                              >
-                                {UU(it.label)}
-                              </span>
-
-                              {it.detail && (
-                                <span className="text-[10px] text-cyan-300 ml-4">
-                                  {UU(it.detail)}
-                                </span>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                      }}
+                    />
+                    <button
+                      className="px-3 py-1 rounded text-[11px] font-semibold uppercase"
+                      style={{
+                        color: "#001014",
+                        background:
+                          "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                      }}
+                      onClick={() => addWorkItem(w.id)}
+                    >
+                      GUARDAR
+                    </button>
                   </div>
+                )}
+
+                {/* Estas partes SIEMPRE visibles */}
+                {loadingItems && (
+                  <div className="text-[11px] text-gray-400">
+                    CARGANDO PRODUCTOS…
+                  </div>
+                )}
+
+                {errorItems && (
+                  <div className="text-[11px] text-pink-300">{errorItems}</div>
+                )}
+
+                {!loadingItems && items.length === 0 && !errorItems && (
+                  <div className="text-[11px] text-gray-400">
+                    Sin productos registrados.
+                  </div>
+                )}
+
+                {items.length > 0 && (
+                  <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                    {items.map((it) => (
+                      <li
+                        key={it.id}
+                        className="flex items-center gap-2 text-[11px] text-gray-200"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-3 w-3 accent-cyan-400"
+                          checked={it.done}
+                          onChange={() => toggleWorkItem(w, it)}
+                        />
+                        <div className="flex flex-col">
+                          <span
+                            className={
+                              it.done
+                                ? "line-through text-gray-500"
+                                : "text-gray-200"
+                            }
+                          >
+                            {UU(it.label)}
+                          </span>
+
+                          {it.detail && (
+                            <span className="text-[10px] text-cyan-300 ml-4">
+                              {UU(it.detail)}
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             );
