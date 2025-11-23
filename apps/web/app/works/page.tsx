@@ -329,23 +329,27 @@ export default function WorksPage() {
   }
 
   const load = async () => {
-    setLoading(true);
-    try {
-      const p = new URLSearchParams();
-      // El estado ahora se filtra en el front para poder mostrar columnas
-      if (location) p.set("location", location);
-      if (q.trim()) p.set("q", UDATA(q));
+  setLoading(true);
+  try {
+    const p = new URLSearchParams();
+    if (location) p.set("location", location);
+    if (q.trim()) p.set("q", UDATA(q));
 
-      const r = await apiFetch(`/works?${p.toString()}`);
-      const data = (await r.json()) as AnyRow[];
-      setRows(normalizeRows(data));
-    } catch {
-      setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
-      setTimeout(() => setMsg(""), 2200);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const r = await apiFetch(`/works?${p.toString()}`);
+    const data = (await r.json()) as AnyRow[];
+
+    const works = normalizeRows(data);
+    setRows(works);
+
+    // 👇 precargar productos y contar para que #PRODUCTOS esté de una vez
+    preloadItemsCounts(works);
+  } catch {
+    setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
+    setTimeout(() => setMsg(""), 2200);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (!ready) return;
@@ -913,6 +917,30 @@ export default function WorksPage() {
     await load();
     openWhatsApp(w.customerPhone, buildReceivedMsg(w, items));
   }
+
+  async function preloadItemsCounts(works: WorkOrder[]) {
+  try {
+    await Promise.all(
+      works.map(async (w) => {
+        try {
+          const r = await apiFetch(`/works/${w.id}/items`);
+          if (!r.ok) return;
+          const data = (await r.json()) as WorkItem[];
+
+          setItemsByWork((prev) => ({ ...prev, [w.id]: data }));
+          setProductsCountByWork((prev) => ({
+            ...prev,
+            [w.id]: data.length,
+          }));
+        } catch {
+          // si falla alguno, lo ignoramos
+        }
+      })
+    );
+  } catch {
+    // noop
+  }
+}
 
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
     { key: "", label: "TODOS" },
