@@ -43,8 +43,10 @@ type WorkPayment = {
 type WorkItem = {
   id: number;
   workOrderId: number;
-  label: string;
+  label: string; // NOMBRE DEL PRODUCTO (CONTROL, CONSOLA, ETC.)
   done: boolean;
+  price?: number | null; // 👈 valor del arreglo de ESTE producto
+  detail?: string | null; // 👈 descripción específica del producto
   createdAt: string;
   updatedAt: string;
 };
@@ -196,6 +198,7 @@ export default function WorksPage() {
   const [editDepositValue, setEditDepositValue] = useState<string>("");
   const [editDepositMethod, setEditDepositMethod] =
     useState<PayMethod>("EFECTIVO");
+  const [initialItemsText, setInitialItemsText] = useState("");
   const [editDepositNote, setEditDepositNote] = useState<string>("");
 
   // === Editar DESCRIPCIÓN / ITEM ===
@@ -271,6 +274,7 @@ export default function WorksPage() {
     setHasDeposit("NO");
     setDepositValue("");
     setDepositMethod("EFECTIVO");
+    setInitialItemsText("");
   }
   function resetEditQD() {
     setEditQDTarget(null);
@@ -704,45 +708,102 @@ export default function WorksPage() {
       setMsg("ERROR AL CREAR TAREA");
       setTimeout(() => setMsg(""), 2200);
     }
-  }
-
-  function buildChecklistMsg(w: WorkOrder, label: string) {
-    return [
-      `Hola ${UU(w.customerName)} 🎮`,
-      `Avance en tu trabajo ${UU(w.code)}:`,
-      `✔ ${UU(label)}`,
-      `Te avisaremos cuando esté FINALIZADO.`,
-    ].join("\n");
-  }
+  } 
 
   async function toggleWorkItem(w: WorkOrder, item: WorkItem) {
     const nextDone = !item.done;
+
+    // Si lo desmarcan, solo actualizamos "done" y no enviamos mensaje
+    if (!nextDone) {
+      try {
+        const r = await apiFetch(`/works/${w.id}/items/${item.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ done: false }),
+        });
+        if (!r.ok) throw new Error();
+
+        setItemsByWork((prev) => ({
+          ...prev,
+          [w.id]: (prev[w.id] || []).map((it) =>
+            it.id === item.id ? { ...it, done: false } : it
+          ),
+        }));
+      } catch {
+        setMsg("ERROR AL ACTUALIZAR PRODUCTO");
+        setTimeout(() => setMsg(""), 2200);
+      }
+      return;
+    }
+
+    // Lo vamos a marcar como LISTO → pedir precio y descripción
+    const precioStr = window.prompt(
+      "Valor del arreglo de este producto",
+      item.price != null ? String(item.price) : ""
+    );
+    if (precioStr == null) return; // canceló
+    const precioNum = Number(precioStr);
+    if (!Number.isFinite(precioNum) || precioNum < 0) {
+      setMsg("VALOR DEL PRODUCTO INVÁLIDO");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    const detalleStr = window.prompt(
+      "Descripción / trabajo realizado en este producto (opcional)",
+      item.detail ?? ""
+    );
+
     try {
       const r = await apiFetch(`/works/${w.id}/items/${item.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ done: nextDone }),
+        body: JSON.stringify({
+          done: true,
+          price: precioNum,
+          detail: detalleStr ?? item.detail ?? null,
+        }),
       });
       if (!r.ok) {
         const e = (await r.json().catch(() => ({}))) as { error?: string };
-        setMsg("ERROR AL ACTUALIZAR TAREA: " + UDATA(e?.error || ""));
+        setMsg("ERROR AL ACTUALIZAR PRODUCTO: " + UDATA(e?.error || ""));
         setTimeout(() => setMsg(""), 2200);
         return;
       }
 
-      // Actualizar en memoria
-      setItemsByWork((prev) => ({
-        ...prev,
-        [w.id]: (prev[w.id] || []).map((it) =>
-          it.id === item.id ? { ...it, done: nextDone } : it
-        ),
-      }));
+      // Actualizar en memoria y obtener lista actualizada
+      let updatedItems: WorkItem[] = [];
+      setItemsByWork((prev) => {
+        const current = prev[w.id] || [];
+        updatedItems = current.map((it) =>
+          it.id === item.id
+            ? {
+                ...it,
+                done: true,
+                price: precioNum,
+                detail: detalleStr ?? it.detail,
+              }
+            : it
+        );
+        return { ...prev, [w.id]: updatedItems };
+      });
 
-      // Si se marcó como completada, mandar mensaje parcial al cliente
-      if (nextDone) {
-        openWhatsApp(w.customerPhone, buildChecklistMsg(w, item.label));
-      }
+      const pendingNames = updatedItems
+        .filter((it) => !it.done)
+        .map((it) => it.label);
+
+      const msgToSend = buildProductDoneMsg(
+        w,
+        {
+          ...item,
+          price: precioNum,
+          detail: detalleStr ?? item.detail,
+        },
+        precioNum,
+        pendingNames
+      );
+
+      openWhatsApp(w.customerPhone, msgToSend);
     } catch {
-      setMsg("ERROR AL ACTUALIZAR TAREA");
+      setMsg("ERROR AL ACTUALIZAR PRODUCTO");
       setTimeout(() => setMsg(""), 2200);
     }
   }
@@ -787,6 +848,46 @@ export default function WorksPage() {
       maximumFractionDigits: 0,
     });
   }
+
+  function buildProductDoneMsg(
+    w: WorkOrder,
+    item: WorkItem,
+    price: number,
+    pendingNames: string[]
+  ) {
+    const depAll = Number(w.deposit || 0); // suma de abonos ya calculada en el back
+
+    const lineas: string[] = [
+      `Hola ${UU(w.customerName)} 🎮`,
+      `El producto "${UU(item.label)}" de tu trabajo ${UU(
+        w.code
+      )} ya está LISTO. ✅`,
+    ];
+
+    if (item.detail) {
+      lineas.push(`Se le hizo: ${UU(item.detail)}.`);
+    }
+
+    lineas.push(
+      `Precio del arreglo de este producto: ${toCOP(price)}.`,
+      `Abonos registrados a tu trabajo: ${toCOP(depAll)}.`
+    );
+
+    if (pendingNames.length > 0) {
+      lineas.push(
+        `Aún falta por terminar: ${pendingNames
+          .map((n) => `"${UU(n)}"`)
+          .join(", ")}.`
+      );
+    } else {
+      lineas.push(
+        `Este era el último producto de tu trabajo. ¡Gracias por confiar en Gamerland!`
+      );
+    }
+
+    return lineas.join("\n");
+  }
+
   function openWhatsApp(phone: string, text: string) {
     const num = normalizeCOPhone(phone);
     const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
@@ -1056,7 +1157,7 @@ export default function WorksPage() {
               return (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs uppercase text-gray-300">
-                    <span className="font-semibold">CHECKLIST</span>
+                    <span className="font-semibold">PRODUCTOS / CHECKLIST</span>
                     <button
                       className="px-2 py-0.5 rounded border text-[11px]"
                       style={{ borderColor: COLORS.border }}
@@ -1083,7 +1184,7 @@ export default function WorksPage() {
                             backgroundColor: COLORS.input,
                             border: `1px solid ${COLORS.border}`,
                           }}
-                          placeholder="AGREGAR TAREA (EJ: REVISAR FUENTE, LIMPIEZA INTERNA...)"
+                          placeholder="AGREGAR PRODUCTO (EJ: CONTROL, CONSOLA, CABLE HDMI...)"
                           value={draft}
                           onChange={(e) =>
                             setNewItemLabelByWork((prev) => ({
@@ -1125,7 +1226,7 @@ export default function WorksPage() {
 
                       {!loadingItems && items.length === 0 && !errorItems && (
                         <div className="text-[11px] text-gray-400">
-                          Sin tareas registradas. Agrega la primera arriba.
+                          Sin productos registrados. Agrega el primero arriba.
                         </div>
                       )}
 
@@ -1646,6 +1747,27 @@ export default function WorksPage() {
                 />
               </div>
 
+              <div className="md:col-span-2">
+                <label className="block text-sm mb-1 uppercase">
+                  PRODUCTOS DE ESTE TRABAJO (UNO POR LÍNEA)
+                </label>
+                <textarea
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                  rows={3}
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  placeholder={"CONTROL XBOX\nCONSOLA XBOX\nCABLE HDMI"}
+                  value={initialItemsText}
+                  onChange={(e) => setInitialItemsText(UU(e.target.value))}
+                />
+                <p className="mt-1 text-[11px] text-gray-400 uppercase">
+                  💡 Cada línea se registrará como un producto dentro del
+                  trabajo.
+                </p>
+              </div>
+
               <div className="md:col-span-2 text-xs text-gray-300 uppercase">
                 💬 SE INFORMA AL CLIENTE:{" "}
                 <i>
@@ -1731,20 +1853,38 @@ export default function WorksPage() {
                       id: number;
                     } | null;
 
-                    if (
-                      created &&
-                      typeof created.id === "number" &&
-                      depositNum > 0
-                    ) {
-                      await apiFetch(`/works/${created.id}/payments`, {
-                        method: "POST",
-                        body: JSON.stringify({
-                          amount: depositNum,
-                          method: depositMethod,
-                          note: "ABONO INICIAL",
-                          createdBy: username || undefined,
-                        }),
-                      }).catch(() => null);
+                    if (created && typeof created.id === "number") {
+                      const workId = created.id;
+
+                      // 👇 crear productos iniciales (uno por línea)
+                      const lines = initialItemsText
+                        .split(/\r?\n/)
+                        .map((s) => UDATA(s))
+                        .filter((s) => s.length > 0);
+
+                      if (lines.length > 0) {
+                        await Promise.all(
+                          lines.map((label) =>
+                            apiFetch(`/works/${workId}/items`, {
+                              method: "POST",
+                              body: JSON.stringify({ label }),
+                            }).catch(() => null)
+                          )
+                        );
+                      }
+
+                      // 👇 abono inicial, igual que ya tenías
+                      if (depositNum > 0) {
+                        await apiFetch(`/works/${workId}/payments`, {
+                          method: "POST",
+                          body: JSON.stringify({
+                            amount: depositNum,
+                            method: depositMethod,
+                            note: "ABONO INICIAL",
+                            createdBy: username || undefined,
+                          }),
+                        }).catch(() => null);
+                      }
                     }
 
                     setMsg("TRABAJO CREADO ✅");

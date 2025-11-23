@@ -160,6 +160,10 @@ model WorkItem {
   label       String
   done        Boolean    @default(false)
 
+  // 👇 NUEVOS CAMPOS
+  price       Decimal?   @db.Decimal(12, 2)   // valor del arreglo de ESTE producto
+  detail      String?                          // descripción específica del producto
+
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

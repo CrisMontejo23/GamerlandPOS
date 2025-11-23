@@ -1493,11 +1493,16 @@ const workPaymentSchema = z.object({
 
 const workItemCreateSchema = z.object({
   label: z.string().min(1, "Texto requerido"),
+  // opcional, por si algún día quieres crear con precio/detalle desde otro sitio
+  price: z.coerce.number().nonnegative().optional(),
+  detail: z.string().optional(),
 });
 
 const workItemUpdateSchema = z.object({
   label: z.string().min(1).optional(),
   done: z.coerce.boolean().optional(),
+  price: z.coerce.number().nonnegative().optional(), // 👈 para el front
+  detail: z.string().optional(), // 👈 para el front
 });
 
 app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
@@ -1667,67 +1672,63 @@ app.delete(
   }
 );
 
-app.get(
-  "/works/:id/items",
-  requireRole("EMPLOYEE"),
-  async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: "id inválido" });
-    }
-
-    const wo = await prisma.workOrder.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!wo) {
-      return res.status(404).json({ error: "Orden no encontrada" });
-    }
-
-    const items = await prisma.workItem.findMany({
-      where: { workOrderId: id },
-      orderBy: { createdAt: "asc" },
-    });
-
-    res.json(items);
+app.get("/works/:id/items", requireRole("EMPLOYEE"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id inválido" });
   }
-);
 
-app.post(
-  "/works/:id/items",
-  requireRole("EMPLOYEE"),
-  async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: "id inválido" });
-    }
-
-    const parsed = workItemCreateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "Datos inválidos",
-        issues: parsed.error.flatten(),
-      });
-    }
-
-    const wo = await prisma.workOrder.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!wo) {
-      return res.status(404).json({ error: "Orden no encontrada" });
-    }
-
-    const item = await prisma.workItem.create({
-      data: {
-        workOrderId: id,
-        label: U(parsed.data.label),
-      },
-    });
-
-    res.status(201).json(item);
+  const wo = await prisma.workOrder.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!wo) {
+    return res.status(404).json({ error: "Orden no encontrada" });
   }
-);
+
+  const items = await prisma.workItem.findMany({
+    where: { workOrderId: id },
+    orderBy: { createdAt: "asc" },
+  });
+
+  res.json(items);
+});
+
+app.post("/works/:id/items", requireRole("EMPLOYEE"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id inválido" });
+  }
+
+  const parsed = workItemCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Datos inválidos",
+      issues: parsed.error.flatten(),
+    });
+  }
+
+  const wo = await prisma.workOrder.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!wo) {
+    return res.status(404).json({ error: "Orden no encontrada" });
+  }
+
+  const item = await prisma.workItem.create({
+    data: {
+      workOrderId: id,
+      label: U(parsed.data.label),
+      ...(parsed.data.price !== undefined ? { price: parsed.data.price } : {}),
+      ...(parsed.data.detail !== undefined
+        ? { detail: U(parsed.data.detail) }
+        : {}),
+    },
+  });
+
+  res.status(201).json(item);
+});
 
 app.patch(
   "/works/:workId/items/:itemId",
@@ -1766,13 +1767,33 @@ app.patch(
       if (parsed.data.done !== undefined) {
         data.done = parsed.data.done;
       }
+      if (parsed.data.price !== undefined) {
+        data.price = parsed.data.price;
+      }
+      if (parsed.data.detail !== undefined) {
+        data.detail = U(parsed.data.detail);
+      }
 
+      // Actualizamos el ítem
       const updated = await prisma.workItem.update({
         where: { id: itemId },
         data,
       });
 
-      res.json(updated);
+      // 👇 Recalcular TOTAL del trabajo como suma de price de todos los ítems
+      const agg = await prisma.workItem.aggregate({
+        where: { workOrderId: workId },
+        _sum: { price: true },
+      });
+
+      const newTotal = Number(agg._sum.price ?? 0);
+
+      await prisma.workOrder.update({
+        where: { id: workId },
+        data: { total: newTotal },
+      });
+
+      res.json({ ...updated, totalWorkOrder: newTotal });
     } catch (e: unknown) {
       const err = e as { message?: string };
       res.status(400).json({
