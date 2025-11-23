@@ -170,7 +170,6 @@ export default function WorksPage() {
 
   // Crear
   const [openForm, setOpenForm] = useState(false);
-  const [description, setDescription] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [newLocation, setNewLocation] = useState<WorkLocation>("LOCAL");
@@ -297,7 +296,6 @@ export default function WorksPage() {
   }
 
   function resetForm() {
-    setDescription("");
     setCustomerName("");
     setCustomerPhone("");
     setNewLocation("LOCAL");
@@ -1634,7 +1632,7 @@ export default function WorksPage() {
                 {productRows.map((row, index) => (
                   <div
                     key={row.id}
-                    className="grid grid-cols-1 md:grid-cols-[1.5fr,1.5fr,auto] gap-2"
+                    className="flex flex-wrap gap-2 items-center"
                   >
                     {/* QUÉ SE RECIBE */}
                     <input
@@ -1643,7 +1641,7 @@ export default function WorksPage() {
                         updateProductRow(row.id, "label", e.target.value)
                       }
                       placeholder="QUÉ SE RECIBE (EJ: CONTROL, CONSOLA...)"
-                      className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                      className="flex-1 min-w-[160px] rounded px-3 py-2 text-gray-100 uppercase text-xs"
                       style={{
                         backgroundColor: COLORS.input,
                         border: `1px solid ${COLORS.border}`,
@@ -1657,7 +1655,7 @@ export default function WorksPage() {
                         updateProductRow(row.id, "description", e.target.value)
                       }
                       placeholder="DESCRIPCIÓN (COLOR, ESTADO, DETALLE...)"
-                      className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                      className="flex-1 min-w-[160px] rounded px-3 py-2 text-gray-100 uppercase text-xs"
                       style={{
                         backgroundColor: COLORS.input,
                         border: `1px solid ${COLORS.border}`,
@@ -1667,7 +1665,7 @@ export default function WorksPage() {
                     {/* + PRODUCTO solo en la última fila */}
                     {index === productRows.length - 1 && (
                       <button
-                        className="px-3 py-2 rounded text-[11px] font-semibold uppercase mt-1 md:mt-0"
+                        className="px-3 py-2 rounded text-[11px] font-semibold uppercase"
                         style={{
                           color: "#001014",
                           background:
@@ -1798,22 +1796,6 @@ export default function WorksPage() {
                   </>
                 )}
               </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm mb-1 uppercase">
-                  DESCRIPCIÓN DEL CASO *
-                </label>
-                <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  placeholder="NO PRENDE / MANTENIMIENTO / ACTUALIZACIÓN / JOYSTICK DERECHO..."
-                  value={description}
-                  onChange={(e) => setDescription(UU(e.target.value))}
-                />
-              </div>
               <div>
                 <label className="block text-sm mb-1 uppercase">
                   NOMBRE CLIENTE *
@@ -1874,11 +1856,7 @@ export default function WorksPage() {
                 }}
                 onClick={async () => {
                   // Validación básica
-                  if (
-                    !description.trim() ||
-                    !customerName.trim() ||
-                    !customerPhone.trim()
-                  ) {
+                  if (!customerName.trim() || !customerPhone.trim()) {
                     setMsg("FALTAN CAMPOS OBLIGATORIOS");
                     setTimeout(() => setMsg(""), 2200);
                     return;
@@ -1919,10 +1897,14 @@ export default function WorksPage() {
 
                   const firstProduct = productRows[0];
                   const mainItemLabel = firstProduct?.label || "PRODUCTO";
+                  const mainDescription =
+                    firstProduct?.description ||
+                    firstProduct?.label ||
+                    "SIN DESCRIPCIÓN";
 
                   const payload: Patch = {
-                    item: UDATA(mainItemLabel), // EQUIPO se toma del primer producto
-                    description: UDATA(description), // descripción general del caso
+                    item: UDATA(mainItemLabel), // EQUIPO = primer producto
+                    description: UDATA(mainDescription), // se arma a partir del producto
                     customerName: UDATA(customerName),
                     customerPhone: UDATA(customerPhone),
                     location: newLocation,
