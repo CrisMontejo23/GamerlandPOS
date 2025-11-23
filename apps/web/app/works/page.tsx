@@ -181,6 +181,21 @@ export default function WorksPage() {
   const [depositValue, setDepositValue] = useState<string>("");
   const [depositMethod, setDepositMethod] = useState<PayMethod>("EFECTIVO");
 
+  // Productos iniciales para un nuevo trabajo
+  type NewProductRow = { id: number; label: string; description: string };
+  const [initialProducts, setInitialProducts] = useState<NewProductRow[]>([]);
+  const [draftProductLabel, setDraftProductLabel] = useState("");
+  const [draftProductDescription, setDraftProductDescription] = useState("");
+
+  // Modal gamer para valor del arreglo de un producto
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [productModalTargetWork, setProductModalTargetWork] =
+    useState<WorkOrder | null>(null);
+  const [productModalTargetItem, setProductModalTargetItem] =
+    useState<WorkItem | null>(null);
+  const [productModalPrice, setProductModalPrice] = useState<string>("");
+  const [productModalDetail, setProductModalDetail] = useState<string>("");
+
   // Finalizar (solo se usa cuando NO hay cotización)
   const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [finishAmount, setFinishAmount] = useState<string>("");
@@ -198,7 +213,6 @@ export default function WorksPage() {
   const [editDepositValue, setEditDepositValue] = useState<string>("");
   const [editDepositMethod, setEditDepositMethod] =
     useState<PayMethod>("EFECTIVO");
-  const [initialItemsText, setInitialItemsText] = useState("");
   const [editDepositNote, setEditDepositNote] = useState<string>("");
 
   // === Editar DESCRIPCIÓN / ITEM ===
@@ -274,8 +288,11 @@ export default function WorksPage() {
     setHasDeposit("NO");
     setDepositValue("");
     setDepositMethod("EFECTIVO");
-    setInitialItemsText("");
+    setInitialProducts([]);
+    setDraftProductLabel("");
+    setDraftProductDescription("");
   }
+
   function resetEditQD() {
     setEditQDTarget(null);
     setEditHasQuote("NO");
@@ -708,7 +725,7 @@ export default function WorksPage() {
       setMsg("ERROR AL CREAR TAREA");
       setTimeout(() => setMsg(""), 2200);
     }
-  } 
+  }
 
   async function toggleWorkItem(w: WorkOrder, item: WorkItem) {
     const nextDone = !item.done;
@@ -735,23 +752,29 @@ export default function WorksPage() {
       return;
     }
 
-    // Lo vamos a marcar como LISTO → pedir precio y descripción
-    const precioStr = window.prompt(
-      "Valor del arreglo de este producto",
-      item.price != null ? String(item.price) : ""
-    );
-    if (precioStr == null) return; // canceló
-    const precioNum = Number(precioStr);
+    // Lo vamos a marcar como LISTO → abrir modal gamer
+    setProductModalTargetWork(w);
+    setProductModalTargetItem(item);
+    setProductModalPrice(item.price != null ? String(item.price) : "");
+    setProductModalDetail(item.detail ?? "");
+    setProductModalOpen(true);
+  }
+
+  async function confirmProductModal() {
+    if (!productModalTargetWork || !productModalTargetItem) return;
+
+    const w = productModalTargetWork;
+    const item = productModalTargetItem;
+
+    const precioNum = Number(productModalPrice);
     if (!Number.isFinite(precioNum) || precioNum < 0) {
       setMsg("VALOR DEL PRODUCTO INVÁLIDO");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
 
-    const detalleStr = window.prompt(
-      "Descripción / trabajo realizado en este producto (opcional)",
-      item.detail ?? ""
-    );
+    const detalleStr =
+      productModalDetail.trim() === "" ? null : productModalDetail.trim();
 
     try {
       const r = await apiFetch(`/works/${w.id}/items/${item.id}`, {
@@ -802,6 +825,16 @@ export default function WorksPage() {
       );
 
       openWhatsApp(w.customerPhone, msgToSend);
+
+      // recargar trabajos para reflejar el TOTAL recalculado por el backend
+      await load();
+
+      // cerrar modal
+      setProductModalOpen(false);
+      setProductModalTargetWork(null);
+      setProductModalTargetItem(null);
+      setProductModalPrice("");
+      setProductModalDetail("");
     } catch {
       setMsg("ERROR AL ACTUALIZAR PRODUCTO");
       setTimeout(() => setMsg(""), 2200);
@@ -1124,6 +1157,17 @@ export default function WorksPage() {
               </div>
             </>
           )}
+
+          {/* 👇 NUEVO: total acumulado por productos mientras aún no está finalizado/entregado */}
+          {w.total != null &&
+            Number(w.total) > 0 &&
+            w.status !== "FINISHED" &&
+            w.status !== "DELIVERED" && (
+              <div className="text-cyan-300">
+                <b>ACUMULADO ARREGLOS:</b> $
+                {Number(w.total).toLocaleString("es-CO")}
+              </div>
+            )}
 
           {w.status === "FINISHED" && w.total != null && (
             <div className="text-emerald-300">
@@ -1594,6 +1638,114 @@ export default function WorksPage() {
                 />
               </div>
 
+              {/* PRODUCTOS RECIBIDOS */}
+              <div className="md:col-span-2 space-y-2 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold uppercase">
+                    PRODUCTOS RECIBIDOS
+                  </span>
+                  {initialProducts.length > 0 && (
+                    <span className="text-[11px] text-gray-400 uppercase">
+                      {initialProducts.length} producto
+                      {initialProducts.length > 1 ? "s" : ""} agregado
+                      {initialProducts.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-[1.3fr,1.7fr,auto] gap-2">
+                  <input
+                    className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    placeholder="QUÉ SE RECIBE (EJ: CONTROL, CONSOLA...)"
+                    value={draftProductLabel}
+                    onChange={(e) => setDraftProductLabel(UU(e.target.value))}
+                  />
+                  <input
+                    className="rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    placeholder="DESCRIPCIÓN (COLOR, ESTADO, DETALLE...)"
+                    value={draftProductDescription}
+                    onChange={(e) =>
+                      setDraftProductDescription(UU(e.target.value))
+                    }
+                  />
+                  <button
+                    className="px-3 py-2 rounded text-[11px] font-semibold uppercase mt-1 md:mt-0"
+                    style={{
+                      color: "#001014",
+                      background:
+                        "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                      boxShadow:
+                        "0 0 12px rgba(0,255,255,.25), 0 0 20px rgba(255,0,255,.25)",
+                    }}
+                    onClick={() => {
+                      const lbl = draftProductLabel.trim();
+                      if (!lbl) {
+                        setMsg("INGRESA QUÉ SE RECIBE DEL PRODUCTO");
+                        setTimeout(() => setMsg(""), 2000);
+                        return;
+                      }
+                      setInitialProducts((prev) => [
+                        ...prev,
+                        {
+                          id: Date.now(),
+                          label: UDATA(lbl),
+                          description: UDATA(draftProductDescription.trim()),
+                        },
+                      ]);
+                      setDraftProductLabel("");
+                      setDraftProductDescription("");
+                    }}
+                  >
+                    + PRODUCTO
+                  </button>
+                </div>
+
+                {initialProducts.length === 0 && (
+                  <p className="text-[11px] text-gray-400 uppercase">
+                    Sin productos registrados. Agrega el primero arriba.
+                  </p>
+                )}
+
+                {initialProducts.length > 0 && (
+                  <ul className="max-h-32 overflow-y-auto space-y-1 text-[11px] text-gray-200">
+                    {initialProducts.map((p) => (
+                      <li
+                        key={p.id}
+                        className="flex items-center justify-between gap-2 border border-white/10 rounded px-2 py-1"
+                      >
+                        <div className="flex-1">
+                          <span className="font-semibold">{UU(p.label)}</span>
+                          {p.description && (
+                            <span className="ml-1 text-gray-300">
+                              — {UU(p.description)}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          className="text-[10px] px-2 py-0.5 rounded border text-pink-300 uppercase"
+                          style={{ borderColor: COLORS.border }}
+                          onClick={() =>
+                            setInitialProducts((prev) =>
+                              prev.filter((x) => x.id !== p.id)
+                            )
+                          }
+                        >
+                          quitar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {/* COTIZACIÓN (crear) */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
@@ -1747,27 +1899,6 @@ export default function WorksPage() {
                 />
               </div>
 
-              <div className="md:col-span-2">
-                <label className="block text-sm mb-1 uppercase">
-                  PRODUCTOS DE ESTE TRABAJO (UNO POR LÍNEA)
-                </label>
-                <textarea
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
-                  rows={3}
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  placeholder={"CONTROL XBOX\nCONSOLA XBOX\nCABLE HDMI"}
-                  value={initialItemsText}
-                  onChange={(e) => setInitialItemsText(UU(e.target.value))}
-                />
-                <p className="mt-1 text-[11px] text-gray-400 uppercase">
-                  💡 Cada línea se registrará como un producto dentro del
-                  trabajo.
-                </p>
-              </div>
-
               <div className="md:col-span-2 text-xs text-gray-300 uppercase">
                 💬 SE INFORMA AL CLIENTE:{" "}
                 <i>
@@ -1856,20 +1987,18 @@ export default function WorksPage() {
                     if (created && typeof created.id === "number") {
                       const workId = created.id;
 
-                      // 👇 crear productos iniciales (uno por línea)
-                      const lines = initialItemsText
-                        .split(/\r?\n/)
-                        .map((s) => UDATA(s))
-                        .filter((s) => s.length > 0);
-
-                      if (lines.length > 0) {
+                      // 👇 crear productos iniciales (PRODUCTOS RECIBIDOS)
+                      if (initialProducts.length > 0) {
                         await Promise.all(
-                          lines.map((label) =>
-                            apiFetch(`/works/${workId}/items`, {
+                          initialProducts.map((p) => {
+                            const fullLabel = p.description
+                              ? `${UDATA(p.label)} — ${UDATA(p.description)}`
+                              : UDATA(p.label);
+                            return apiFetch(`/works/${workId}/items`, {
                               method: "POST",
-                              body: JSON.stringify({ label }),
-                            }).catch(() => null)
-                          )
+                              body: JSON.stringify({ label: fullLabel }),
+                            }).catch(() => null);
+                          })
                         );
                       }
 
@@ -2407,6 +2536,100 @@ export default function WorksPage() {
                 onClick={createWarrantyOrder}
               >
                 CREAR ORDEN DE GARANTÍA
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal VALOR ARREGLO PRODUCTO (gamer) */}
+      {productModalOpen && productModalTargetWork && productModalTargetItem && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-md rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-price-title"
+          >
+            <h3
+              id="product-price-title"
+              className="text-lg font-semibold text-cyan-300 uppercase"
+            >
+              VALOR DEL ARREGLO
+            </h3>
+
+            <p className="text-xs text-gray-300 uppercase">
+              Trabajo {UU(productModalTargetWork.code)} • Producto:{" "}
+              <b>{UU(productModalTargetItem.label)}</b>
+            </p>
+
+            <div className="space-y-2">
+              <div>
+                <label className="block text-sm mb-1 uppercase">
+                  Valor del arreglo de este producto *
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  className="w-full rounded px-3 py-2 text-gray-100"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={productModalPrice}
+                  onChange={(e) => setProductModalPrice(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1 uppercase">
+                  Descripción / trabajo realizado (opcional)
+                </label>
+                <input
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={productModalDetail}
+                  onChange={(e) => setProductModalDetail(UU(e.target.value))}
+                  placeholder="CAMBIO DE PIEZAS / SOLDADURA / LIMPIEZA..."
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-1">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase text-xs"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => {
+                  setProductModalOpen(false);
+                  setProductModalTargetWork(null);
+                  setProductModalTargetItem(null);
+                  setProductModalPrice("");
+                  setProductModalDetail("");
+                }}
+              >
+                CANCELAR
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase text-xs"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={confirmProductModal}
+              >
+                GUARDAR
               </button>
             </div>
           </div>
