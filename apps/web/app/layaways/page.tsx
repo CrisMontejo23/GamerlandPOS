@@ -6,6 +6,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { StaticImageData } from "next/image";
 import logo from "../../assets/logo.png";
+import Image from "next/image";
 
 type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 type LayawayStatus = "OPEN" | "CLOSED";
@@ -471,6 +472,48 @@ export default function LayawaysPage() {
     setMsg("ABONO REGISTRADO ✅");
     setNewPayAmount("");
     setNewPayNote("");
+  };
+
+  // ==== ELIMINAR ABONO ====
+  const deletePayment = async (p: LayawayPayment) => {
+    if (!paymentsOpenId) return;
+
+    const ok = confirm(
+      `¿Eliminar el abono de ${toCOP(
+        p.amount
+      )}? Esta acción no se puede deshacer.`
+    );
+    if (!ok) return;
+
+    try {
+      const r = await apiFetch(`/layaways/${paymentsOpenId}/payments/${p.id}`, {
+        method: "DELETE",
+      });
+
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR EL ABONO"));
+        setTimeout(() => setMsg(""), 2500);
+        return;
+      }
+
+      // Actualizar cache local del modal
+      setPaymentsCache((prev) => ({
+        ...prev,
+        [paymentsOpenId]: (prev[paymentsOpenId] || []).filter(
+          (x) => x.id !== p.id
+        ),
+      }));
+
+      // Refrescar totales del apartado
+      await loadLayaways();
+
+      setMsg("ABONO ELIMINADO ✅");
+      setTimeout(() => setMsg(""), 2200);
+    } catch {
+      setMsg("ERROR: NO SE PUDO ELIMINAR EL ABONO");
+      setTimeout(() => setMsg(""), 2500);
+    }
   };
 
   // ==== FINALIZAR VENTA ====
@@ -1406,6 +1449,11 @@ export default function LayawaysPage() {
                       MONTO
                     </th>
                     <th className="px-2 py-1 border-b border-gray-700">NOTA</th>
+                    {role === "ADMIN" && (
+                      <th className="px-2 py-1 border-b border-gray-700 text-right">
+                        ACCIONES
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -1423,12 +1471,28 @@ export default function LayawaysPage() {
                       <td className="px-2 py-1 border-b border-gray-800">
                         {p.note || ""}
                       </td>
+                      {role === "ADMIN" && (
+                        <td className="px-2 py-1 border-b border-gray-800 text-right">
+                          <button
+                            onClick={() => deletePayment(p)}
+                            className="inline-flex items-center justify-center"
+                          >
+                            <Image
+                              src="/borrar.png"
+                              alt="Eliminar"
+                              width={16}
+                              height={16}
+                              className="opacity-80 hover:opacity-100 hover:scale-110 transition"
+                            />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {currentPayments.length === 0 && (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={role === "ADMIN" ? 5 : 4}
                         className="px-2 py-2 text-center text-gray-500"
                       >
                         Sin abonos registrados.

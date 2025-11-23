@@ -2102,6 +2102,60 @@ app.post(
   }
 );
 
+app.delete(
+  "/layaways/:layawayId/payments/:paymentId",
+  requireRole("ADMIN"), // solo admin puede borrar abonos
+  async (req, res) => {
+    const layawayId = Number(req.params.layawayId);
+    const paymentId = Number(req.params.paymentId);
+
+    if (!Number.isInteger(layawayId) || !Number.isInteger(paymentId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    try {
+      // Verificar que el pago exista y pertenezca al apartado
+      const pay = await prisma.layawayPayment.findUnique({
+        where: { id: paymentId },
+        select: { id: true, layawayId: true },
+      });
+
+      if (!pay || pay.layawayId !== layawayId) {
+        return res.status(404).json({ error: "Abono no encontrado" });
+      }
+
+      // Eliminar el abono
+      await prisma.layawayPayment.delete({ where: { id: paymentId } });
+
+      // Recalcular totalPaid
+      const agg = await prisma.layawayPayment.aggregate({
+        where: { layawayId },
+        _sum: { amount: true },
+      });
+
+      const newTotalPaid = Number(agg._sum.amount ?? 0);
+
+      // Actualizar el apartado
+      await prisma.layaway.update({
+        where: { id: layawayId },
+        data: { totalPaid: newTotalPaid },
+      });
+
+      res.json({
+        ok: true,
+        layawayId,
+        paymentId,
+        totalPaid: newTotalPaid,
+      });
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo eliminar el abono" });
+    }
+  }
+);
+
 app.post("/layaways/:id/close", requireRole("EMPLOYEE"), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id))
