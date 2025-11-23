@@ -841,57 +841,62 @@ export default function WorksPage() {
         return;
       }
 
-      // 2) Refrescar lista completa de items DESDE EL BACKEND
-      const allItems = await fetchItemsForMsg(w.id); // ya actualiza itemsByWork, counts, etc.
+      // 2) Traer TODOS los items actualizados
+      const allItems = await fetchItemsForMsg(w.id); // ya refresca itemsByWork, counts, etc.
 
-      // 3) Calcular total de arreglos con toNum (acepta string/number)
+      // 3) Calcular TOTAL de arreglos (suma de TODOS los productos con precio)
       const totalProducts = allItems.reduce((sum, it) => {
         const p = toNum(it.price);
         return p != null ? sum + p : sum;
       }, 0);
 
+      // 4) Calcular abonos y saldo
+      const depAll = Number(w.deposit || 0); // suma de pagos desde el back
+      const newQuote = totalProducts; // la "cotización" real = total arreglos
+      const saldo = Math.max(newQuote - depAll, 0);
+
+      // 5) Saber si aún quedan productos pendientes
       const pending = allItems.filter((it) => !it.done);
-      const depAll = Number(w.deposit || 0);
 
-      // 4) Si YA NO hay pendientes → FINALIZAR trabajo y actualizar cotización si no tenía
+      // 6) Actualizar la orden SIEMPRE con el acumulado de arreglos
+      const patch: Patch = {
+        // mientras el trabajo está en curso, total = ACUMULADO ARREGLOS
+        total: totalProducts,
+        quote: newQuote,
+        quotation: newQuote,
+      };
+
+      // Si ya NO hay pendientes -> marcar FINALIZADO y dejar total = SALDO A PAGAR
       if (pending.length === 0) {
-        const hadQuote = w.quote != null;
-        const currentQuote = hadQuote ? Number(w.quote) : null;
+        patch.status = "FINISHED";
+        patch.total = saldo; // aquí total pasa a ser "VALOR A PAGAR"
+      }
 
-        // Si NO tenía cotización al inicio del trabajo, la cotización será la suma de productos
-        const newQuote = hadQuote ? currentQuote! : totalProducts;
-        const saldo = Math.max(newQuote - depAll, 0);
+      const okUpdate = await update(w.id, patch);
+      if (!okUpdate) return;
 
-        const okUpdate = await update(w.id, {
+      // 7) Mensajes de WhatsApp
+
+      if (pending.length === 0) {
+        // Todos los productos listos
+        const wForMsg: WorkOrder = {
+          ...w,
           status: "FINISHED",
+          quote: newQuote,
           total: saldo,
-          ...(hadQuote
-            ? {}
-            : {
-                quote: newQuote,
-                quotation: newQuote,
-              }),
-        });
+          deposit: w.deposit,
+        };
 
-        if (okUpdate) {
-          const wForMsg: WorkOrder = {
-            ...w,
-            status: "FINISHED",
-            total: saldo,
-            quote: newQuote,
-          };
-
-          const msgAll = buildAllProductsDoneMsg(
-            wForMsg,
-            allItems,
-            totalProducts,
-            depAll,
-            saldo
-          );
-          openWhatsApp(w.customerPhone, msgAll);
-        }
+        const msgAll = buildAllProductsDoneMsg(
+          wForMsg,
+          allItems,
+          newQuote, // Total arreglos
+          depAll,
+          saldo
+        );
+        openWhatsApp(w.customerPhone, msgAll);
       } else {
-        // 5) Todavía HAY productos pendientes → mensaje SOLO de este producto
+        // Solo este producto quedó listo
         const pendingNames = pending.map((it) => it.label);
 
         const msgToSend = buildProductDoneMsg(
@@ -908,7 +913,7 @@ export default function WorksPage() {
         openWhatsApp(w.customerPhone, msgToSend);
       }
 
-      // 6) Recargar trabajos y limpiar modal
+      // 8) Recargar trabajos y limpiar modal
       await load();
 
       setProductModalOpen(false);
