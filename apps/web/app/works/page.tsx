@@ -1435,15 +1435,23 @@ export default function WorksPage() {
                               checked={it.done}
                               onChange={() => toggleWorkItem(w, it)}
                             />
-                            <span
-                              className={
-                                it.done
-                                  ? "line-through text-gray-500"
-                                  : "text-gray-200"
-                              }
-                            >
-                              {UU(it.label)}
-                            </span>
+                            <div className="flex flex-col">
+                              <span
+                                className={
+                                  it.done
+                                    ? "line-through text-gray-500"
+                                    : "text-gray-200"
+                                }
+                              >
+                                {UU(it.label)}
+                              </span>
+
+                              {it.detail && (
+                                <span className="text-[10px] text-cyan-300 ml-4">
+                                  {UU(it.detail)}
+                                </span>
+                              )}
+                            </div>
                           </li>
                         ))}
                       </ul>
