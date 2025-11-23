@@ -186,6 +186,10 @@ export default function WorksPage() {
     { id: Date.now(), label: "", description: "" }, // fila mínima
   ]);
 
+  const [productsCountByWork, setProductsCountByWork] = useState<
+    Record<number, number>
+  >({});
+
   // Modal gamer para valor del arreglo de un producto
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productModalTargetWork, setProductModalTargetWork] =
@@ -701,6 +705,7 @@ export default function WorksPage() {
       if (!r.ok) throw new Error();
       const data = (await r.json()) as WorkItem[];
       setItemsByWork((prev) => ({ ...prev, [workId]: data }));
+      setProductsCountByWork((prev) => ({ ...prev, [workId]: data.length }));
       setItemsError((prev) => ({ ...prev, [workId]: undefined }));
     } catch {
       setItemsError((prev) => ({
@@ -735,6 +740,10 @@ export default function WorksPage() {
       setItemsByWork((prev) => ({
         ...prev,
         [workId]: prev[workId] ? [...prev[workId], created] : [created],
+      }));
+      setProductsCountByWork((prev) => ({
+        ...prev,
+        [workId]: (prev[workId] || 0) + 1,
       }));
       setNewItemLabelByWork((prev) => ({ ...prev, [workId]: "" }));
     } catch {
@@ -824,25 +833,56 @@ export default function WorksPage() {
         );
         return { ...prev, [w.id]: updatedItems };
       });
+      setProductsCountByWork((prev) => ({
+        ...prev,
+        [w.id]: updatedItems.length,
+      }));
 
-      const pendingNames = updatedItems
-        .filter((it) => !it.done)
-        .map((it) => it.label);
+      const pending = updatedItems.filter((it) => !it.done);
 
-      const msgToSend = buildProductDoneMsg(
-        w,
-        {
-          ...item,
-          price: precioNum,
-          detail: detalleStr ?? item.detail,
-        },
-        precioNum,
-        pendingNames
-      );
+      if (pending.length === 0) {
+        // 👉 ESTE ERA EL ÚLTIMO PRODUCTO: FINALIZAR TRABAJO Y ENVIAR MENSAJE GLOBAL
+        const totalProducts = updatedItems.reduce((sum, it) => {
+          const p = it.price != null ? Number(it.price) : 0;
+          return Number.isFinite(p) ? sum + p : sum;
+        }, 0);
 
-      openWhatsApp(w.customerPhone, msgToSend);
+        const depAll = Number(w.deposit || 0);
+        const saldo = Math.max(totalProducts - depAll, 0);
 
-      // recargar trabajos para reflejar el TOTAL recalculado por el backend
+        const okUpdate = await update(w.id, {
+          status: "FINISHED",
+          total: saldo,
+        });
+        if (okUpdate) {
+          const msgAll = buildAllProductsDoneMsg(
+            { ...w, status: "FINISHED", total: saldo },
+            updatedItems,
+            totalProducts,
+            depAll,
+            saldo
+          );
+          openWhatsApp(w.customerPhone, msgAll);
+        }
+      } else {
+        // 👉 Todavía hay productos pendientes: mensaje SOLO de este producto
+        const pendingNames = pending.map((it) => it.label);
+
+        const msgToSend = buildProductDoneMsg(
+          w,
+          {
+            ...item,
+            price: precioNum,
+            detail: detalleStr ?? item.detail,
+          },
+          precioNum,
+          pendingNames
+        );
+
+        openWhatsApp(w.customerPhone, msgToSend);
+      }
+
+      // recargar trabajos para reflejar el TOTAL recalculado / actualizado
       await load();
 
       // cerrar modal
@@ -858,9 +898,12 @@ export default function WorksPage() {
   }
 
   async function markInformedAndNotify(w: WorkOrder) {
-    // Si ya está marcado, solo reenviamos el mensaje (por si quieres reenviar)
+    // Traemos los productos para poder enumerarlos
+    const items = await fetchItemsForMsg(w.id);
+
+    // Si ya está marcado, solo reenviamos el mensaje
     if (w.informedCustomer) {
-      openWhatsApp(w.customerPhone, buildReceivedMsg(w));
+      openWhatsApp(w.customerPhone, buildReceivedMsg(w, items));
       return;
     }
 
@@ -868,7 +911,7 @@ export default function WorksPage() {
     if (!ok) return;
 
     await load();
-    openWhatsApp(w.customerPhone, buildReceivedMsg(w));
+    openWhatsApp(w.customerPhone, buildReceivedMsg(w, items));
   }
 
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
@@ -878,6 +921,19 @@ export default function WorksPage() {
     { key: "FINISHED", label: "FINALIZADOS" },
     { key: "DELIVERED", label: "ENTREGADOS" },
   ];
+
+  async function fetchItemsForMsg(workId: number): Promise<WorkItem[]> {
+    try {
+      const r = await apiFetch(`/works/${workId}/items`);
+      if (!r.ok) throw new Error();
+      const data = (await r.json()) as WorkItem[];
+      setItemsByWork((prev) => ({ ...prev, [workId]: data }));
+      setProductsCountByWork((prev) => ({ ...prev, [workId]: data.length }));
+      return data;
+    } catch {
+      return itemsByWork[workId] || [];
+    }
+  }
 
   // ===== WhatsApp helpers =====
   function onlyDigits(s: string) {
@@ -937,37 +993,95 @@ export default function WorksPage() {
     return lineas.join("\n");
   }
 
+  function buildAllProductsDoneMsg(
+    w: WorkOrder,
+    items: WorkItem[],
+    totalProducts: number,
+    depAll: number,
+    saldo: number
+  ) {
+    const lineas: string[] = [
+      `Hola ${UU(w.customerName)} 🎮`,
+      `¡Todos los productos de tu trabajo ${UU(w.code)} están LISTOS! ✅`,
+      `Se trabajó sobre:`,
+    ];
+
+    items.forEach((it, idx) => {
+      const partes: string[] = [`${idx + 1}. ${UU(it.label)}`];
+      if (it.detail) partes.push(`Trabajo: ${UU(it.detail)}`);
+      if (typeof it.price === "number")
+        partes.push(`Valor: ${toCOP(it.price)}`);
+      lineas.push(partes.join(" — "));
+    });
+
+    lineas.push(
+      ``,
+      `Total arreglos: ${toCOP(totalProducts)}.`,
+      `Abonos registrados: ${toCOP(depAll)}.`,
+      `Saldo a pagar: ${toCOP(saldo)}.`,
+      `Puedes pasar por tus productos en horario de atención. ¡Gracias por elegir Gamerland!`
+    );
+
+    return lineas.join("\n");
+  }
+
   function openWhatsApp(phone: string, text: string) {
     const num = normalizeCOPhone(phone);
     const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  function buildReceivedMsg(w: WorkOrder) {
+  function buildReceivedMsg(w: WorkOrder, items?: WorkItem[]) {
     const dep = Number(w.deposit || 0);
     const quote = Number(w.quote ?? 0);
     const saldo = Math.max(quote - dep, 0);
+
+    const productos = items && items.length > 0 ? items : undefined;
 
     // Mensaje especial si es garantía
     if (w.isWarranty) {
       const lineasGarantia: string[] = [
         `Hola ${UU(w.customerName)} 🎮`,
         `Tu equipo ${UU(w.code)} fue recibido POR GARANTÍA. 🛠️`,
-        `Equipo: ${UU(w.item)} 🕹️`,
-        `Descripción: ${UU(w.description)}`,
+      ];
+
+      if (productos) {
+        lineasGarantia.push(`Se recibió:`);
+        productos.forEach((it, idx) => {
+          lineasGarantia.push(`${idx + 1}. ${UU(it.label)}`);
+        });
+      } else {
+        lineasGarantia.push(
+          `Equipo: ${UU(w.item)} 🕹️`,
+          `Descripción: ${UU(w.description)}`
+        );
+      }
+
+      lineasGarantia.push(
         `Este servicio NO genera cobro adicional por el mismo daño reportado.`,
         `Si se detecta un daño diferente te informaremos antes de hacer cualquier cobro.`,
-        `Gracias por confiar en Gamerland.`,
-      ];
+        `Gracias por confiar en Gamerland.`
+      );
       return lineasGarantia.join("\n");
     }
 
     const partes: string[] = [
       `Hola ${UU(w.customerName)} 🎮`,
       `Tu trabajo ${UU(w.code)} fue RECIBIDO.`,
-      `Equipo: ${UU(w.item)} 🕹️`,
-      `Descripción: ${UU(w.description)}`,
     ];
+
+    if (productos) {
+      partes.push(`Se recibió:`);
+      productos.forEach((it, idx) => {
+        partes.push(`${idx + 1}. ${UU(it.label)}`);
+      });
+    } else {
+      partes.push(
+        `Equipo: ${UU(w.item)} 🕹️`,
+        `Descripción: ${UU(w.description)}`
+      );
+    }
+
     if (w.quote != null) {
       partes.push(
         `Cotización: ${toCOP(quote)}`,
@@ -975,6 +1089,7 @@ export default function WorksPage() {
         `Saldo: ${toCOP(saldo)}`
       );
     }
+
     partes.push(`Gracias por elegirnos.`);
     return partes.join("\n");
   }
@@ -1118,6 +1233,8 @@ export default function WorksPage() {
     const dep = Number(w.deposit || 0);
     const quote = Number(w.quote ?? 0);
     const saldo = Math.max(quote - dep, 0);
+    const productsCount =
+      productsCountByWork[w.id] ?? itemsByWork[w.id]?.length ?? 0;
 
     return (
       <article
@@ -1139,23 +1256,134 @@ export default function WorksPage() {
           </span>
         </header>
 
-        <div className="text-sm text-gray-300">
+        <div className="text-sm text-gray-300 space-y-1">
           <div>
-            <b>INGRESÓ:</b> {fmt(w.createdAt)}
+            <b>INGRESO:</b> {fmt(w.createdAt)}
           </div>
           <div>
-            <b>UBICACIÓN:</b>{" "}
-            {w.location === "LOCAL" ? "EN LOCAL" : "EN BOGOTÁ"}
+            <b># PRODUCTOS:</b> {productsCount || "—"}
           </div>
         </div>
 
-        <div className="text-sm uppercase">
-          <div>
-            <b>EQUIPO:</b> {UU(w.item)}
-          </div>
-          <div>
-            <b>DESCRIPCIÓN:</b> {UU(w.description)}
-          </div>
+        {/* CHECKLIST DE TAREAS */}
+        <section className="mt-2 pt-2 border-t border-white/10">
+          {(() => {
+            const checklistOpen = openChecklist[w.id] ?? false;
+            const items = itemsByWork[w.id] || [];
+            const loadingItems = itemsLoading[w.id];
+            const errorItems = itemsError[w.id];
+            const draft = newItemLabelByWork[w.id] || "";
+
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs uppercase text-gray-300">
+                  <span className="font-semibold">PRODUCTOS / CHECKLIST</span>
+                  <button
+                    className="px-2 py-0.5 rounded border text-[11px]"
+                    style={{ borderColor: COLORS.border }}
+                    onClick={() => {
+                      const next = !checklistOpen;
+                      setOpenChecklist((prev) => ({ ...prev, [w.id]: next }));
+                      if (next && !itemsByWork[w.id] && !itemsLoading[w.id]) {
+                        // carga perezosa
+                        loadWorkItems(w.id);
+                      }
+                    }}
+                  >
+                    {checklistOpen ? "OCULTAR" : "VER"}
+                  </button>
+                </div>
+
+                {checklistOpen && (
+                  <div className="space-y-2">
+                    {/* Input para nueva tarea */}
+                    <div className="flex gap-2 items-center">
+                      <input
+                        className="flex-1 rounded px-2 py-1 text-[11px] text-gray-100 uppercase"
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                        placeholder="AGREGAR PRODUCTO (EJ: CONTROL, CONSOLA, CABLE HDMI...)"
+                        value={draft}
+                        onChange={(e) =>
+                          setNewItemLabelByWork((prev) => ({
+                            ...prev,
+                            [w.id]: UU(e.target.value),
+                          }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addWorkItem(w.id);
+                          }
+                        }}
+                      />
+                      <button
+                        className="px-3 py-1 rounded text-[11px] font-semibold uppercase"
+                        style={{
+                          color: "#001014",
+                          background:
+                            "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                        }}
+                        onClick={() => addWorkItem(w.id)}
+                      >
+                        + PRODUCTO
+                      </button>
+                    </div>
+
+                    {loadingItems && (
+                      <div className="text-[11px] text-gray-400">
+                        CARGANDO PRODUCTOS…
+                      </div>
+                    )}
+
+                    {errorItems && (
+                      <div className="text-[11px] text-pink-300">
+                        {errorItems}
+                      </div>
+                    )}
+
+                    {!loadingItems && items.length === 0 && !errorItems && (
+                      <div className="text-[11px] text-gray-400">
+                        Sin productos registrados. Agrega el primero arriba.
+                      </div>
+                    )}
+
+                    {items.length > 0 && (
+                      <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                        {items.map((it) => (
+                          <li
+                            key={it.id}
+                            className="flex items-center gap-2 text-[11px] text-gray-200"
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-3 w-3 accent-cyan-400"
+                              checked={it.done}
+                              onChange={() => toggleWorkItem(w, it)}
+                            />
+                            <span
+                              className={
+                                it.done
+                                  ? "line-through text-gray-500"
+                                  : "text-gray-200"
+                              }
+                            >
+                              {UU(it.label)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </section>
+
+        <div className="text-sm uppercase mt-2 space-y-1">
           <div>
             <b>CLIENTE:</b> {UU(w.customerName)} • {UU(w.customerPhone)}
           </div>
@@ -1204,124 +1432,6 @@ export default function WorksPage() {
               <b>NOTAS:</b> {UU(w.notes)}
             </div>
           )}
-
-          {/* CHECKLIST DE TAREAS */}
-          <section className="mt-2 pt-2 border-t border-white/10">
-            {(() => {
-              const checklistOpen = openChecklist[w.id] ?? false;
-              const items = itemsByWork[w.id] || [];
-              const loadingItems = itemsLoading[w.id];
-              const errorItems = itemsError[w.id];
-              const draft = newItemLabelByWork[w.id] || "";
-
-              return (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs uppercase text-gray-300">
-                    <span className="font-semibold">PRODUCTOS / CHECKLIST</span>
-                    <button
-                      className="px-2 py-0.5 rounded border text-[11px]"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() => {
-                        const next = !checklistOpen;
-                        setOpenChecklist((prev) => ({ ...prev, [w.id]: next }));
-                        if (next && !itemsByWork[w.id] && !itemsLoading[w.id]) {
-                          // carga perezosa
-                          loadWorkItems(w.id);
-                        }
-                      }}
-                    >
-                      {checklistOpen ? "OCULTAR" : "VER"}
-                    </button>
-                  </div>
-
-                  {checklistOpen && (
-                    <div className="space-y-2">
-                      {/* Input para nueva tarea */}
-                      <div className="flex gap-2 items-center">
-                        <input
-                          className="flex-1 rounded px-2 py-1 text-[11px] text-gray-100 uppercase"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          placeholder="AGREGAR PRODUCTO (EJ: CONTROL, CONSOLA, CABLE HDMI...)"
-                          value={draft}
-                          onChange={(e) =>
-                            setNewItemLabelByWork((prev) => ({
-                              ...prev,
-                              [w.id]: UU(e.target.value),
-                            }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              addWorkItem(w.id);
-                            }
-                          }}
-                        />
-                        <button
-                          className="px-3 py-1 rounded text-[11px] font-semibold uppercase"
-                          style={{
-                            color: "#001014",
-                            background:
-                              "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                          }}
-                          onClick={() => addWorkItem(w.id)}
-                        >
-                          + PRODUCTO
-                        </button>
-                      </div>
-
-                      {loadingItems && (
-                        <div className="text-[11px] text-gray-400">
-                          CARGANDO PRODUCTOS…
-                        </div>
-                      )}
-
-                      {errorItems && (
-                        <div className="text-[11px] text-pink-300">
-                          {errorItems}
-                        </div>
-                      )}
-
-                      {!loadingItems && items.length === 0 && !errorItems && (
-                        <div className="text-[11px] text-gray-400">
-                          Sin productos registrados. Agrega el primero arriba.
-                        </div>
-                      )}
-
-                      {items.length > 0 && (
-                        <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                          {items.map((it) => (
-                            <li
-                              key={it.id}
-                              className="flex items-center gap-2 text-[11px] text-gray-200"
-                            >
-                              <input
-                                type="checkbox"
-                                className="h-3 w-3 accent-cyan-400"
-                                checked={it.done}
-                                onChange={() => toggleWorkItem(w, it)}
-                              />
-                              <span
-                                className={
-                                  it.done
-                                    ? "line-through text-gray-500"
-                                    : "text-gray-200"
-                                }
-                              >
-                                {UU(it.label)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </section>
         </div>
 
         {/* Botonera según estado (sin retornos) */}
@@ -1862,11 +1972,12 @@ export default function WorksPage() {
                     return;
                   }
 
-                  // validar productos recibidos
-                  if (
-                    productRows.length === 0 ||
-                    productRows.some((p) => !p.label.trim())
-                  ) {
+                  // validar productos recibidos (al menos 1 con label, filas vacías permitidas)
+                  const nonEmptyProducts = productRows.filter((p) =>
+                    p.label.trim()
+                  );
+
+                  if (nonEmptyProducts.length === 0) {
                     setMsg("AGREGA AL MENOS UN PRODUCTO (QUÉ SE RECIBE)");
                     setTimeout(() => setMsg(""), 2200);
                     return;
@@ -1925,10 +2036,17 @@ export default function WorksPage() {
                     if (created && typeof created.id === "number") {
                       const workId = created.id;
 
-                      // 👇 crear productos iniciales (PRODUCTOS RECIBIDOS)
-                      if (productRows.length > 0) {
+                      // 👇 crear productos iniciales (SOLO los que tienen label)
+                      const nonEmptyProducts = productRows.filter((p) =>
+                        p.label.trim()
+                      );
+                      setProductsCountByWork((prev) => ({
+                        ...prev,
+                        [workId]: nonEmptyProducts.length,
+                      }));
+                      if (nonEmptyProducts.length > 0) {
                         await Promise.all(
-                          productRows.map((p) => {
+                          nonEmptyProducts.map((p) => {
                             const fullLabel = p.description
                               ? `${UDATA(p.label)} — ${UDATA(p.description)}`
                               : UDATA(p.label);
@@ -2527,7 +2645,7 @@ export default function WorksPage() {
 
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  Descripción / trabajo realizado (opcional)
+                  Descripción / trabajo realizado
                 </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
