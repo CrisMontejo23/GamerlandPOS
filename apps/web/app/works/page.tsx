@@ -1208,13 +1208,13 @@ export default function WorksPage() {
                           }}
                           onClick={() => addWorkItem(w.id)}
                         >
-                          + TAREA
+                          + PRODUCTO
                         </button>
                       </div>
 
                       {loadingItems && (
                         <div className="text-[11px] text-gray-400">
-                          CARGANDO TAREAS…
+                          CARGANDO PRODUCTOS…
                         </div>
                       )}
 
