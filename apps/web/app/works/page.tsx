@@ -189,6 +189,9 @@ export default function WorksPage() {
   const [productsCountByWork, setProductsCountByWork] = useState<
     Record<number, number>
   >({});
+  const [pendingCountByWork, setPendingCountByWork] = useState<
+    Record<number, number>
+  >({});
 
   // Modal gamer para valor del arreglo de un producto
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -329,27 +332,27 @@ export default function WorksPage() {
   }
 
   const load = async () => {
-  setLoading(true);
-  try {
-    const p = new URLSearchParams();
-    if (location) p.set("location", location);
-    if (q.trim()) p.set("q", UDATA(q));
+    setLoading(true);
+    try {
+      const p = new URLSearchParams();
+      if (location) p.set("location", location);
+      if (q.trim()) p.set("q", UDATA(q));
 
-    const r = await apiFetch(`/works?${p.toString()}`);
-    const data = (await r.json()) as AnyRow[];
+      const r = await apiFetch(`/works?${p.toString()}`);
+      const data = (await r.json()) as AnyRow[];
 
-    const works = normalizeRows(data);
-    setRows(works);
+      const works = normalizeRows(data);
+      setRows(works);
 
-    // 👇 precargar productos y contar para que #PRODUCTOS esté de una vez
-    preloadItemsCounts(works);
-  } catch {
-    setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
-    setTimeout(() => setMsg(""), 2200);
-  } finally {
-    setLoading(false);
-  }
-};
+      // 👇 precargar productos y contar para que #PRODUCTOS esté de una vez
+      preloadItemsCounts(works);
+    } catch {
+      setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
+      setTimeout(() => setMsg(""), 2200);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!ready) return;
@@ -708,8 +711,12 @@ export default function WorksPage() {
       const r = await apiFetch(`/works/${workId}/items`);
       if (!r.ok) throw new Error();
       const data = (await r.json()) as WorkItem[];
+      const total = data.length;
+      const pending = data.filter((it) => !it.done).length;
+
       setItemsByWork((prev) => ({ ...prev, [workId]: data }));
-      setProductsCountByWork((prev) => ({ ...prev, [workId]: data.length }));
+      setProductsCountByWork((prev) => ({ ...prev, [workId]: total }));
+      setPendingCountByWork((prev) => ({ ...prev, [workId]: pending }));
       setItemsError((prev) => ({ ...prev, [workId]: undefined }));
     } catch {
       setItemsError((prev) => ({
@@ -749,6 +756,11 @@ export default function WorksPage() {
         ...prev,
         [workId]: (prev[workId] || 0) + 1,
       }));
+      setPendingCountByWork((prev) => ({
+        ...prev,
+        [workId]: (prev[workId] || 0) + 1, // nuevo producto entra como pendiente
+      }));
+
       setNewItemLabelByWork((prev) => ({ ...prev, [workId]: "" }));
     } catch {
       setMsg("ERROR AL CREAR TAREA");
@@ -768,11 +780,18 @@ export default function WorksPage() {
         });
         if (!r.ok) throw new Error();
 
-        setItemsByWork((prev) => ({
-          ...prev,
-          [w.id]: (prev[w.id] || []).map((it) =>
+        let updatedItems: WorkItem[] = [];
+        setItemsByWork((prev) => {
+          const current = prev[w.id] || [];
+          updatedItems = current.map((it) =>
             it.id === item.id ? { ...it, done: false } : it
-          ),
+          );
+          return { ...prev, [w.id]: updatedItems };
+        });
+
+        setPendingCountByWork((prev) => ({
+          ...prev,
+          [w.id]: updatedItems.filter((it) => !it.done).length,
         }));
       } catch {
         setMsg("ERROR AL ACTUALIZAR PRODUCTO");
@@ -837,12 +856,18 @@ export default function WorksPage() {
         );
         return { ...prev, [w.id]: updatedItems };
       });
+
+      const total = updatedItems.length;
+      const pending = updatedItems.filter((it) => !it.done);
+
       setProductsCountByWork((prev) => ({
         ...prev,
-        [w.id]: updatedItems.length,
+        [w.id]: total,
       }));
-
-      const pending = updatedItems.filter((it) => !it.done);
+      setPendingCountByWork((prev) => ({
+        ...prev,
+        [w.id]: pending.length,
+      }));
 
       if (pending.length === 0) {
         // 👉 ESTE ERA EL ÚLTIMO PRODUCTO: FINALIZAR TRABAJO Y ENVIAR MENSAJE GLOBAL
@@ -919,28 +944,35 @@ export default function WorksPage() {
   }
 
   async function preloadItemsCounts(works: WorkOrder[]) {
-  try {
-    await Promise.all(
-      works.map(async (w) => {
-        try {
-          const r = await apiFetch(`/works/${w.id}/items`);
-          if (!r.ok) return;
-          const data = (await r.json()) as WorkItem[];
+    try {
+      await Promise.all(
+        works.map(async (w) => {
+          try {
+            const r = await apiFetch(`/works/${w.id}/items`);
+            if (!r.ok) return;
+            const data = (await r.json()) as WorkItem[];
 
-          setItemsByWork((prev) => ({ ...prev, [w.id]: data }));
-          setProductsCountByWork((prev) => ({
-            ...prev,
-            [w.id]: data.length,
-          }));
-        } catch {
-          // si falla alguno, lo ignoramos
-        }
-      })
-    );
-  } catch {
-    // noop
+            const total = data.length;
+            const pending = data.filter((it) => !it.done).length;
+
+            setItemsByWork((prev) => ({ ...prev, [w.id]: data }));
+            setProductsCountByWork((prev) => ({
+              ...prev,
+              [w.id]: total,
+            }));
+            setPendingCountByWork((prev) => ({
+              ...prev,
+              [w.id]: pending,
+            }));
+          } catch {
+            // si falla alguno, lo ignoramos
+          }
+        })
+      );
+    } catch {
+      // noop
+    }
   }
-}
 
   const tabs: Array<{ key: WorkStatus | ""; label: string }> = [
     { key: "", label: "TODOS" },
@@ -955,8 +987,12 @@ export default function WorksPage() {
       const r = await apiFetch(`/works/${workId}/items`);
       if (!r.ok) throw new Error();
       const data = (await r.json()) as WorkItem[];
+      const total = data.length;
+      const pending = data.filter((it) => !it.done).length;
+
       setItemsByWork((prev) => ({ ...prev, [workId]: data }));
-      setProductsCountByWork((prev) => ({ ...prev, [workId]: data.length }));
+      setProductsCountByWork((prev) => ({ ...prev, [workId]: total }));
+      setPendingCountByWork((prev) => ({ ...prev, [workId]: pending }));
       return data;
     } catch {
       return itemsByWork[workId] || [];
@@ -1261,8 +1297,13 @@ export default function WorksPage() {
     const dep = Number(w.deposit || 0);
     const quote = Number(w.quote ?? 0);
     const saldo = Math.max(quote - dep, 0);
-    const productsCount =
+    const totalProducts =
       productsCountByWork[w.id] ?? itemsByWork[w.id]?.length ?? 0;
+    const pendingProducts =
+      pendingCountByWork[w.id] ??
+      (itemsByWork[w.id]
+        ? itemsByWork[w.id].filter((it) => !it.done).length
+        : 0);
 
     return (
       <article
@@ -1289,7 +1330,10 @@ export default function WorksPage() {
             <b>INGRESO:</b> {fmt(w.createdAt)}
           </div>
           <div>
-            <b># PRODUCTOS:</b> {productsCount || "—"}
+            <b># PRODUCTOS:</b> {totalProducts || "—"}
+          </div>
+          <div>
+            <b># PENDIENTES:</b> {pendingProducts || "—"}
           </div>
         </div>
 
@@ -2072,6 +2116,11 @@ export default function WorksPage() {
                         ...prev,
                         [workId]: nonEmptyProducts.length,
                       }));
+                      setPendingCountByWork((prev) => ({
+                        ...prev,
+                        [workId]: nonEmptyProducts.length, // todos pendientes al inicio
+                      }));
+
                       if (nonEmptyProducts.length > 0) {
                         await Promise.all(
                           nonEmptyProducts.map((p) => {
