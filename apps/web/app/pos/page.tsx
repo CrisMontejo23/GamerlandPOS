@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
+import Image from "next/image";
 
 // ===== Tipos =====
 type Product = {
@@ -808,9 +809,16 @@ export default function POSPage() {
                       <td className="px-3 text-right">
                         <button
                           onClick={() => remove(i.product.id)}
-                          className="text-pink-400 underline"
+                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                          aria-label="Eliminar producto"
                         >
-                          Quitar
+                          <Image
+                            src="/borrar.png"
+                            alt="Eliminar"
+                            width={18}
+                            height={18}
+                            className="opacity-90"
+                          />
                         </button>
                       </td>
                     </tr>
