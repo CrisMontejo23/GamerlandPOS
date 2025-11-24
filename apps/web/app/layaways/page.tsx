@@ -311,7 +311,27 @@ export default function LayawaysPage() {
     };
   }, [ready, productSearch]);
 
+  // modal de confirmación genérico
+  const [confirmData, setConfirmData] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    onConfirm: () => void | Promise<void>;
+  } | null>(null);
+
   // ==== HELPERS ====
+
+  // abrir modal de confirmación genérico
+  const openGamerConfirm = (cfg: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    onConfirm: () => void | Promise<void>;
+  }) => {
+    setConfirmData(cfg);
+  };
 
   const openPaymentsModal = async (lay: Layaway) => {
     setPaymentsOpenId(lay.id);
@@ -475,105 +495,128 @@ export default function LayawaysPage() {
   };
 
   // ==== ELIMINAR ABONO ====
-  const deletePayment = async (p: LayawayPayment) => {
+  const deletePayment = (p: LayawayPayment) => {
     if (!paymentsOpenId) return;
 
-    const ok = confirm(
-      `¿Eliminar el abono de ${toCOP(
+    openGamerConfirm({
+      title: "ELIMINAR ABONO",
+      message: `Vas a eliminar el abono de ${toCOP(
         p.amount
-      )}? Esta acción no se puede deshacer.`
-    );
-    if (!ok) return;
+      )}. Esta acción no se puede deshacer.`,
+      confirmLabel: "SÍ, ELIMINAR",
+      cancelLabel: "NO, VOLVER",
+      onConfirm: async () => {
+        try {
+          const r = await apiFetch(
+            `/layaways/${paymentsOpenId}/payments/${p.id}`,
+            {
+              method: "DELETE",
+            }
+          );
 
-    try {
-      const r = await apiFetch(`/layaways/${paymentsOpenId}/payments/${p.id}`, {
-        method: "DELETE",
-      });
+          if (!r.ok) {
+            const e = (await r.json().catch(() => ({}))) as { error?: string };
+            setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR EL ABONO"));
+            setTimeout(() => setMsg(""), 2500);
+            return;
+          }
 
-      if (!r.ok) {
-        const e = (await r.json().catch(() => ({}))) as { error?: string };
-        setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR EL ABONO"));
-        setTimeout(() => setMsg(""), 2500);
-        return;
-      }
+          // Actualizar cache local del modal
+          setPaymentsCache((prev) => ({
+            ...prev,
+            [paymentsOpenId]: (prev[paymentsOpenId] || []).filter(
+              (x) => x.id !== p.id
+            ),
+          }));
 
-      // Actualizar cache local del modal
-      setPaymentsCache((prev) => ({
-        ...prev,
-        [paymentsOpenId]: (prev[paymentsOpenId] || []).filter(
-          (x) => x.id !== p.id
-        ),
-      }));
+          // Refrescar totales del apartado
+          await loadLayaways();
 
-      // Refrescar totales del apartado
-      await loadLayaways();
-
-      setMsg("ABONO ELIMINADO ✅");
-      setTimeout(() => setMsg(""), 2200);
-    } catch {
-      setMsg("ERROR: NO SE PUDO ELIMINAR EL ABONO");
-      setTimeout(() => setMsg(""), 2500);
-    }
+          setMsg("ABONO ELIMINADO ✅");
+          setTimeout(() => setMsg(""), 2200);
+        } catch {
+          setMsg("ERROR: NO SE PUDO ELIMINAR EL ABONO");
+          setTimeout(() => setMsg(""), 2500);
+        } finally {
+          setConfirmData(null);
+        }
+      },
+    });
   };
 
   // ==== FINALIZAR VENTA ====
 
-  const finalizeLayaway = async (lay: Layaway) => {
-    const ok = confirm(
-      `Finalizar el sistema de apartado ${lay.code} y pasar a POS para registrar la venta final?`
-    );
-    if (!ok) return;
+  const finalizeLayaway = (lay: Layaway) => {
+    openGamerConfirm({
+      title: "FINALIZAR SISTEMA",
+      message: `Vas a finalizar el sistema de apartado ${lay.code} y pasar a POS para registrar la venta final.`,
+      confirmLabel: "SÍ, FINALIZAR E IR A POS",
+      cancelLabel: "CANCELAR",
+      onConfirm: async () => {
+        try {
+          const r = await apiFetch(`/layaways/${lay.id}/close`, {
+            method: "POST",
+          });
 
-    const r = await apiFetch(`/layaways/${lay.id}/close`, {
-      method: "POST",
+          if (!r.ok) {
+            const e = (await r.json().catch(() => ({}))) as { error?: string };
+            setMsg("ERROR: " + U(e?.error || "NO SE PUDO CERRAR"));
+            setTimeout(() => setMsg(""), 2500);
+            return;
+          }
+
+          // Guardamos info en localStorage para que POS la recoja
+          try {
+            const payload = {
+              source: "LAYAWAY",
+              layawayId: lay.id,
+              productId: lay.productId,
+              productName: lay.productName,
+              price: lay.productPrice,
+              customerName: lay.customerName,
+            };
+            window.localStorage.setItem("POS_PRELOAD", JSON.stringify(payload));
+          } catch {
+            /* ignore */
+          }
+
+          window.location.href = "/pos";
+        } catch {
+          setMsg("ERROR: NO SE PUDO CERRAR");
+          setTimeout(() => setMsg(""), 2500);
+        } finally {
+          setConfirmData(null);
+        }
+      },
     });
-    if (!r.ok) {
-      const e = (await r.json().catch(() => ({}))) as { error?: string };
-      setMsg("ERROR: " + U(e?.error || "NO SE PUDO CERRAR"));
-      setTimeout(() => setMsg(""), 2500);
-      return;
-    }
-
-    // Guardamos info en localStorage para que POS la recoja
-    try {
-      const payload = {
-        source: "LAYAWAY",
-        layawayId: lay.id,
-        productId: lay.productId,
-        productName: lay.productName,
-        price: lay.productPrice,
-        customerName: lay.customerName,
-      };
-      window.localStorage.setItem("POS_PRELOAD", JSON.stringify(payload));
-    } catch {
-      /* ignore */
-    }
-
-    // Redirigir a POS
-    window.location.href = "/pos";
   };
 
   // ==== ELIMINAR APARTADO (ADMIN) ====
-  const deleteLayaway = async (lay: Layaway) => {
-    const ok = confirm(
-      `¿Eliminar el sistema de apartado ${lay.code} y todos sus abonos? Esta acción no se puede deshacer.`
-    );
-    if (!ok) return;
-
-    try {
-      const r = await apiFetch(`/layaways/${lay.id}`, { method: "DELETE" });
-      if (!r.ok) {
-        const e = (await r.json().catch(() => ({}))) as { error?: string };
-        setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR"));
-        setTimeout(() => setMsg(""), 2500);
-        return;
-      }
-      setMsg("SISTEMA DE APARTADO ELIMINADO ✅");
-      await loadLayaways();
-    } catch {
-      setMsg("ERROR: NO SE PUDO ELIMINAR");
-      setTimeout(() => setMsg(""), 2500);
-    }
+  const deleteLayaway = (lay: Layaway) => {
+    openGamerConfirm({
+      title: "ELIMINAR SISTEMA DE APARTADO",
+      message: `¿Eliminar el sistema de apartado ${lay.code} y todos sus abonos? Esta acción no se puede deshacer.`,
+      confirmLabel: "SÍ, ELIMINAR TODO",
+      cancelLabel: "CANCELAR",
+      onConfirm: async () => {
+        try {
+          const r = await apiFetch(`/layaways/${lay.id}`, { method: "DELETE" });
+          if (!r.ok) {
+            const e = (await r.json().catch(() => ({}))) as { error?: string };
+            setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR"));
+            setTimeout(() => setMsg(""), 2500);
+            return;
+          }
+          setMsg("SISTEMA DE APARTADO ELIMINADO ✅");
+          await loadLayaways();
+        } catch {
+          setMsg("ERROR: NO SE PUDO ELIMINAR");
+          setTimeout(() => setMsg(""), 2500);
+        } finally {
+          setConfirmData(null);
+        }
+      },
+    });
   };
 
   // ==== DEVOLUCIÓN 50% Y PASAR A POS ====
@@ -1665,6 +1708,54 @@ export default function LayawaysPage() {
                 onClick={confirmRefund}
               >
                 CONFIRMAR DEVOLUCIÓN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gamer Confirm global */}
+      {confirmData && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-sm rounded-2xl p-5 space-y-4 relative"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: "1px solid rgba(0,255,255,0.6)",
+              boxShadow:
+                "0 0 18px rgba(0,255,255,.45), 0 0 30px rgba(255,0,255,.35)",
+            }}
+          >
+            <div className="text-[10px] tracking-[0.25em] text-cyan-300 uppercase">
+              CONFIRMACIÓN GAMER
+            </div>
+
+            <h3 className="text-lg font-semibold text-cyan-200 uppercase">
+              {confirmData.title}
+            </h3>
+
+            <p className="text-sm text-gray-200">{confirmData.message}</p>
+
+            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase text-xs"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => setConfirmData(null)}
+              >
+                {confirmData.cancelLabel || "CANCELAR"}
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase text-xs"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.35)",
+                }}
+                onClick={() => confirmData.onConfirm()}
+              >
+                {confirmData.confirmLabel}
               </button>
             </div>
           </div>
