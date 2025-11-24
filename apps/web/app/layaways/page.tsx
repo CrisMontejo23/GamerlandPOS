@@ -1726,10 +1726,6 @@ export default function LayawaysPage() {
                 "0 0 18px rgba(0,255,255,.45), 0 0 30px rgba(255,0,255,.35)",
             }}
           >
-            <div className="text-[10px] tracking-[0.25em] text-cyan-300 uppercase">
-              CONFIRMACIÓN GAMER
-            </div>
-
             <h3 className="text-lg font-semibold text-cyan-200 uppercase">
               {confirmData.title}
             </h3>
