@@ -449,7 +449,7 @@ export default function ProductsPage() {
                   </td>
                   <td className="px-3 text-right">
                     {role === "ADMIN" ? (
-                      <div className="flex justify-end gap-2">                        
+                      <div className="flex justify-end gap-2">
                         <button
                           onClick={() => openStockModal(p)}
                           className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
@@ -587,24 +587,24 @@ export default function ProductsPage() {
 
       {/* Modal gamer de ajuste de stock */}
       {stockModalOpen && stockProduct && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-3">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4">
           <div
-            className="w-full max-w-lg rounded-xl p-[1px] shadow-2xl"
+            className="w-full max-w-xl rounded-2xl p-[1px] shadow-2xl"
             style={{
               backgroundImage:
                 "linear-gradient(135deg, rgba(0,255,255,.7), rgba(255,0,255,.7))",
             }}
           >
             <div
-              className="rounded-xl px-4 py-4 space-y-4"
+              className="rounded-2xl px-6 py-5 space-y-5"
               style={{ backgroundColor: UI.bgCard }}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-cyan-300 uppercase tracking-wide">
+                  <h3 className="text-xl font-semibold text-cyan-300 uppercase tracking-wide">
                     Ajuste de stock
                   </h3>
-                  <p className="text-xs text-gray-300 mt-1">
+                  <p className="text-sm text-gray-300 mt-1">
                     <span className="font-mono text-pink-300">
                       {stockProduct.sku}
                     </span>{" "}
@@ -621,7 +621,7 @@ export default function ProductsPage() {
 
               {/* Selector tipo de movimiento */}
               <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs text-gray-300">
+                <span className="text-sm text-gray-300">
                   Tipo de movimiento:
                 </span>
                 <div className="flex gap-2">
@@ -681,7 +681,7 @@ export default function ProductsPage() {
               {/* Campos cantidad / nuevo costo */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
                 <div className="sm:col-span-1">
-                  <label className="block text-xs text-gray-300 mb-1">
+                  <label className="block text-sm text-gray-300 mb-1">
                     Cantidad a {movementType === "in" ? "ingresar" : "retirar"}
                   </label>
                   <input
@@ -704,7 +704,7 @@ export default function ProductsPage() {
                 {movementType === "in" && (
                   <div className="sm:col-span-2 space-y-2">
                     <div>
-                      <label className="block text-xs text-gray-300 mb-1">
+                      <label className="block text-sm text-gray-300 mb-1">
                         Nuevo costo unitario (COP)
                       </label>
                       <input
@@ -724,29 +724,46 @@ export default function ProductsPage() {
                       />
                     </div>
 
-                    <div className="text-[11px] text-gray-300">
-                      <div>
-                        <span className="text-gray-400 mr-1">
-                          Costo actual:
-                        </span>
-                        <span className="text-pink-300">
-                          {fmtCOP(currentCost)}
-                        </span>
-                      </div>
-                      {stockQty && newUnitCost > 0 && (
+                    {movementType === "in" && (
+                      <div className="sm:col-span-2 space-y-2">
                         <div>
-                          <span className="text-gray-400 mr-1">
-                            Costo nuevo (lote):
-                          </span>
-                          <span className="text-cyan-300">
-                            {fmtCOP(newLotCost)}
-                          </span>{" "}
-                          <span className="text-gray-500">
-                            ({Number(stockQty)} uds × {fmtCOP(newUnitCost)})
-                          </span>
+                          <label className="block text-sm text-gray-300 mb-1">
+                            Nuevo costo unitario (COP)
+                          </label>
+                          <input
+                            className="rounded px-3 py-2 w-full text-gray-100 text-sm outline-none"
+                            style={{
+                              backgroundColor: UI.input,
+                              border: `1px solid ${UI.border}`,
+                            }}
+                            type="number"
+                            placeholder="Costo unitario"
+                            value={stockUnitCost}
+                            onChange={(e) =>
+                              setStockUnitCost(
+                                e.target.value === ""
+                                  ? ""
+                                  : Number(e.target.value)
+                              )
+                            }
+                          />
                         </div>
-                      )}
-                    </div>
+
+                        {stockQty && newUnitCost > 0 && (
+                          <div className="text-sm text-gray-300">
+                            <span className="text-gray-400 mr-1">
+                              Costo nuevo (lote):
+                            </span>
+                            <span className="text-cyan-300">
+                              {fmtCOP(newLotCost)}
+                            </span>{" "}
+                            <span className="text-gray-500">
+                              ({Number(stockQty)} uds × {fmtCOP(newUnitCost)})
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
