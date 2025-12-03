@@ -449,17 +449,20 @@ export default function ProductsPage() {
                   </td>
                   <td className="px-3 text-right">
                     {role === "ADMIN" ? (
-                      <div className="flex justify-end gap-2">
-                        {/* NUEVO: botón STOCK */}
+                      <div className="flex justify-end gap-2">                        
                         <button
                           onClick={() => openStockModal(p)}
-                          className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide hover:bg-white/5 transition transform hover:scale-110"
-                          style={{ border: `1px solid ${UI.border}` }}
+                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
                           aria-label="Ajustar stock"
                         >
-                          STOCK
+                          <Image
+                            src="/añadir.png"
+                            alt="Ajustar stock"
+                            width={18}
+                            height={18}
+                            className="opacity-90"
+                          />
                         </button>
-
                         <Link
                           href={`/products/${p.id}/edit`}
                           className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"

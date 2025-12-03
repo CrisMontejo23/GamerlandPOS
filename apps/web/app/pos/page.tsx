@@ -222,8 +222,13 @@ export default function POSPage() {
   const add = (p: Product) => {
     const currentStock = Number(p.stock ?? 0);
     if (currentStock <= 0) {
-      if (confirm("Este producto no tiene stock. ¿Ir a cargar stock ahora?"))
-        window.location.href = "/stock-in";
+      if (
+        confirm(
+          "Este producto no tiene stock. ¿Ir a la página de PRODUCTOS para ajustar el inventario?"
+        )
+      ) {
+        window.location.href = "/products";
+      }
       return;
     }
     setCart((prev) => {

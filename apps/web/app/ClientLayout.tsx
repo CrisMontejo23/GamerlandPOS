@@ -15,8 +15,7 @@ const NAV_ALL: Array<{
   allow: ReadonlyArray<Role>;
 }> = [
   { href: "/pos", label: "💰 POS", allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/products", label: "📦 Productos", allow: ["ADMIN", "EMPLOYEE"] },
-  { href: "/stock-in", label: "📥 Stock", allow: ["ADMIN"] },
+  { href: "/products", label: "📦 Productos", allow: ["ADMIN", "EMPLOYEE"] },  
   { href: "/sales", label: "📈 Ventas", allow: ["ADMIN", "EMPLOYEE"] },
   { href: "/expenses", label: "💸 Gastos", allow: ["ADMIN", "EMPLOYEE"] },
   { href: "/works", label: "🛠️ Trabajos", allow: ["ADMIN", "EMPLOYEE"] },
@@ -149,7 +148,7 @@ export default function ClientLayout({
           >
             Cerrar sesión
           </button>
-          © 2025 GAMERLAND PC
+          © 2026 GAMERLAND PC
         </footer>
       </aside>
 
