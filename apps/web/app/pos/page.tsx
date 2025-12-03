@@ -767,7 +767,9 @@ export default function POSPage() {
                             border: `1px solid ${COLORS.border}`,
                           }}
                           inputMode="numeric"
-                          value={String(i.unitPrice)}
+                          // 👇 si el precio es 0, el campo se ve vacío
+                          value={i.unitPrice === 0 ? "" : String(i.unitPrice)}
+                          placeholder="0"
                           onChange={(e) =>
                             setPrice(
                               i.product.id,
