@@ -702,7 +702,7 @@ export default function ProductsPage() {
                 </div>
 
                 {movementType === "in" && (
-                  <div className="sm:col-span-2 space-y-2">
+                  <div className="sm:col-span-2 space-y-3">
                     <div>
                       <label className="block text-sm text-gray-300 mb-1">
                         Nuevo costo unitario (COP)
@@ -724,44 +724,17 @@ export default function ProductsPage() {
                       />
                     </div>
 
-                    {movementType === "in" && (
-                      <div className="sm:col-span-2 space-y-2">
-                        <div>
-                          <label className="block text-sm text-gray-300 mb-1">
-                            Nuevo costo unitario (COP)
-                          </label>
-                          <input
-                            className="rounded px-3 py-2 w-full text-gray-100 text-sm outline-none"
-                            style={{
-                              backgroundColor: UI.input,
-                              border: `1px solid ${UI.border}`,
-                            }}
-                            type="number"
-                            placeholder="Costo unitario"
-                            value={stockUnitCost}
-                            onChange={(e) =>
-                              setStockUnitCost(
-                                e.target.value === ""
-                                  ? ""
-                                  : Number(e.target.value)
-                              )
-                            }
-                          />
-                        </div>
-
-                        {stockQty && newUnitCost > 0 && (
-                          <div className="text-sm text-gray-300">
-                            <span className="text-gray-400 mr-1">
-                              Costo nuevo (lote):
-                            </span>
-                            <span className="text-cyan-300">
-                              {fmtCOP(newLotCost)}
-                            </span>{" "}
-                            <span className="text-gray-500">
-                              ({Number(stockQty)} uds × {fmtCOP(newUnitCost)})
-                            </span>
-                          </div>
-                        )}
+                    {stockQty && newUnitCost > 0 && (
+                      <div className="text-sm text-gray-300">
+                        <span className="text-gray-400 mr-1">
+                          Costo nuevo (lote):
+                        </span>
+                        <span className="text-cyan-300">
+                          {fmtCOP(newLotCost)}
+                        </span>{" "}
+                        <span className="text-gray-500">
+                          ({Number(stockQty)} uds × {fmtCOP(newUnitCost)})
+                        </span>
                       </div>
                     )}
                   </div>
