@@ -17,6 +17,8 @@ type Product = {
   stock?: number;
 };
 
+type MovementType = "in" | "out";
+
 const UI = {
   bgCard: "#14163A",
   border: "#1E1F4B",
@@ -177,6 +179,121 @@ export default function ProductsPage() {
   // Confirm gamer para eliminar
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
+  // ===== Modal de ajuste de stock =====
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [stockProduct, setStockProduct] = useState<Product | null>(null);
+  const [movementType, setMovementType] = useState<MovementType>("in");
+  const [stockQty, setStockQty] = useState<number | "">("");
+  const [stockUnitCost, setStockUnitCost] = useState<number | "">("");
+
+  const resetStockModal = () => {
+    setStockProduct(null);
+    setMovementType("in");
+    setStockQty("");
+    setStockUnitCost("");
+    setStockModalOpen(false);
+  };
+
+  const openStockModal = (p: Product) => {
+    setStockProduct(p);
+    setMovementType("in");
+    setStockQty("");
+    setStockUnitCost("");
+    setStockModalOpen(true);
+  };
+
+  const stockSaveDisabled =
+    !stockProduct ||
+    !stockQty ||
+    Number(stockQty) <= 0 ||
+    (movementType === "in" &&
+      (stockUnitCost === "" ||
+        Number(stockUnitCost) < 0 ||
+        isNaN(Number(stockUnitCost))));
+
+  const currentCost = Number(stockProduct?.cost ?? 0);
+  const newUnitCost = Number(stockUnitCost || 0);
+  const newLotCost =
+    movementType === "in" && stockQty && newUnitCost
+      ? newUnitCost * Number(stockQty)
+      : 0;
+
+  const doSaveStockMovement = async () => {
+    if (!stockProduct || !stockQty || Number(stockQty) <= 0) return;
+
+    try {
+      if (movementType === "in") {
+        if (stockUnitCost === "" || Number(stockUnitCost) < 0) return;
+
+        const payload = {
+          productId: stockProduct.id,
+          qty: Number(stockQty),
+          unitCost: Number(stockUnitCost),
+          reference: "COMPRA",
+        };
+
+        const r = await apiFetch(`/stock/in`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          showToast(
+            "error",
+            "No se pudo registrar el ingreso",
+            e?.error || "Verifica los datos e intenta de nuevo."
+          );
+          return;
+        }
+
+        showToast(
+          "success",
+          "Ingreso de stock registrado",
+          `Producto ${stockProduct.sku} – +${stockQty} uds.`
+        );
+      } else {
+        // movementType === "out"
+        const payload = {
+          productId: stockProduct.id,
+          qty: Number(stockQty),
+          reference: "AJUSTE",
+        };
+
+        const r = await apiFetch(`/stock/out`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          showToast(
+            "error",
+            "No se pudo registrar la salida",
+            e?.error || "Verifica los datos e intenta de nuevo."
+          );
+          return;
+        }
+
+        showToast(
+          "success",
+          "Salida de stock registrada",
+          `Producto ${stockProduct.sku} – -${stockQty} uds.`
+        );
+      }
+
+      // Refrescar tabla y cerrar modal
+      setReload((v) => v + 1);
+      resetStockModal();
+    } catch {
+      showToast(
+        "error",
+        "Error de comunicación",
+        "No se pudo contactar el servidor."
+      );
+    }
+  };
+
   // Carga datos desde el backend (paginado en server)
   useEffect(() => {
     const load = async () => {
@@ -291,7 +408,6 @@ export default function ProductsPage() {
             value={q}
             onChange={(e) => onSearchChange(e.target.value)}
           />
-          {/* checkbox "Ver inactivos" eliminado */}
         </div>
 
         <div
@@ -311,7 +427,6 @@ export default function ProductsPage() {
                 <th className="px-3 text-right">STOCK</th>
                 <th className="px-3 text-right">PRECIO</th>
                 <th className="px-3 text-right">COSTO</th>
-                {/* Columna ESTADO eliminada */}
                 <th className="px-3 text-right">ACCIONES</th>
               </tr>
             </thead>
@@ -335,6 +450,16 @@ export default function ProductsPage() {
                   <td className="px-3 text-right">
                     {role === "ADMIN" ? (
                       <div className="flex justify-end gap-2">
+                        {/* NUEVO: botón STOCK */}
+                        <button
+                          onClick={() => openStockModal(p)}
+                          className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide hover:bg-white/5 transition transform hover:scale-110"
+                          style={{ border: `1px solid ${UI.border}` }}
+                          aria-label="Ajustar stock"
+                        >
+                          STOCK
+                        </button>
+
                         <Link
                           href={`/products/${p.id}/edit`}
                           className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
@@ -456,6 +581,200 @@ export default function ProductsPage() {
         onConfirm={doRemove}
         onCancel={() => setConfirmDeleteId(null)}
       />
+
+      {/* Modal gamer de ajuste de stock */}
+      {stockModalOpen && stockProduct && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-3">
+          <div
+            className="w-full max-w-lg rounded-xl p-[1px] shadow-2xl"
+            style={{
+              backgroundImage:
+                "linear-gradient(135deg, rgba(0,255,255,.7), rgba(255,0,255,.7))",
+            }}
+          >
+            <div
+              className="rounded-xl px-4 py-4 space-y-4"
+              style={{ backgroundColor: UI.bgCard }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-cyan-300 uppercase tracking-wide">
+                    Ajuste de stock
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-1">
+                    <span className="font-mono text-pink-300">
+                      {stockProduct.sku}
+                    </span>{" "}
+                    — {stockProduct.name}
+                  </p>
+                </div>
+                <button
+                  onClick={resetStockModal}
+                  className="text-xs text-gray-400 hover:text-gray-100"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Selector tipo de movimiento */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-gray-300">
+                  Tipo de movimiento:
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    className={[
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide",
+                      movementType === "in"
+                        ? "bg-[#1E1F4B] text-cyan-300"
+                        : "border text-gray-200",
+                    ].join(" ")}
+                    style={{ borderColor: UI.border }}
+                    onClick={() => setMovementType("in")}
+                  >
+                    Entrada
+                  </button>
+                  <button
+                    className={[
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide",
+                      movementType === "out"
+                        ? "bg-[#1E1F4B] text-pink-300"
+                        : "border text-gray-200",
+                    ].join(" ")}
+                    style={{ borderColor: UI.border }}
+                    onClick={() => setMovementType("out")}
+                  >
+                    Salida
+                  </button>
+                </div>
+              </div>
+
+              {/* Info actual */}
+              <div className="grid grid-cols-2 gap-3 text-xs text-gray-200">
+                <div>
+                  <span className="block text-[11px] text-gray-400">
+                    Stock actual
+                  </span>
+                  <span
+                    className="inline-block mt-1 px-2 py-1 rounded"
+                    style={{ backgroundColor: UI.input }}
+                  >
+                    {Number(stockProduct.stock ?? 0)}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[11px] text-gray-400">
+                    Costo actual unitario
+                  </span>
+                  <span
+                    className="inline-block mt-1 px-2 py-1 rounded"
+                    style={{ backgroundColor: UI.input }}
+                  >
+                    {fmtCOP(currentCost)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Campos cantidad / nuevo costo */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                <div className="sm:col-span-1">
+                  <label className="block text-xs text-gray-300 mb-1">
+                    Cantidad a {movementType === "in" ? "ingresar" : "retirar"}
+                  </label>
+                  <input
+                    className="rounded px-3 py-2 w-full text-gray-100 text-sm outline-none"
+                    style={{
+                      backgroundColor: UI.input,
+                      border: `1px solid ${UI.border}`,
+                    }}
+                    type="number"
+                    placeholder="Cantidad"
+                    value={stockQty}
+                    onChange={(e) =>
+                      setStockQty(
+                        e.target.value === "" ? "" : Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+
+                {movementType === "in" && (
+                  <div className="sm:col-span-2 space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-300 mb-1">
+                        Nuevo costo unitario (COP)
+                      </label>
+                      <input
+                        className="rounded px-3 py-2 w-full text-gray-100 text-sm outline-none"
+                        style={{
+                          backgroundColor: UI.input,
+                          border: `1px solid ${UI.border}`,
+                        }}
+                        type="number"
+                        placeholder="Costo unitario"
+                        value={stockUnitCost}
+                        onChange={(e) =>
+                          setStockUnitCost(
+                            e.target.value === "" ? "" : Number(e.target.value)
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="text-[11px] text-gray-300">
+                      <div>
+                        <span className="text-gray-400 mr-1">
+                          Costo actual:
+                        </span>
+                        <span className="text-pink-300">
+                          {fmtCOP(currentCost)}
+                        </span>
+                      </div>
+                      {stockQty && newUnitCost > 0 && (
+                        <div>
+                          <span className="text-gray-400 mr-1">
+                            Costo nuevo (lote):
+                          </span>
+                          <span className="text-cyan-300">
+                            {fmtCOP(newLotCost)}
+                          </span>{" "}
+                          <span className="text-gray-500">
+                            ({Number(stockQty)} uds × {fmtCOP(newUnitCost)})
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Botones acción */}
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3">
+                <button
+                  onClick={resetStockModal}
+                  className="px-4 py-2 rounded border text-xs sm:text-sm uppercase"
+                  style={{ borderColor: UI.border }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={doSaveStockMovement}
+                  disabled={stockSaveDisabled}
+                  className="px-5 py-2.5 rounded-lg font-semibold text-xs sm:text-sm uppercase disabled:opacity-60"
+                  style={{
+                    color: "#001014",
+                    background:
+                      "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                    boxShadow: UI.glow,
+                  }}
+                >
+                  Guardar movimiento
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
