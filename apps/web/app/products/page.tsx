@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams, useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -151,16 +152,35 @@ function GamerConfirm({
   );
 }
 
+/* ===== helpers SKU ===== */
+const skuPrefix = (sku?: string | null) => {
+  if (!sku) return "";
+  return sku.toUpperCase().split("-")[0]; // CON-001 -> CON
+};
+
 /* ===== Página ===== */
 export default function ProductsPage() {
-  const [q, setQ] = useState("");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { role } = useAuth();
+
+  // Estado inicial desde la URL
+  const [q, setQ] = useState(() => (searchParams.get("q") ?? "").toUpperCase());
+  const [page, setPage] = useState(() => {
+    const raw = searchParams.get("page");
+    const n = raw ? parseInt(raw, 10) : 1;
+    return Number.isNaN(n) || n < 1 ? 1 : n;
+  });
+  const [skuFilters, setSkuFilters] = useState<string[]>(() => {
+    const raw = searchParams.get("sku");
+    return raw ? raw.split(",").filter(Boolean) : [];
+  });
+
   const [rows, setRows] = useState<Product[]>([]);
   const [reload, setReload] = useState(0);
 
-  // ---- Paginación (server-side) ----
-  const [total, setTotal] = useState(0);
+  // Paginación (ahora client-side)
   const PAGE_SIZE = 10;
-  const [page, setPage] = useState(1);
 
   // Toast gamer
   const [toastOpen, setToastOpen] = useState(false);
@@ -253,7 +273,6 @@ export default function ProductsPage() {
           `Producto ${stockProduct.sku} – +${stockQty} uds.`
         );
       } else {
-        // movementType === "out"
         const payload = {
           productId: stockProduct.id,
           qty: Number(stockQty),
@@ -282,7 +301,6 @@ export default function ProductsPage() {
         );
       }
 
-      // Refrescar tabla y cerrar modal
       setReload((v) => v + 1);
       resetStockModal();
     } catch {
@@ -294,26 +312,57 @@ export default function ProductsPage() {
     }
   };
 
-  // Carga datos desde el backend (paginado en server)
+  // Carga datos desde el backend (una sola página grande, luego filtramos/paginamos en cliente)
   useEffect(() => {
     const load = async () => {
       const sp = new URLSearchParams();
       if (q) sp.set("q", q);
       sp.set("withStock", "true");
-      sp.set("page", String(page));
-      sp.set("pageSize", String(PAGE_SIZE));
+      sp.set("page", "1");
+      sp.set("pageSize", "2000"); // suficiente para el inventario de la tienda
 
       const res = await apiFetch(`/products?${sp.toString()}`);
-      const data = await res.json(); // { total, rows }
-      setRows(Array.isArray(data?.rows) ? data.rows : []);
-      setTotal(Number(data?.total ?? 0));
+      const data = await res.json(); // { total, rows } o simplemente array
+      const rows: Product[] = Array.isArray(data?.rows) ? data.rows : data;
+      setRows(Array.isArray(rows) ? rows : []);
     };
     load();
-  }, [q, page, reload]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, reload]);
 
-  // Derivados de paginación
+  // ====== ORDEN ALFABÉTICO por nombre ======
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "es", {
+        sensitivity: "base",
+      })
+    );
+  }, [rows]);
+
+  // ====== Filtro por prefijo de SKU ======
+  const allPrefixes = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of rows) {
+      const pref = skuPrefix(p.sku);
+      if (pref) set.add(pref);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    if (!skuFilters.length) return sortedRows;
+    return sortedRows.filter((p) => skuFilters.includes(skuPrefix(p.sku)));
+  }, [sortedRows, skuFilters]);
+
+  // Paginación client-side
+  const total = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
+
+  const pageRows = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filteredRows.slice(start, start + PAGE_SIZE);
+  }, [filteredRows, safePage]);
 
   // Rango compacto de páginas
   const pageRange = useMemo(() => {
@@ -337,6 +386,27 @@ export default function ProductsPage() {
   // Rangos "Mostrando X – Y de Z"
   const startItem = total === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
   const endItem = Math.min(safePage * PAGE_SIZE, total);
+
+  const syncUrl = (
+    nextQ: string,
+    nextPage: number,
+    nextSkuFilters: string[]
+  ) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextQ) params.set("q", nextQ);
+    else params.delete("q");
+
+    params.set("page", String(nextPage));
+
+    if (nextSkuFilters.length) {
+      params.set("sku", nextSkuFilters.join(","));
+    } else {
+      params.delete("sku");
+    }
+
+    params.delete("status"); // limpiar status una vez cambiado algo
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
   const doRemove = async () => {
     if (confirmDeleteId == null) return;
@@ -369,13 +439,53 @@ export default function ProductsPage() {
     }
   };
 
-  const { role } = useAuth();
-
   // Handlers que resetean a la primera página
   const onSearchChange = (val: string) => {
-    setQ(val.toUpperCase());
+    const nextQ = val.toUpperCase();
+    setQ(nextQ);
     setPage(1);
+    syncUrl(nextQ, 1, skuFilters);
   };
+
+  const toggleSkuFilter = (pref: string) => {
+    setPage(1);
+    setSkuFilters((prev) => {
+      const exists = prev.includes(pref);
+      const next = exists ? prev.filter((p) => p !== pref) : [...prev, pref];
+      syncUrl(q, 1, next);
+      return next;
+    });
+  };
+
+  const clearSkuFilters = () => {
+    setSkuFilters([]);
+    setPage(1);
+    syncUrl(q, 1, []);
+  };
+
+  // Leer status para mostrar toast al volver de crear/editar
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (!status) return;
+
+    if (status === "created") {
+      showToast(
+        "success",
+        "Producto creado",
+        "El producto se guardó correctamente."
+      );
+    } else if (status === "updated") {
+      showToast(
+        "success",
+        "Producto actualizado",
+        "Los cambios fueron guardados."
+      );
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("status");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [searchParams, router]);
 
   return (
     <>
@@ -384,7 +494,15 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-bold text-cyan-400">PRODUCTOS</h1>
           {role === "ADMIN" && (
             <Link
-              href="/products/new"
+              href={{
+                pathname: "/products/new",
+                query: {
+                  from: "products",
+                  q: q || undefined,
+                  page: String(safePage),
+                  sku: skuFilters.length ? skuFilters.join(",") : undefined,
+                },
+              }}
               className="px-5 py-2.5 rounded-lg font-semibold text-[#001014]"
               style={{
                 background:
@@ -397,17 +515,52 @@ export default function ProductsPage() {
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <input
-            className="rounded px-3 py-2 flex-1 text-gray-100 placeholder-gray-400 outline-none"
-            style={{
-              backgroundColor: UI.input,
-              border: `1px solid ${UI.border}`,
-            }}
-            placeholder="Buscar por nombre, SKU o categoría"
-            value={q}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
+        {/* Buscador + filtros SKU */}
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              className="rounded px-3 py-2 flex-1 text-gray-100 placeholder-gray-400 outline-none"
+              style={{
+                backgroundColor: UI.input,
+                border: `1px solid ${UI.border}`,
+              }}
+              placeholder="Buscar por nombre, SKU o categoría"
+              value={q}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
+          </div>
+
+          {allPrefixes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-gray-300">Filtrar por prefijo de SKU:</span>
+              {allPrefixes.map((pref) => {
+                const active = skuFilters.includes(pref);
+                return (
+                  <button
+                    key={pref}
+                    onClick={() => toggleSkuFilter(pref)}
+                    className={`px-2 py-1 rounded border transition transform hover:scale-105 ${
+                      active
+                        ? "bg-cyan-500/20 text-cyan-300"
+                        : "text-gray-300 hover:bg-white/5"
+                    }`}
+                    style={{ borderColor: UI.border }}
+                  >
+                    {pref}
+                  </button>
+                );
+              })}
+              {skuFilters.length > 0 && (
+                <button
+                  onClick={clearSkuFilters}
+                  className="ml-2 px-2 py-1 rounded border text-[11px] uppercase tracking-wide text-gray-300 hover:bg-white/5"
+                  style={{ borderColor: UI.border }}
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div
@@ -431,7 +584,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
+              {pageRows.map((p) => (
                 <tr
                   key={p.id}
                   className="border-b border-[#1E1F4B] hover:bg-[#191B4B]"
@@ -464,7 +617,17 @@ export default function ProductsPage() {
                           />
                         </button>
                         <Link
-                          href={`/products/${p.id}/edit`}
+                          href={{
+                            pathname: `/products/${p.id}/edit`,
+                            query: {
+                              from: "products",
+                              q: q || undefined,
+                              page: String(safePage),
+                              sku: skuFilters.length
+                                ? skuFilters.join(",")
+                                : undefined,
+                            },
+                          }}
                           className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
                           aria-label="Editar producto"
                         >
@@ -498,7 +661,7 @@ export default function ProductsPage() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
+              {pageRows.length === 0 && (
                 <tr>
                   <td
                     className="py-4 px-3 text-center text-gray-400"
@@ -524,12 +687,19 @@ export default function ProductsPage() {
               <PagerButton
                 label="«"
                 disabled={safePage === 1}
-                onClick={() => setPage(1)}
+                onClick={() => {
+                  setPage(1);
+                  syncUrl(q, 1, skuFilters);
+                }}
               />
               <PagerButton
                 label="‹"
                 disabled={safePage === 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => {
+                  const next = Math.max(1, safePage - 1);
+                  setPage(next);
+                  syncUrl(q, next, skuFilters);
+                }}
               />
 
               {pageRange.map((p, idx) =>
@@ -545,7 +715,10 @@ export default function ProductsPage() {
                     key={p}
                     label={String(p)}
                     active={p === safePage}
-                    onClick={() => setPage(p)}
+                    onClick={() => {
+                      setPage(p);
+                      syncUrl(q, p, skuFilters);
+                    }}
                   />
                 )
               )}
@@ -553,12 +726,19 @@ export default function ProductsPage() {
               <PagerButton
                 label="›"
                 disabled={safePage === totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => {
+                  const next = Math.min(totalPages, safePage + 1);
+                  setPage(next);
+                  syncUrl(q, next, skuFilters);
+                }}
               />
               <PagerButton
                 label="»"
                 disabled={safePage === totalPages}
-                onClick={() => setPage(totalPages)}
+                onClick={() => {
+                  setPage(totalPages);
+                  syncUrl(q, totalPages, skuFilters);
+                }}
               />
             </div>
           </div>
