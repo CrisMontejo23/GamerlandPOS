@@ -6,7 +6,7 @@ type PageProps = {
     from?: string;
     q?: string;
     page?: string;
-    cat?: string; // ahora usamos "cat", no "sku"
+    cat?: string;
   };
 };
 
@@ -14,7 +14,6 @@ export default function EditProductPage({ params, searchParams }: PageProps) {
   const rawId = params?.id;
   const numId = Number(rawId);
 
-  // Si por alguna razón no viene bien el id, mostramos algo útil
   if (!rawId || Number.isNaN(numId) || numId <= 0) {
     return (
       <div className="p-6 text-gray-300">
