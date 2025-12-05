@@ -152,11 +152,8 @@ function GamerConfirm({
   );
 }
 
-/* ===== helpers SKU ===== */
-const skuPrefix = (sku?: string | null) => {
-  if (!sku) return "";
-  return sku.toUpperCase().split("-")[0]; // CON-001 -> CON
-};
+/* ===== helpers categoría ===== */
+const normCat = (c?: string | null) => (c ?? "").trim().toUpperCase();
 
 /* ===== Página ===== */
 export default function ProductsPage() {
@@ -171,15 +168,15 @@ export default function ProductsPage() {
     const n = raw ? parseInt(raw, 10) : 1;
     return Number.isNaN(n) || n < 1 ? 1 : n;
   });
-  const [skuFilters, setSkuFilters] = useState<string[]>(() => {
-    const raw = searchParams.get("sku");
+  const [categoryFilters, setCategoryFilters] = useState<string[]>(() => {
+    const raw = searchParams.get("cat");
     return raw ? raw.split(",").filter(Boolean) : [];
   });
 
   const [rows, setRows] = useState<Product[]>([]);
   const [reload, setReload] = useState(0);
 
-  // Paginación (ahora client-side)
+  // Paginación (client-side)
   const PAGE_SIZE = 10;
 
   // Toast gamer
@@ -312,18 +309,18 @@ export default function ProductsPage() {
     }
   };
 
-  // Carga datos desde el backend (una sola página grande, luego filtramos/paginamos en cliente)
+  // Carga datos desde el backend (una sola página grande)
   useEffect(() => {
     const load = async () => {
       const sp = new URLSearchParams();
       if (q) sp.set("q", q);
       sp.set("withStock", "true");
-      sp.set("includeInactive", "true"); // ← agrega esto
+      sp.set("includeInactive", "true");
       sp.set("page", "1");
-      sp.set("pageSize", "2000"); // suficiente para el inventario de la tienda
+      sp.set("pageSize", "2000"); // el backend ya corta a 1000
 
       const res = await apiFetch(`/products?${sp.toString()}`);
-      const data = await res.json(); // { total, rows } o simplemente array
+      const data = await res.json(); // { total, rows } o array
       const rows: Product[] = Array.isArray(data?.rows) ? data.rows : data;
       setRows(Array.isArray(rows) ? rows : []);
     };
@@ -332,28 +329,33 @@ export default function ProductsPage() {
   }, [q, reload]);
 
   // ====== ORDEN ALFABÉTICO por nombre ======
-  const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    );
-  }, [rows]);
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", "es", {
+          sensitivity: "base",
+        })
+      ),
+    [rows]
+  );
 
-  // ====== Filtro por prefijo de SKU ======
-  const allPrefixes = useMemo(() => {
+  // ====== Lista de categorías únicas ======
+  const allCategories = useMemo(() => {
     const set = new Set<string>();
     for (const p of rows) {
-      const pref = skuPrefix(p.sku);
-      if (pref) set.add(pref);
+      const c = normCat(p.category);
+      if (c) set.add(c);
     }
     return Array.from(set).sort();
   }, [rows]);
 
+  // ====== Filtro por categoría ======
   const filteredRows = useMemo(() => {
-    if (!skuFilters.length) return sortedRows;
-    return sortedRows.filter((p) => skuFilters.includes(skuPrefix(p.sku)));
-  }, [sortedRows, skuFilters]);
+    if (!categoryFilters.length) return sortedRows;
+    return sortedRows.filter((p) =>
+      categoryFilters.includes(normCat(p.category))
+    );
+  }, [sortedRows, categoryFilters]);
 
   // Paginación client-side
   const total = filteredRows.length;
@@ -365,7 +367,7 @@ export default function ProductsPage() {
     return filteredRows.slice(start, start + PAGE_SIZE);
   }, [filteredRows, safePage]);
 
-  // Rango compacto de páginas
+  // Rango de páginas
   const pageRange = useMemo(() => {
     const maxToShow = 7;
     if (totalPages <= maxToShow) {
@@ -391,7 +393,7 @@ export default function ProductsPage() {
   const syncUrl = (
     nextQ: string,
     nextPage: number,
-    nextSkuFilters: string[]
+    nextCatFilters: string[]
   ) => {
     const params = new URLSearchParams(searchParams.toString());
     if (nextQ) params.set("q", nextQ);
@@ -399,13 +401,13 @@ export default function ProductsPage() {
 
     params.set("page", String(nextPage));
 
-    if (nextSkuFilters.length) {
-      params.set("sku", nextSkuFilters.join(","));
+    if (nextCatFilters.length) {
+      params.set("cat", nextCatFilters.join(","));
     } else {
-      params.delete("sku");
+      params.delete("cat");
     }
 
-    params.delete("status"); // limpiar status una vez cambiado algo
+    params.delete("status");
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
@@ -440,26 +442,32 @@ export default function ProductsPage() {
     }
   };
 
-  // Handlers que resetean a la primera página
+  // Handlers búsqueda
   const onSearchChange = (val: string) => {
     const nextQ = val.toUpperCase();
     setQ(nextQ);
     setPage(1);
-    syncUrl(nextQ, 1, skuFilters);
+    syncUrl(nextQ, 1, categoryFilters);
   };
 
-  const toggleSkuFilter = (pref: string) => {
+  const clearSearch = () => {
+    setQ("");
     setPage(1);
-    setSkuFilters((prev) => {
-      const exists = prev.includes(pref);
-      const next = exists ? prev.filter((p) => p !== pref) : [...prev, pref];
+    syncUrl("", 1, categoryFilters);
+  };
+
+  const toggleCategoryFilter = (cat: string) => {
+    setPage(1);
+    setCategoryFilters((prev) => {
+      const exists = prev.includes(cat);
+      const next = exists ? prev.filter((p) => p !== cat) : [...prev, cat];
       syncUrl(q, 1, next);
       return next;
     });
   };
 
-  const clearSkuFilters = () => {
-    setSkuFilters([]);
+  const clearCategoryFilters = () => {
+    setCategoryFilters([]);
     setPage(1);
     syncUrl(q, 1, []);
   };
@@ -501,7 +509,9 @@ export default function ProductsPage() {
                   from: "products",
                   q: q || undefined,
                   page: String(safePage),
-                  sku: skuFilters.length ? skuFilters.join(",") : undefined,
+                  cat: categoryFilters.length
+                    ? categoryFilters.join(",")
+                    : undefined,
                 },
               }}
               className="px-5 py-2.5 rounded-lg font-semibold text-[#001014]"
@@ -516,30 +526,42 @@ export default function ProductsPage() {
           )}
         </div>
 
-        {/* Buscador + filtros SKU */}
+        {/* Buscador + filtros categoría */}
         <div className="flex flex-col gap-3 mb-4">
           <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              className="rounded px-3 py-2 flex-1 text-gray-100 placeholder-gray-400 outline-none"
-              style={{
-                backgroundColor: UI.input,
-                border: `1px solid ${UI.border}`,
-              }}
-              placeholder="Buscar por nombre, SKU o categoría"
-              value={q}
-              onChange={(e) => onSearchChange(e.target.value)}
-            />
+            <div className="relative flex-1">
+              <input
+                className="rounded px-3 py-2 w-full text-gray-100 placeholder-gray-400 outline-none pr-8"
+                style={{
+                  backgroundColor: UI.input,
+                  border: `1px solid ${UI.border}`,
+                }}
+                placeholder="Buscar por nombre, SKU o categoría"
+                value={q}
+                onChange={(e) => onSearchChange(e.target.value)}
+              />
+              {q && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-100"
+                  title="Limpiar búsqueda"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
-          {allPrefixes.length > 0 && (
+          {allCategories.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-gray-300">Filtrar por prefijo de SKU:</span>
-              {allPrefixes.map((pref) => {
-                const active = skuFilters.includes(pref);
+              <span className="text-gray-300">Filtrar por categoría:</span>
+              {allCategories.map((cat) => {
+                const active = categoryFilters.includes(cat);
                 return (
                   <button
-                    key={pref}
-                    onClick={() => toggleSkuFilter(pref)}
+                    key={cat}
+                    onClick={() => toggleCategoryFilter(cat)}
                     className={`px-2 py-1 rounded border transition transform hover:scale-105 ${
                       active
                         ? "bg-cyan-500/20 text-cyan-300"
@@ -547,13 +569,13 @@ export default function ProductsPage() {
                     }`}
                     style={{ borderColor: UI.border }}
                   >
-                    {pref}
+                    {cat}
                   </button>
                 );
               })}
-              {skuFilters.length > 0 && (
+              {categoryFilters.length > 0 && (
                 <button
-                  onClick={clearSkuFilters}
+                  onClick={clearCategoryFilters}
                   className="ml-2 px-2 py-1 rounded border text-[11px] uppercase tracking-wide text-gray-300 hover:bg-white/5"
                   style={{ borderColor: UI.border }}
                 >
@@ -593,7 +615,7 @@ export default function ProductsPage() {
                   <td className="py-2 px-3">{p.id}</td>
                   <td className="px-3 font-mono">{p.sku?.toUpperCase()}</td>
                   <td className="px-3">{p.name?.toUpperCase()}</td>
-                  <td className="px-3">{(p.category || "-").toUpperCase()}</td>
+                  <td className="px-3">{normCat(p.category) || "-"}</td>
                   <td className="px-3 text-right">{Number(p.stock ?? 0)}</td>
                   <td className="px-3 text-right text-cyan-300">
                     {fmtCOP(p.price)}
@@ -606,7 +628,7 @@ export default function ProductsPage() {
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => openStockModal(p)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg白/5 transition transform hover:scale-110"
                           aria-label="Ajustar stock"
                         >
                           <Image
@@ -624,8 +646,8 @@ export default function ProductsPage() {
                               from: "products",
                               q: q || undefined,
                               page: String(safePage),
-                              sku: skuFilters.length
-                                ? skuFilters.join(",")
+                              cat: categoryFilters.length
+                                ? categoryFilters.join(",")
                                 : undefined,
                             },
                           }}
@@ -690,7 +712,7 @@ export default function ProductsPage() {
                 disabled={safePage === 1}
                 onClick={() => {
                   setPage(1);
-                  syncUrl(q, 1, skuFilters);
+                  syncUrl(q, 1, categoryFilters);
                 }}
               />
               <PagerButton
@@ -699,7 +721,7 @@ export default function ProductsPage() {
                 onClick={() => {
                   const next = Math.max(1, safePage - 1);
                   setPage(next);
-                  syncUrl(q, next, skuFilters);
+                  syncUrl(q, next, categoryFilters);
                 }}
               />
 
@@ -718,7 +740,7 @@ export default function ProductsPage() {
                     active={p === safePage}
                     onClick={() => {
                       setPage(p);
-                      syncUrl(q, p, skuFilters);
+                      syncUrl(q, p, categoryFilters);
                     }}
                   />
                 )
@@ -730,7 +752,7 @@ export default function ProductsPage() {
                 onClick={() => {
                   const next = Math.min(totalPages, safePage + 1);
                   setPage(next);
-                  syncUrl(q, next, skuFilters);
+                  syncUrl(q, next, categoryFilters);
                 }}
               />
               <PagerButton
@@ -738,7 +760,7 @@ export default function ProductsPage() {
                 disabled={safePage === totalPages}
                 onClick={() => {
                   setPage(totalPages);
-                  syncUrl(q, totalPages, skuFilters);
+                  syncUrl(q, totalPages, categoryFilters);
                 }}
               />
             </div>
