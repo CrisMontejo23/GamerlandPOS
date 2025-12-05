@@ -291,7 +291,7 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     String(req.query.includeInactive || "").toLowerCase() === "true";
   const withStock = String(req.query.withStock || "").toLowerCase() === "true";
 
-  const pageSize = Math.min(Math.max(Number(req.query.pageSize || 10), 1), 200);
+  const pageSize = Math.min(Math.max(Number(req.query.pageSize || 10), 1), 1000);
   const page = Math.max(Number(req.query.page || 1), 1);
   const skip = (page - 1) * pageSize;
 
