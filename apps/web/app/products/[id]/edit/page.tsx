@@ -1,18 +1,27 @@
 import ProductForm from "../../_components/ProductForm";
 
 type PageProps = {
-  params: { id: string };
+  params: { id?: string };
   searchParams?: {
     from?: string;
     q?: string;
     page?: string;
-    sku?: string; // o cat si luego cambias el nombre del parámetro
+    sku?: string;
   };
 };
 
 export default function EditProductPage({ params, searchParams }: PageProps) {
-  // Parseamos el id, pero ya no mostramos "ID inválido"
-  const numId = Number(params.id || 0);
+  // Si aún no está disponible, no renderices nada
+  if (!params?.id) {
+    return <div className="p-6 text-gray-300">Cargando…</div>;
+  }
+
+  const numId = Number(params.id);
+
+  // Si el id no es número válido
+  if (Number.isNaN(numId) || numId <= 0) {
+    return <div className="p-6 text-gray-300">ID inválido</div>;
+  }
 
   const backParams = {
     q: searchParams?.q,
