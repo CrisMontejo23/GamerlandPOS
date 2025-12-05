@@ -312,7 +312,7 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     prisma.product.count({ where }),
     prisma.product.findMany({
       where,
-      orderBy: { id: "asc" },
+      orderBy: { name: "asc" }, // ← aquí el cambio
       skip,
       take: pageSize,
     }),
@@ -320,15 +320,16 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
 
   if (!withStock) return res.json({ total, rows: products });
 
-  // adjuntar stock como ya lo haces:
   const ids = products.map((p) => p.id);
   let rowsWithStock = products;
+
   if (ids.length) {
     const grouped = await prisma.stockMovement.groupBy({
       by: ["productId", "type"] as const,
       where: { productId: { in: ids } },
       _sum: { qty: true },
     });
+
     const map = new Map<number, number>();
     for (const r of grouped as any[]) {
       const sign = r.type === "out" ? -1 : 1;
@@ -483,30 +484,35 @@ app.patch("/products/:id/activate", requireRole("ADMIN"), async (req, res) => {
 
 app.delete("/products/:id", requireRole("ADMIN"), async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id))
+  if (!Number.isInteger(id)) {
     return res.status(400).json({ error: "id inválido" });
+  }
 
   try {
-    const [movs, items] = await Promise.all([
-      prisma.stockMovement.count({ where: { productId: id } }),
-      prisma.saleItem.count({ where: { productId: id } }),
-    ]);
+    // 1) Borrar movimientos de stock asociados
+    await prisma.stockMovement.deleteMany({
+      where: { productId: id },
+    });
 
-    if (movs > 0 || items > 0) {
-      return res.status(409).json({
-        error:
-          "No se puede eliminar: el producto tiene movimientos de stock o ventas asociadas. Usa 'Desactivar' en su lugar.",
-      });
-    }
+    // 2) Borrar items de venta asociados
+    await prisma.saleItem.deleteMany({
+      where: { productId: id },
+    });
 
-    await prisma.product.delete({ where: { id } });
+    // 3) Borrar el producto
+    await prisma.product.delete({
+      where: { id },
+    });
+
     return res.json({ ok: true, id });
   } catch (e: unknown) {
     const err = e as { code?: string; message?: string };
-    if (err?.code === "P2025")
+    if (err?.code === "P2025") {
       return res.status(404).json({ error: "No encontrado" });
+    }
+    console.error("Error eliminando producto", err);
     return res
-      .status(400)
+      .status(500)
       .json({ error: err?.message || "No se pudo eliminar" });
   }
 });

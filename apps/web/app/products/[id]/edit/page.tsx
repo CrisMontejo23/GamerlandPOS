@@ -1,22 +1,26 @@
 import ProductForm from "../../_components/ProductForm";
 
-export default function EditProductPage({
-  params,
-  searchParams,
-}: {
+type PageProps = {
   params: { id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
-}) {
+  searchParams?: {
+    from?: string;
+    q?: string;
+    page?: string;
+    sku?: string;
+  };
+};
+
+export default function EditProductPage({ params, searchParams }: PageProps) {
   const numId = Number(params.id);
 
   if (Number.isNaN(numId)) {
-    return <div className="p-6 text-gray-300">Cargando...</div>;
+    return <div className="p-6 text-gray-300">ID inválido</div>;
   }
 
   const backParams = {
-    q: typeof searchParams.q === "string" ? searchParams.q : undefined,
-    page: typeof searchParams.page === "string" ? searchParams.page : undefined,
-    sku: typeof searchParams.sku === "string" ? searchParams.sku : undefined,
+    q: searchParams?.q,
+    page: searchParams?.page,
+    sku: searchParams?.sku,
   };
 
   return (

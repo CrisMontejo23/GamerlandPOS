@@ -318,6 +318,7 @@ export default function ProductsPage() {
       const sp = new URLSearchParams();
       if (q) sp.set("q", q);
       sp.set("withStock", "true");
+      sp.set("includeInactive", "true"); // ← agrega esto
       sp.set("page", "1");
       sp.set("pageSize", "2000"); // suficiente para el inventario de la tienda
 
