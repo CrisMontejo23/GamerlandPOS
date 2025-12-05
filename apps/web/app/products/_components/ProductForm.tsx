@@ -53,7 +53,7 @@ export default function ProductForm({
 }: {
   id?: number;
   initial?: Partial<Product>;
-  backParams?: { q?: string; page?: string; sku?: string };
+  backParams?: { q?: string; page?: string; cat?: string };
 }) {
   const router = useRouter();
   const isEdit = !!id;
@@ -188,7 +188,7 @@ export default function ProductForm({
     const params = new URLSearchParams();
     if (backParams?.q) params.set("q", backParams.q);
     if (backParams?.page) params.set("page", backParams.page);
-    if (backParams?.sku) params.set("sku", backParams.sku);
+    if (backParams?.cat) params.set("cat", backParams.cat); // ← usamos "cat"
     params.set("status", status);
     const qs = params.toString();
     router.push(`/products${qs ? `?${qs}` : ""}`);
