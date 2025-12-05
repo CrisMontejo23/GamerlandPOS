@@ -1,18 +1,14 @@
+"use client";
+
+import { useParams, useSearchParams } from "next/navigation";
 import ProductForm from "../../_components/ProductForm";
 
-type PageProps = {
-  params: { id: string };
-  searchParams?: {
-    from?: string;
-    q?: string;
-    page?: string;
-    cat?: string;
-  };
-};
+export default function EditProductPage() {
+  const params = useParams<{ id?: string }>();
+  const searchParams = useSearchParams();
 
-export default function EditProductPage({ params, searchParams }: PageProps) {
   const rawId = params?.id;
-  const numId = Number(rawId);
+  const numId = rawId ? Number(rawId) : NaN;
 
   if (!rawId || Number.isNaN(numId) || numId <= 0) {
     return (
@@ -22,10 +18,13 @@ export default function EditProductPage({ params, searchParams }: PageProps) {
     );
   }
 
+  // Si quieres preservar filtros al volver al listado:
   const backParams = {
-    q: searchParams?.q,
-    page: searchParams?.page,
-    cat: searchParams?.cat,
+    q: searchParams.get("q") || undefined,
+    page: searchParams.get("page") || undefined,
+    // OJO: ahora vienes con "cat" en la URL, pero ProductForm espera "sku"
+    // luego si quieres, ajustamos esto para que use "cat" correctamente
+    sku: searchParams.get("cat") || undefined,
   };
 
   return (
