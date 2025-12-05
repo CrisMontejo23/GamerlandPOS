@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
+import Image from "next/image";
 
 /* ===== UI: GamerToast / GamerConfirm ===== */
 type ToastKind = "success" | "error" | "info";
@@ -746,32 +747,43 @@ export default function SalesPage() {
                         <div className="flex flex-wrap gap-2">
                           {!isEditing ? (
                             <>
+                              {/* Editar (icono) */}
                               <button
                                 onClick={() => startEditLine(k, r)}
-                                className="px-3 py-1 rounded text-sm font-semibold"
-                                style={{ backgroundColor: "#0ea5e9" }}
-                                title="Editar (precio/cantidad)"
+                                className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                                title="Editar (precio / cantidad)"
+                                aria-label="Editar venta"
                               >
-                                Editar
+                                <Image
+                                  src="/edit.png"
+                                  alt="Editar"
+                                  width={18}
+                                  height={18}
+                                  className="opacity-90"
+                                />
                               </button>
 
                               {/* Eliminar sólo en la primera fila visible de la venta */}
                               {isFirstOfSale && (
                                 <button
                                   onClick={() => deleteSale(r.saleId)}
-                                  className="px-3 py-1 rounded text-sm font-semibold"
-                                  style={{
-                                    backgroundColor: "#ef4444",
-                                    color: "#001014",
-                                  }}
+                                  className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
                                   title="Eliminar venta"
+                                  aria-label="Eliminar venta"
                                 >
-                                  Eliminar
+                                  <Image
+                                    src="/borrar.png"
+                                    alt="Eliminar"
+                                    width={18}
+                                    height={18}
+                                    className="opacity-90"
+                                  />
                                 </button>
                               )}
                             </>
                           ) : (
                             <>
+                              {/* Mientras está en edición, dejamos Guardar / Cancelar como texto */}
                               <button
                                 onClick={() => saveEditLine(r)}
                                 className="px-3 py-1 rounded text-sm font-semibold"
