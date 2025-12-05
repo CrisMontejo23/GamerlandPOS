@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
+import Image from "next/image";
 
 /* ===== UI: GamerToast / GamerConfirm ===== */
 type ToastKind = "success" | "error" | "info";
@@ -778,26 +779,36 @@ export default function ExpensesPage() {
                       <td className="px-3">
                         {!isEditing ? (
                           <div className="flex gap-2">
+                            {/* Editar (icono) */}
                             <button
                               onClick={() => startEdit(r)}
-                              className="px-3 py-1 rounded text-sm font-medium"
-                              style={{
-                                color: "#001014",
-                                background:
-                                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                              }}
+                              className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                              title="Editar gasto"
+                              aria-label="Editar gasto"
                             >
-                              Editar
+                              <Image
+                                src="/edit.png"
+                                alt="Editar"
+                                width={18}
+                                height={18}
+                                className="opacity-90"
+                              />
                             </button>
+
+                            {/* Eliminar (icono) */}
                             <button
                               onClick={() => deleteExpense(r.id)}
-                              className="px-3 py-1 rounded text-sm font-semibold"
-                              style={{
-                                backgroundColor: "#ef4444",
-                                color: "#001014",
-                              }}
+                              className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                              title="Eliminar gasto"
+                              aria-label="Eliminar gasto"
                             >
-                              Eliminar
+                              <Image
+                                src="/borrar.png"
+                                alt="Eliminar"
+                                width={18}
+                                height={18}
+                                className="opacity-90"
+                              />
                             </button>
                           </div>
                         ) : (
