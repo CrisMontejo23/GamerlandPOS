@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 
 export type Product = {
@@ -38,13 +39,23 @@ const COLORS = {
 // SKU provisional si no hay categoría
 const genSku = () => `SKU-${Date.now().toString().slice(-6)}`;
 
+// helper consola
+const isConsola = (form: Product, cats: Category[]): boolean => {
+  const catName = cats.find((c) => c.id === form.categoryId)?.name ?? "";
+  const skuUpper = (form.sku || "").toUpperCase();
+  return catName === "CONSOLAS" || skuUpper.startsWith("CON");
+};
+
 export default function ProductForm({
   id,
   initial,
+  backParams,
 }: {
   id?: number;
   initial?: Partial<Product>;
+  backParams?: { q?: string; page?: string; sku?: string };
 }) {
+  const router = useRouter();
   const isEdit = !!id;
 
   const [form, setForm] = useState<Product>({
@@ -68,26 +79,11 @@ export default function ProductForm({
     null
   );
 
-  // --- NUEVO: modal de confirmación tras crear ---
-  const [createdOpen, setCreatedOpen] = useState(false);
+  // auto precio (consolas / CON)
+  const [autoPrice, setAutoPrice] = useState(true);
 
-  // ref para enfocar el nombre al “crear otro”
+  // ref para enfocar el nombre
   const nameRef = useRef<HTMLInputElement | null>(null);
-
-  // helper para limpiar el formulario (crear otro)
-  const resetToBlank = () => {
-    setForm({
-      sku: "", // ← vacío
-      barcode: "",
-      name: "",
-      cost: "",
-      price: "",
-      taxRate: 0,
-      active: true,
-      categoryId: null,
-    });
-    setTimeout(() => nameRef.current?.focus(), 0);
-  };
 
   // Cargar producto si es edición
   useEffect(() => {
@@ -188,6 +184,16 @@ export default function ProductForm({
     return Object.keys(e).length === 0;
   };
 
+  const goBackToProducts = (status: "created" | "updated") => {
+    const params = new URLSearchParams();
+    if (backParams?.q) params.set("q", backParams.q);
+    if (backParams?.page) params.set("page", backParams.page);
+    if (backParams?.sku) params.set("sku", backParams.sku);
+    params.set("status", status);
+    const qs = params.toString();
+    router.push(`/products${qs ? `?${qs}` : ""}`);
+  };
+
   const save = async () => {
     if (!validate()) return;
     setSaving(true);
@@ -216,11 +222,7 @@ export default function ProductForm({
 
     if (r.ok) {
       setMsg("Guardado ✅");
-      if (!isEdit) {
-        resetToBlank();
-        setCreatedOpen(true);
-        setTimeout(() => setCreatedOpen(false), 1000); // ← auto-hide en 1s
-      }
+      goBackToProducts(isEdit ? "updated" : "created");
     } else {
       const err = await r
         .json()
@@ -273,7 +275,10 @@ export default function ProductForm({
                 }}
                 value={form.sku}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, sku: e.target.value.toUpperCase() }))
+                  setForm((f) => ({
+                    ...f,
+                    sku: e.target.value.toUpperCase(),
+                  }))
                 }
               />
             ) : (
@@ -360,12 +365,21 @@ export default function ProductForm({
                 }}
                 inputMode="numeric"
                 value={form.cost}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    cost: e.target.value.replace(/[^\d.]/g, ""),
-                  }))
-                }
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d.]/g, "");
+                  setForm((prev) => {
+                    const next: Product = { ...prev, cost: raw };
+                    const costNum = Number(raw);
+                    if (
+                      autoPrice &&
+                      !isNaN(costNum) &&
+                      isConsola({ ...next, cost: costNum }, cats)
+                    ) {
+                      next.price = String(costNum + 150000);
+                    }
+                    return next;
+                  });
+                }}
               />
             </div>
             <p className="text-xs text-gray-400 mt-1">
@@ -391,12 +405,11 @@ export default function ProductForm({
                 }}
                 inputMode="numeric"
                 value={form.price}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    price: e.target.value.replace(/[^\d.]/g, ""),
-                  }))
-                }
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d.]/g, "");
+                  setAutoPrice(false); // usuario ya toca precio manual
+                  setForm((f) => ({ ...f, price: raw }));
+                }}
               />
             </div>
             <p className="text-xs text-gray-400 mt-1">
@@ -422,7 +435,14 @@ export default function ProductForm({
               onChange={(e) => {
                 const val =
                   e.target.value === "" ? null : Number(e.target.value);
-                setForm((f) => ({ ...f, categoryId: val }));
+                setForm((prev) => {
+                  const next: Product = { ...prev, categoryId: val };
+                  const costNum = Number(next.cost);
+                  if (autoPrice && !isNaN(costNum) && isConsola(next, cats)) {
+                    next.price = String(costNum + 150000);
+                  }
+                  return next;
+                });
                 if (!isEdit) fetchNextSkuByCategory(val); // genera SKU según categoría al crear
               }}
             >
@@ -477,55 +497,6 @@ export default function ProductForm({
 
         {!!msg && <div className="text-sm mt-3 text-cyan-300">{msg}</div>}
       </section>
-
-      {/* Aviso de confirmación (auto-hide, sin botones) */}
-      {createdOpen && !isEdit && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="status"
-          aria-live="polite"
-        >
-          <div className="absolute inset-0 bg-black/60" />
-          <div
-            className="relative w-full max-w-sm rounded-2xl p-5 text-center"
-            style={{
-              backgroundColor: COLORS.bgCard,
-              border: `1px solid ${COLORS.border}`,
-              boxShadow:
-                "0 0 28px rgba(0,255,255,.18), 0 0 36px rgba(255,0,255,.18)",
-            }}
-          >
-            <div
-              className="absolute -inset-[1.5px] rounded-2xl pointer-events-none"
-              style={{
-                background:
-                  "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))",
-                filter: "blur(6px)",
-                opacity: 0.35,
-              }}
-            />
-            <div className="relative">
-              <div
-                className="mx-auto mb-2 h-12 w-12 rounded-full grid place-items-center"
-                style={{
-                  backgroundColor: COLORS.input,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-              >
-                <span className="text-2xl" style={{ color: "#7CF9FF" }}>
-                  ✔
-                </span>
-              </div>
-              <h3 className="text-xl font-extrabold text-cyan-300">
-                Creado exitosamente
-              </h3>
-              <p className="mt-1 text-gray-200 text-sm">
-                Los campos fueron limpiados.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
