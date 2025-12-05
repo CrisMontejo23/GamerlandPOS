@@ -6,16 +6,13 @@ type PageProps = {
     from?: string;
     q?: string;
     page?: string;
-    sku?: string;
+    sku?: string; // o cat si luego cambias el nombre del parámetro
   };
 };
 
 export default function EditProductPage({ params, searchParams }: PageProps) {
-  const numId = Number(params.id);
-
-  if (Number.isNaN(numId)) {
-    return <div className="p-6 text-gray-300">ID inválido</div>;
-  }
+  // Parseamos el id, pero ya no mostramos "ID inválido"
+  const numId = Number(params.id || 0);
 
   const backParams = {
     q: searchParams?.q,
