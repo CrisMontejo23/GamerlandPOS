@@ -181,6 +181,8 @@ export default function POSPage() {
   });
   const hideToast = () => setToast((t) => ({ ...t, open: false }));
 
+  const [tabStage, setTabStage] = useState<0 | 1>(0);
+
   const searchRef = useRef<HTMLInputElement>(null);
   const receivedRef = useRef<HTMLInputElement>(null);
 
@@ -515,19 +517,66 @@ export default function POSPage() {
   // Atajos
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // F2 => focus buscador
       if (e.key === "F2") {
         e.preventDefault();
         searchRef.current?.focus();
         searchRef.current?.select();
+        return;
       }
+
+      // Ctrl/⌘ + Enter => cobrar
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         checkout();
+        return;
+      }
+
+      // TAB flow (solo si hay carrito, sin Shift+Tab, y estando en buscador o recibido)
+      if (
+        e.key === "Tab" &&
+        !e.shiftKey &&
+        cart.length > 0 &&
+        (document.activeElement === searchRef.current ||
+          document.activeElement === receivedRef.current)
+      ) {
+        e.preventDefault();
+
+        // Paso 1: ir a Recibido y ponerlo igual al total
+        if (tabStage === 0) {
+          if (payMethod !== "EFECTIVO") setPayMethod("EFECTIVO");
+          setReceived(uiTotal);
+          // esperar un tick por si cambia el payMethod y aparece el input
+          setTimeout(() => {
+            receivedRef.current?.focus();
+            receivedRef.current?.select();
+          }, 0);
+          setTabStage(1);
+          return;
+        }
+
+        // Paso 2: cobrar
+        setTabStage(0);
+        checkout();
+
+        // opcional: volver al buscador inmediatamente
+        setTimeout(() => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        }, 0);
+
+        return;
       }
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [checkout]);
+  }, [checkout, cart.length, payMethod, uiTotal, tabStage]);
+
+  // Reset tabStage si el carrito queda vacío
+  useEffect(() => {
+    if (cart.length === 0) setTabStage(0);
+  }, [cart.length]);
 
   // PAPELERÍA
   type ProductsResp = Product[] | { total: number; rows: Product[] };
