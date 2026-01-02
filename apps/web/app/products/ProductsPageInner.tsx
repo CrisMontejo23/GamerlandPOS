@@ -27,6 +27,12 @@ const UI = {
   glow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
 };
 
+const ACTION_ICON = {
+  btn: "p-2 sm:p-1", // área táctil grande en móvil
+  box: "h-9 w-9 sm:h-5 sm:w-5", // icono grande móvil / normal desktop
+  sizes: "(max-width: 640px) 36px, 20px",
+};
+
 const fmtCOP = (v: unknown) => {
   const n = Number(v);
   return isNaN(n) ? "-" : `$${n.toLocaleString("es-CO")}`;
@@ -628,17 +634,21 @@ export default function ProductsPage() {
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => openStockModal(p)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg白/5 transition transform hover:scale-110"
+                          className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                           aria-label="Ajustar stock"
+                          title="Ajustar stock"
                         >
-                          <Image
-                            src="/añadir.png"
-                            alt="Ajustar stock"
-                            width={18}
-                            height={18}
-                            className="opacity-90"
-                          />
+                          <span className={`relative ${ACTION_ICON.box}`}>
+                            <Image
+                              src="/añadir.png"
+                              alt="Ajustar stock"
+                              fill
+                              sizes={ACTION_ICON.sizes}
+                              className="object-contain opacity-90"
+                            />
+                          </span>
                         </button>
+
                         <Link
                           href={{
                             pathname: `/products/${p.id}/edit`,
@@ -651,29 +661,36 @@ export default function ProductsPage() {
                                 : undefined,
                             },
                           }}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                          className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                           aria-label="Editar producto"
+                          title="Editar producto"
                         >
-                          <Image
-                            src="/edit.png"
-                            alt="Editar"
-                            width={18}
-                            height={18}
-                            className="opacity-90"
-                          />
+                          <span className={`relative ${ACTION_ICON.box}`}>
+                            <Image
+                              src="/edit.png"
+                              alt="Editar"
+                              fill
+                              sizes={ACTION_ICON.sizes}
+                              className="object-contain opacity-90"
+                            />
+                          </span>
                         </Link>
+
                         <button
                           onClick={() => setConfirmDeleteId(p.id)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                          className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                           aria-label="Eliminar producto"
+                          title="Eliminar producto"
                         >
-                          <Image
-                            src="/borrar.png"
-                            alt="Eliminar"
-                            width={18}
-                            height={18}
-                            className="opacity-90"
-                          />
+                          <span className={`relative ${ACTION_ICON.box}`}>
+                            <Image
+                              src="/borrar.png"
+                              alt="Eliminar"
+                              fill
+                              sizes={ACTION_ICON.sizes}
+                              className="object-contain opacity-90"
+                            />
+                          </span>
                         </button>
                       </div>
                     ) : (

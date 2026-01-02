@@ -222,6 +222,12 @@ const COLORS = {
   text: "#E5E5E5",
 };
 
+const ACTION_ICON = {
+  btn: "p-2 sm:p-1", // ✅ más área táctil en móvil
+  box: "h-9 w-9 sm:h-5 sm:w-5", // ✅ móvil grande, desktop normal
+  sizes: "(max-width: 640px) 36px, 20px",
+};
+
 /* ===== Helpers ===== */
 function isPaymentMethod(v: string): v is PaymentMethod {
   return v === "" || (paymentOptions as readonly string[]).includes(v);
@@ -788,33 +794,37 @@ export default function ExpensesPage() {
                             {/* Editar (icono) */}
                             <button
                               onClick={() => startEdit(r)}
-                              className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                              className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                               title="Editar gasto"
                               aria-label="Editar gasto"
                             >
-                              <Image
-                                src="/edit.png"
-                                alt="Editar"
-                                width={18}
-                                height={18}
-                                className="opacity-90"
-                              />
+                              <span className={`relative ${ACTION_ICON.box}`}>
+                                <Image
+                                  src="/edit.png"
+                                  alt="Editar"
+                                  fill
+                                  sizes={ACTION_ICON.sizes}
+                                  className="opacity-90 object-contain"
+                                />
+                              </span>
                             </button>
 
                             {/* Eliminar (icono) */}
                             <button
                               onClick={() => deleteExpense(r.id)}
-                              className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                              className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                               title="Eliminar gasto"
                               aria-label="Eliminar gasto"
                             >
-                              <Image
-                                src="/borrar.png"
-                                alt="Eliminar"
-                                width={18}
-                                height={18}
-                                className="opacity-90"
-                              />
+                              <span className={`relative ${ACTION_ICON.box}`}>
+                                <Image
+                                  src="/borrar.png"
+                                  alt="Eliminar"
+                                  fill
+                                  sizes={ACTION_ICON.sizes}
+                                  className="opacity-90 object-contain"
+                                />
+                              </span>
                             </button>
                           </div>
                         ) : (

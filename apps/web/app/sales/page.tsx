@@ -218,6 +218,12 @@ const COLORS = {
   text: "#E5E5E5",
 };
 
+const ACTION_ICON = {
+  btn: "p-2 sm:p-1", // ✅ más área táctil en móvil
+  box: "h-9 w-9 sm:h-5 sm:w-5", // ✅ móvil grande, desktop normal
+  sizes: "(max-width: 640px) 36px, 20px",
+};
+
 function fmtCOP(n: number) {
   return n.toLocaleString("es-CO", {
     style: "currency",
@@ -753,36 +759,43 @@ export default function SalesPage() {
                           {!isEditing ? (
                             <>
                               {/* Editar (icono) */}
+
                               <button
                                 onClick={() => startEditLine(k, r)}
-                                className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                                className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                                 title="Editar (precio / cantidad)"
                                 aria-label="Editar venta"
                               >
-                                <Image
-                                  src="/edit.png"
-                                  alt="Editar"
-                                  width={18}
-                                  height={18}
-                                  className="opacity-90"
-                                />
+                                <span className={`relative ${ACTION_ICON.box}`}>
+                                  <Image
+                                    src="/edit.png"
+                                    alt="Editar"
+                                    fill
+                                    sizes={ACTION_ICON.sizes}
+                                    className="opacity-90 object-contain"
+                                  />
+                                </span>
                               </button>
 
                               {/* Eliminar sólo en la primera fila visible de la venta */}
                               {isFirstOfSale && (
                                 <button
                                   onClick={() => deleteSale(r.saleId)}
-                                  className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                                  className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
                                   title="Eliminar venta"
                                   aria-label="Eliminar venta"
                                 >
-                                  <Image
-                                    src="/borrar.png"
-                                    alt="Eliminar"
-                                    width={18}
-                                    height={18}
-                                    className="opacity-90"
-                                  />
+                                  <span
+                                    className={`relative ${ACTION_ICON.box}`}
+                                  >
+                                    <Image
+                                      src="/borrar.png"
+                                      alt="Eliminar"
+                                      fill
+                                      sizes={ACTION_ICON.sizes}
+                                      className="opacity-90 object-contain"
+                                    />
+                                  </span>
                                 </button>
                               )}
                             </>
