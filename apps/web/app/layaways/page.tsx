@@ -105,6 +105,18 @@ type CreatePaymentResponse =
   | { lay: ReservationApi; pay: ReservationPaymentApi }
   | { reservation: ReservationApi; pay: ReservationPaymentApi };
 
+type ReservationItemRowApi = {
+  id: number;
+  reservationId: number;
+  productId: number | null;
+  productName?: string | null;
+  skuSnapshot?: string | null;
+  qty?: number | string | null;
+  unitPrice?: number | string | null;
+  discount?: number | string | null;
+  totalLine?: number | string | null;
+};
+
 function pickReservationFromCreate(
   resp: CreateReservationResponse
 ): ReservationApi {
@@ -477,7 +489,8 @@ export default function LayawaysPage() {
       productId: number;
       qty: number;
       unitPrice: number;
-      name: string;
+      productName: string;
+      discount?: number;
     }>;
   };
 
@@ -529,7 +542,8 @@ export default function LayawaysPage() {
         productId: it.productId,
         qty: it.qty,
         unitPrice: it.unitPrice,
-        name: it.name,
+        productName: it.name, // ✅
+        discount: 0, // ✅ opcional, pero ayuda si el schema lo tiene
       })),
     };
 
@@ -1076,6 +1090,40 @@ export default function LayawaysPage() {
     doc.save(`Contrato_${KIND_LABEL[resv.kind]}_${resv.code}.pdf`);
   }
 
+  async function fetchReservationItems(
+    reservationId: number
+  ): Promise<ReservationItem[]> {
+    const r = await apiFetch(`${RES_API}/${reservationId}/items`);
+    if (!r.ok) throw new Error("No se pudieron cargar ítems");
+    const data = (await r.json()) as ReservationItemRowApi[];
+
+    return data.map((it) => ({
+      id: it.id,
+      productId: Number(it.productId ?? 0),
+      sku: String(it.skuSnapshot ?? ""),
+      name: U(it.productName ?? "ITEM"),
+      unitPrice: Number(it.unitPrice ?? 0),
+      qty: Number(it.qty ?? 0),
+    }));
+  }
+
+  async function printContractSafe(resv: Reservation) {
+    const hasItems = (resv.items?.length ?? 0) > 0;
+
+    // Si no hay items (o vienen vacíos), los pedimos al endpoint /items
+    if (!hasItems) {
+      try {
+        const items = await fetchReservationItems(resv.id);
+        generateContractPdf({ ...resv, items });
+        return;
+      } catch {
+        // si falla, imprimimos igual (pero al menos no revienta)
+      }
+    }
+
+    generateContractPdf(resv);
+  }
+
   function generatePaymentReceiptPdf(
     resv: Reservation,
     payment: ReservationPayment
@@ -1376,7 +1424,7 @@ export default function LayawaysPage() {
                             <button
                               className="px-3 py-1 rounded border text-xs uppercase"
                               style={{ borderColor: COLORS.border }}
-                              onClick={() => generateContractPdf(resv)}
+                              onClick={() => printContractSafe(resv)}
                             >
                               IMPRIMIR CONTRATO
                             </button>
@@ -1983,8 +2031,8 @@ export default function LayawaysPage() {
                 boxShadow:
                   "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
               }}
-              onClick={() => {
-                generateContractPdf(contractReservation);
+              onClick={async () => {
+                await printContractSafe(contractReservation);
                 setContractReservation(null);
               }}
             >
