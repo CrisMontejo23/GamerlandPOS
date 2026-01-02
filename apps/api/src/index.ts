@@ -72,6 +72,98 @@ async function getCurrentStock(
   return Number(sumIn) - Number(sumOut);
 }
 
+// ====== RESERVATIONS (Apartados v2 / Encargos) ======
+
+const ReservationKinds = ["APARTADO", "ENCARGO"] as const;
+type ReservationKind = (typeof ReservationKinds)[number];
+
+async function getNextReservationCode(kind: ReservationKind) {
+  const prefix = kind === "ENCARGO" ? "EN-" : "AP-";
+
+  const last = await prisma.reservation.findFirst({
+    where: { code: { startsWith: prefix } },
+    orderBy: { code: "desc" },
+    select: { code: true },
+  });
+
+  let next = 1;
+  if (last?.code) {
+    const m = last.code.match(/\d+$/);
+    if (m) next = parseInt(m[0], 10) + 1;
+  }
+  return `${prefix}${String(next).padStart(5, "0")}`;
+}
+
+async function recomputeReservationTotals(
+  tx: Prisma.TransactionClient,
+  reservationId: number
+) {
+  const items = await tx.reservationItem.findMany({
+    where: { reservationId },
+    select: { qty: true, unitPrice: true, discount: true, totalLine: true },
+  });
+
+  const subtotal = items.reduce((a, it) => {
+    const unit = Number(it.unitPrice || 0);
+    const qty = Number(it.qty || 0);
+    const disc = Number(it.discount || 0);
+    const line =
+      it.totalLine != null ? Number(it.totalLine) : unit * qty - disc;
+    return a + line;
+  }, 0);
+
+  const current = await tx.reservation.findUnique({
+    where: { id: reservationId },
+    select: { discount: true },
+  });
+  const discount = Number(current?.discount ?? 0);
+
+  const totalPrice = subtotal - discount;
+
+  const payAgg = await tx.reservationPayment.aggregate({
+    where: { reservationId },
+    _sum: { amount: true },
+  });
+  const totalPaid = Number(payAgg._sum.amount ?? 0);
+
+  const shouldClose = totalPaid >= totalPrice && totalPrice > 0;
+
+  const updated = await tx.reservation.update({
+    where: { id: reservationId },
+    data: {
+      subtotal,
+      totalPrice,
+      totalPaid,
+      ...(shouldClose ? { status: "CLOSED", closedAt: new Date() } : {}),
+    },
+  });
+
+  return updated;
+}
+
+async function autoConvertExpiredEncargos(tx: Prisma.TransactionClient) {
+  const now = new Date();
+
+  // Regla: ENCARGO abierto, con pickupDate vencida (o igual), y sin abonos (totalPaid = 0)
+  const res = await tx.reservation.updateMany({
+    where: {
+      status: "OPEN",
+      kind: "ENCARGO",
+      pickupDate: { not: null, lte: now },
+      totalPaid: { lte: new Prisma.Decimal(0) }, // totalPaid Decimal
+    },
+    data: {
+      kind: "APARTADO",
+      convertedFromEncargo: true,
+      kindChangedAt: now,
+      // pickupDate la puedes dejar (auditoría) o null si prefieres:
+      // pickupDate: null,
+    },
+  });
+
+  return res.count;
+}
+
 // ===== SKU por categoría =====
 const CATEGORY_PREFIX: Record<string, string> = {
   ACCESORIOS: "ACC",
@@ -1927,197 +2019,601 @@ app.delete("/works/:id", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// ==================== APARTADOS ============================
+// ==================== ENCARGOS / APARTADOS ============================
 
-const layawayCreateSchema = z.object({
-  productId: z.coerce.number().int().positive(),
+const ReservationTypes = ["ENCARGO", "APARTADO"] as const;
+
+const reservationCreateSchema = z.object({
+  kind: z.enum(["APARTADO", "ENCARGO"]).default("APARTADO"),
+
+  // Si es ENCARGO, pickupDate es obligatorio
+  pickupDate: z.string().datetime().optional(), // ISO string desde el front
+
   customerName: z.string().min(1),
   customerPhone: z.string().min(3),
+  customerDoc: z.string().optional(),
   city: z.string().optional(),
-  initialDeposit: z.coerce.number().positive("Abono inicial requerido"),
-  method: z.enum(PaymentMethods), // EFECTIVO | QR_LLAVE | DATAFONO
+  notes: z.string().optional(),
+
+  items: z
+    .array(
+      z.object({
+        productId: z.coerce.number().int().positive().optional(),
+        productName: z.string().optional(),
+        qty: z.coerce.number().int().positive().default(1),
+        unitPrice: z.coerce.number().nonnegative().optional(),
+        discount: z.coerce.number().nonnegative().default(0),
+      })
+    )
+    .min(1, "Debe haber al menos 1 ítem"),
+
+  // Abono inicial: en ENCARGO puede ser 0 (si no hay abono)
+  initialDeposit: z.coerce.number().nonnegative().default(0),
+  method: z.enum(PaymentMethods).optional(), // solo requerido si initialDeposit > 0
 });
 
-const layawayPaymentSchema = z.object({
+const reservationItemCreateSchema = z.object({
+  productId: z.coerce.number().int().positive().optional(),
+  productName: z.string().min(1, "Nombre requerido").optional(),
+  qty: z.coerce.number().int().positive().default(1),
+  unitPrice: z.coerce.number().nonnegative().optional(),
+  discount: z.coerce.number().nonnegative().default(0),
+});
+
+const reservationItemUpdateSchema = z.object({
+  qty: z.coerce.number().int().positive().optional(),
+  unitPrice: z.coerce.number().nonnegative().optional(),
+  discount: z.coerce.number().nonnegative().optional(),
+  productName: z.string().min(1).optional(),
+});
+
+const reservationPaymentSchema = z.object({
   amount: z.coerce.number().positive("Monto inválido"),
   method: z.enum(PaymentMethods),
   note: z.string().optional(),
   createdBy: z.string().optional(),
+  reference: z.string().optional(),
 });
 
-// (opcional, para futuro si quieres actualizar otras cosas)
-const layawayUpdateSchema = z.object({
-  status: z.enum(["OPEN", "CLOSED"] as const).optional(),
-  totalPrice: z.coerce.number().optional(),
-  saleId: z.coerce.number().int().optional(),
-});
-async function getNextLayawayCode() {
-  const prefix = "AP-";
-  const last = await prisma.layaway.findFirst({
-    where: { code: { startsWith: prefix } },
-    orderBy: { code: "desc" },
-    select: { code: true },
-  });
-
-  let next = 1;
-  if (last?.code) {
-    const m = last.code.match(/\d+$/);
-    if (m) next = parseInt(m[0], 10) + 1;
-  }
-  return `${prefix}${String(next).padStart(5, "0")}`;
-}
-
-app.get("/layaways", requireRole("EMPLOYEE"), async (req, res) => {
+app.get("/reservations", requireRole("EMPLOYEE"), async (req, res) => {
   const status = String(req.query.status || "").toUpperCase();
+  const kind = String(req.query.kind || "").toUpperCase(); // APARTADO | ENCARGO
   const q = String(req.query.q || "").trim();
 
-  const where: Prisma.LayawayWhereInput = {};
-  if (["OPEN", "CLOSED"].includes(status)) {
-    where.status = status as any;
-  }
-
-  if (q) {
-    where.OR = [
-      { code: { contains: q, mode: "insensitive" } },
-      { customerName: { contains: q, mode: "insensitive" } },
-      { customerPhone: { contains: q, mode: "insensitive" } },
-      { productName: { contains: q, mode: "insensitive" } },
-    ];
-  }
-
-  const rows = await prisma.layaway.findMany({
-    where,
-    orderBy: { createdAt: "asc" }, // más antiguos primero
-    include: {
-      payments: {
-        orderBy: { createdAt: "asc" },
-      },
-    },
-    take: 200,
-  });
-
-  res.json(rows);
-});
-
-app.post("/layaways", requireRole("EMPLOYEE"), async (req, res) => {
-  const parsed = layawayCreateSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
-  }
-  const d = parsed.data;
-
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const prod = await tx.product.findUnique({
-        where: { id: d.productId },
-      });
-      if (!prod) throw new Error("Producto no encontrado");
-
-      const code = await getNextLayawayCode();
-
-      const totalPrice = Number(prod.price); // puedes ajustar si quieres precio distinto
-
-      const lay = await tx.layaway.create({
-        data: {
-          code,
-          status: "OPEN",
-          productId: prod.id,
-          productName: U(prod.name),
-          productPrice: Number(prod.price),
-          customerName: U(d.customerName),
-          customerPhone: d.customerPhone,
-          city: d.city ? U(d.city) : null,
-          initialDeposit: d.initialDeposit,
-          totalPrice,
-          totalPaid: d.initialDeposit,
-        },
-      });
-
-      const pay = await tx.layawayPayment.create({
-        data: {
-          layawayId: lay.id,
-          amount: d.initialDeposit,
-          method: d.method,
-          note: "ABONO INICIAL",
-        },
-      });
-
-      return { lay, payments: [pay] };
+    // Auto-conversión (encargos vencidos sin abono)
+    await prisma.$transaction(async (tx) => {
+      await autoConvertExpiredEncargos(tx);
     });
 
-    res.status(201).json(result);
+    const where: Prisma.ReservationWhereInput = {};
+
+    if (["OPEN", "CLOSED", "CANCELLED"].includes(status)) {
+      where.status = status as any;
+    }
+    if (["APARTADO", "ENCARGO"].includes(kind)) {
+      where.kind = kind as any;
+    }
+
+    if (q) {
+      where.OR = [
+        { code: { contains: q, mode: "insensitive" } },
+        { customerName: { contains: q, mode: "insensitive" } },
+        { customerPhone: { contains: q, mode: "insensitive" } },
+        {
+          items: {
+            some: { productName: { contains: q, mode: "insensitive" } },
+          },
+        },
+      ];
+    }
+
+    const rows = await prisma.reservation.findMany({
+      where,
+      orderBy: [{ createdAt: "asc" }],
+      include: {
+        items: { orderBy: { id: "asc" } },
+        payments: { orderBy: { createdAt: "asc" } },
+      },
+      take: 200,
+    });
+
+    res.json(rows);
   } catch (e: unknown) {
     const err = e as { message?: string };
-    res.status(400).json({
-      error: err?.message || "No se pudo crear el sistema de apartado",
-    });
+    res
+      .status(400)
+      .json({ error: err?.message || "No se pudieron cargar reservas" });
   }
-});
-app.get("/layaways/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id))
-    return res.status(400).json({ error: "id inválido" });
-
-  const lay = await prisma.layaway.findUnique({ where: { id } });
-  if (!lay) return res.status(404).json({ error: "No encontrado" });
-
-  const pays = await prisma.layawayPayment.findMany({
-    where: { layawayId: id },
-    orderBy: { createdAt: "asc" },
-  });
-  res.json(pays);
 });
 
 app.post(
-  "/layaways/:id/payments",
+  "/reservations",
+  requireRole("EMPLOYEE"),
+  async (req: AuthRequest, res) => {
+    const parsed = reservationCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    }
+
+    const d = parsed.data;
+
+    // Validación: ENCARGO requiere pickupDate
+    if (d.kind === "ENCARGO") {
+      if (!d.pickupDate) {
+        return res
+          .status(400)
+          .json({ error: "pickupDate es requerido para ENCARGO" });
+      }
+    }
+
+    // Validación: si initialDeposit > 0, method es requerido
+    if (Number(d.initialDeposit || 0) > 0 && !d.method) {
+      return res
+        .status(400)
+        .json({ error: "method es requerido si hay abono inicial" });
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // (opcional) corre auto conversión antes de crear
+        await autoConvertExpiredEncargos(tx);
+
+        const code = await getNextReservationCode(d.kind);
+
+        // Normalizar items con snapshot desde Product
+        const normalizedItems: Array<{
+          productId: number | null;
+          productName: string;
+          skuSnapshot: string | null;
+          qty: number;
+          unitPrice: number;
+          discount: number;
+          totalLine: number;
+        }> = [];
+
+        for (const it of d.items) {
+          let prod: any = null;
+
+          if (it.productId) {
+            prod = await tx.product.findUnique({ where: { id: it.productId } });
+            if (!prod)
+              throw new Error(`Producto no encontrado: ${it.productId}`);
+          }
+
+          const qty = Number(it.qty || 1);
+          const unitPrice =
+            it.unitPrice != null
+              ? Number(it.unitPrice)
+              : Number(prod?.price ?? 0);
+          const discount = Number(it.discount ?? 0);
+
+          const productName = U(it.productName ?? prod?.name ?? "ITEM");
+          const skuSnapshot = prod?.sku ? String(prod.sku) : null;
+
+          const totalLine = unitPrice * qty - discount;
+
+          normalizedItems.push({
+            productId: it.productId ?? null,
+            productName,
+            skuSnapshot,
+            qty,
+            unitPrice,
+            discount,
+            totalLine,
+          });
+        }
+
+        const subtotal = normalizedItems.reduce(
+          (a, it) => a + Number(it.totalLine || 0),
+          0
+        );
+        const discountGeneral = 0;
+        const totalPrice = subtotal - discountGeneral;
+
+        const pickupDate = d.pickupDate ? new Date(d.pickupDate) : null;
+
+        const reservation = await tx.reservation.create({
+          data: {
+            code,
+            status: "OPEN",
+            kind: d.kind,
+            pickupDate,
+            convertedFromEncargo: false,
+            kindChangedAt: null,
+
+            customerName: U(d.customerName),
+            customerPhone: d.customerPhone,
+            customerDoc: d.customerDoc ? U(d.customerDoc) : null,
+            city: d.city ? U(d.city) : null,
+            notes: d.notes ? U(d.notes) : null,
+
+            subtotal,
+            discount: discountGeneral,
+            totalPrice,
+            totalPaid: Number(d.initialDeposit || 0),
+
+            items: { create: normalizedItems },
+          },
+          include: { items: true, payments: true },
+        });
+
+        // Crear pago inicial solo si initialDeposit > 0
+        let pay: any = null;
+        if (Number(d.initialDeposit || 0) > 0) {
+          pay = await tx.reservationPayment.create({
+            data: {
+              reservationId: reservation.id,
+              amount: Number(d.initialDeposit || 0),
+              method: d.method!, // ya validamos arriba
+              note: "ABONO INICIAL",
+            },
+          });
+        }
+
+        const updated = await recomputeReservationTotals(tx, reservation.id);
+
+        return {
+          reservation: updated,
+          items: reservation.items,
+          payments: pay ? [pay] : [],
+        };
+      });
+
+      res.status(201).json(result);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo crear la reserva" });
+    }
+  }
+);
+
+app.post(
+  "/reservations/:id/close",
   requireRole("EMPLOYEE"),
   async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id))
       return res.status(400).json({ error: "id inválido" });
 
-    const parsed = layawayPaymentSchema.safeParse(req.body);
-    if (!parsed.success)
+    try {
+      const row = await prisma.reservation.update({
+        where: { id },
+        data: { status: "CLOSED", closedAt: new Date() },
+      });
+      res.json(row);
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err?.code === "P2025")
+        return res.status(404).json({ error: "No encontrado" });
+      res.status(400).json({ error: err?.message || "No se pudo cerrar" });
+    }
+  }
+);
+
+app.post(
+  "/reservations/:id/cancel",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
+
+    try {
+      const row = await prisma.reservation.update({
+        where: { id },
+        data: { status: "CANCELLED", closedAt: new Date() },
+      });
+      res.json(row);
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err?.code === "P2025")
+        return res.status(404).json({ error: "No encontrado" });
+      res.status(400).json({ error: err?.message || "No se pudo cancelar" });
+    }
+  }
+);
+
+app.delete("/reservations/:id", requireRole("ADMIN"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "id inválido" });
+
+  try {
+    // Cascade debería borrar items/payments si pusiste onDelete: Cascade.
+    await prisma.reservation.delete({ where: { id } });
+    res.json({ ok: true, id });
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "P2025")
+      return res.status(404).json({ error: "No encontrado" });
+    res
+      .status(400)
+      .json({ error: err?.message || "No se pudo eliminar la reserva" });
+  }
+});
+
+app.get(
+  "/reservations/:id/items",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
+
+    const exists = await prisma.reservation.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) return res.status(404).json({ error: "No encontrado" });
+
+    const items = await prisma.reservationItem.findMany({
+      where: { reservationId: id },
+      orderBy: { id: "asc" },
+    });
+    res.json(items);
+  }
+);
+
+app.post(
+  "/reservations/:id/items",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const reservationId = Number(req.params.id);
+    if (!Number.isInteger(reservationId))
+      return res.status(400).json({ error: "id inválido" });
+
+    const parsed = reservationItemCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
       return res
         .status(400)
         .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    }
 
     try {
-      const { amount, method, note, createdBy } = parsed.data;
+      const out = await prisma.$transaction(async (tx) => {
+        const r = await tx.reservation.findUnique({
+          where: { id: reservationId },
+        });
+        if (!r) throw new Error("No encontrado");
+        if (r.status !== "OPEN") throw new Error("La reserva no está abierta");
 
-      const result = await prisma.$transaction(async (tx) => {
-        const lay = await tx.layaway.findUnique({ where: { id } });
-        if (!lay) throw new Error("No encontrado");
-        if (lay.status !== "OPEN") throw new Error("El sistema está cerrado");
+        let prod: any = null;
+        if (parsed.data.productId) {
+          prod = await tx.product.findUnique({
+            where: { id: parsed.data.productId },
+          });
+          if (!prod) throw new Error("Producto no encontrado");
+        }
 
-        const pay = await tx.layawayPayment.create({
+        const qty = Number(parsed.data.qty ?? 1);
+        const unitPrice =
+          parsed.data.unitPrice != null
+            ? Number(parsed.data.unitPrice)
+            : Number(prod?.price ?? 0);
+        const discount = Number(parsed.data.discount ?? 0);
+        const productName = U(parsed.data.productName ?? prod?.name ?? "ITEM");
+        const skuSnapshot = prod?.sku ? String(prod.sku) : null;
+
+        const item = await tx.reservationItem.create({
           data: {
-            layawayId: id,
-            amount,
-            method,
-            note: note ? U(note) : undefined,
-            createdBy: createdBy ? U(createdBy) : undefined,
+            reservationId,
+            productId: parsed.data.productId ?? null,
+            productName,
+            skuSnapshot,
+            qty,
+            unitPrice,
+            discount,
+            totalLine: unitPrice * qty - discount,
           },
         });
 
-        const agg = await tx.layawayPayment.aggregate({
-          where: { layawayId: id },
-          _sum: { amount: true },
-        });
+        const updated = await recomputeReservationTotals(tx, reservationId);
 
-        const totalPaid = Number(agg._sum.amount ?? 0);
-
-        const updated = await tx.layaway.update({
-          where: { id },
-          data: { totalPaid },
-        });
-
-        return { layaway: updated, payment: pay };
+        return { item, reservation: updated };
       });
 
-      res.status(201).json(result);
+      res.status(201).json(out);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo agregar el ítem" });
+    }
+  }
+);
+
+app.patch(
+  "/reservations/:reservationId/items/:itemId",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const reservationId = Number(req.params.reservationId);
+    const itemId = Number(req.params.itemId);
+
+    if (!Number.isInteger(reservationId) || !Number.isInteger(itemId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    const parsed = reservationItemUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    }
+
+    try {
+      const out = await prisma.$transaction(async (tx) => {
+        const r = await tx.reservation.findUnique({
+          where: { id: reservationId },
+        });
+        if (!r) throw new Error("No encontrado");
+        if (r.status !== "OPEN") throw new Error("La reserva no está abierta");
+
+        const existing = await tx.reservationItem.findUnique({
+          where: { id: itemId },
+          select: {
+            id: true,
+            reservationId: true,
+            qty: true,
+            unitPrice: true,
+            discount: true,
+          },
+        });
+        if (!existing || existing.reservationId !== reservationId)
+          throw new Error("Ítem no encontrado");
+
+        const qty =
+          parsed.data.qty != null
+            ? Number(parsed.data.qty)
+            : Number(existing.qty);
+        const unitPrice =
+          parsed.data.unitPrice != null
+            ? Number(parsed.data.unitPrice)
+            : Number(existing.unitPrice);
+        const discount =
+          parsed.data.discount != null
+            ? Number(parsed.data.discount)
+            : Number(existing.discount ?? 0);
+
+        const updatedItem = await tx.reservationItem.update({
+          where: { id: itemId },
+          data: {
+            ...(parsed.data.productName !== undefined
+              ? { productName: U(parsed.data.productName) }
+              : {}),
+            ...(parsed.data.qty !== undefined ? { qty } : {}),
+            ...(parsed.data.unitPrice !== undefined ? { unitPrice } : {}),
+            ...(parsed.data.discount !== undefined ? { discount } : {}),
+            totalLine: unitPrice * qty - discount,
+          },
+        });
+
+        const updatedReservation = await recomputeReservationTotals(
+          tx,
+          reservationId
+        );
+
+        return { item: updatedItem, reservation: updatedReservation };
+      });
+
+      res.json(out);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo actualizar el ítem" });
+    }
+  }
+);
+
+app.delete(
+  "/reservations/:reservationId/items/:itemId",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const reservationId = Number(req.params.reservationId);
+    const itemId = Number(req.params.itemId);
+
+    if (!Number.isInteger(reservationId) || !Number.isInteger(itemId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    try {
+      const out = await prisma.$transaction(async (tx) => {
+        const r = await tx.reservation.findUnique({
+          where: { id: reservationId },
+        });
+        if (!r) throw new Error("No encontrado");
+        if (r.status !== "OPEN") throw new Error("La reserva no está abierta");
+
+        const existing = await tx.reservationItem.findUnique({
+          where: { id: itemId },
+          select: { id: true, reservationId: true },
+        });
+        if (!existing || existing.reservationId !== reservationId)
+          throw new Error("Ítem no encontrado");
+
+        await tx.reservationItem.delete({ where: { id: itemId } });
+        const updated = await recomputeReservationTotals(tx, reservationId);
+        return { ok: true, reservation: updated };
+      });
+
+      res.json(out);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      res
+        .status(400)
+        .json({ error: err?.message || "No se pudo eliminar el ítem" });
+    }
+  }
+);
+
+app.get(
+  "/reservations/:id/payments",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
+
+    const exists = await prisma.reservation.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) return res.status(404).json({ error: "No encontrado" });
+
+    const pays = await prisma.reservationPayment.findMany({
+      where: { reservationId: id },
+      orderBy: { createdAt: "asc" },
+    });
+    res.json(pays);
+  }
+);
+
+app.post(
+  "/reservations/:id/payments",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
+
+    const parsed = reservationPaymentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    }
+
+    try {
+      const out = await prisma.$transaction(async (tx) => {
+        const r = await tx.reservation.findUnique({ where: { id } });
+        if (!r) throw new Error("No encontrado");
+        if (r.status !== "OPEN") throw new Error("La reserva está cerrada");
+
+        const pay = await tx.reservationPayment.create({
+          data: {
+            reservationId: id,
+            amount: parsed.data.amount,
+            method: parsed.data.method,
+            note: parsed.data.note ? U(parsed.data.note) : undefined,
+            createdBy: parsed.data.createdBy
+              ? U(parsed.data.createdBy)
+              : undefined,
+            reference: parsed.data.reference
+              ? U(parsed.data.reference)
+              : undefined,
+          },
+        });
+
+        const updated = await recomputeReservationTotals(tx, id);
+        return { reservation: updated, payment: pay };
+      });
+
+      res.status(201).json(out);
     } catch (e: unknown) {
       const err = e as { message?: string };
       res
@@ -2128,50 +2624,34 @@ app.post(
 );
 
 app.delete(
-  "/layaways/:layawayId/payments/:paymentId",
-  requireRole("ADMIN"), // solo admin puede borrar abonos
+  "/reservations/:reservationId/payments/:paymentId",
+  requireRole("ADMIN"),
   async (req, res) => {
-    const layawayId = Number(req.params.layawayId);
+    const reservationId = Number(req.params.reservationId);
     const paymentId = Number(req.params.paymentId);
 
-    if (!Number.isInteger(layawayId) || !Number.isInteger(paymentId)) {
+    if (!Number.isInteger(reservationId) || !Number.isInteger(paymentId)) {
       return res.status(400).json({ error: "id inválido" });
     }
 
     try {
-      // Verificar que el pago exista y pertenezca al apartado
-      const pay = await prisma.layawayPayment.findUnique({
-        where: { id: paymentId },
-        select: { id: true, layawayId: true },
+      const out = await prisma.$transaction(async (tx) => {
+        const pay = await tx.reservationPayment.findUnique({
+          where: { id: paymentId },
+          select: { id: true, reservationId: true },
+        });
+        if (!pay || pay.reservationId !== reservationId) {
+          throw new Error("Abono no encontrado");
+        }
+
+        await tx.reservationPayment.delete({ where: { id: paymentId } });
+
+        const updated = await recomputeReservationTotals(tx, reservationId);
+
+        return { ok: true, reservationId, paymentId, reservation: updated };
       });
 
-      if (!pay || pay.layawayId !== layawayId) {
-        return res.status(404).json({ error: "Abono no encontrado" });
-      }
-
-      // Eliminar el abono
-      await prisma.layawayPayment.delete({ where: { id: paymentId } });
-
-      // Recalcular totalPaid
-      const agg = await prisma.layawayPayment.aggregate({
-        where: { layawayId },
-        _sum: { amount: true },
-      });
-
-      const newTotalPaid = Number(agg._sum.amount ?? 0);
-
-      // Actualizar el apartado
-      await prisma.layaway.update({
-        where: { id: layawayId },
-        data: { totalPaid: newTotalPaid },
-      });
-
-      res.json({
-        ok: true,
-        layawayId,
-        paymentId,
-        totalPaid: newTotalPaid,
-      });
+      res.json(out);
     } catch (e: unknown) {
       const err = e as { message?: string };
       res
@@ -2181,51 +2661,60 @@ app.delete(
   }
 );
 
-app.post("/layaways/:id/close", requireRole("EMPLOYEE"), async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id))
-    return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const row = await prisma.layaway.update({
-      where: { id },
-      data: {
-        status: "CLOSED",
-        closedAt: new Date(),
-      },
-    });
-    res.json(row);
-  } catch (e: unknown) {
-    const err = e as { code?: string; message?: string };
-    if (err?.code === "P2025")
-      return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: err?.message || "No se pudo cerrar" });
-  }
+const reservationKindPatchSchema = z.object({
+  kind: z.enum(["APARTADO", "ENCARGO"]),
+  pickupDate: z.string().datetime().nullable().optional(),
 });
 
-app.delete("/layaways/:id", requireRole("ADMIN"), async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id)) {
-    return res.status(400).json({ error: "id inválido" });
-  }
+app.patch(
+  "/reservations/:id/kind",
+  requireRole("EMPLOYEE"),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
 
-  try {
-    // Primero borro abonos asociados
-    await prisma.layawayPayment.deleteMany({ where: { layawayId: id } });
-    // Luego el sistema de apartado
-    await prisma.layaway.delete({ where: { id } });
-
-    res.json({ ok: true, id });
-  } catch (e: unknown) {
-    const err = e as { code?: string; message?: string };
-    if (err?.code === "P2025") {
-      return res.status(404).json({ error: "No encontrado" });
+    const parsed = reservationKindPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
     }
-    res
-      .status(400)
-      .json({ error: err?.message || "No se pudo eliminar el apartado" });
+
+    const { kind, pickupDate } = parsed.data;
+
+    if (kind === "ENCARGO" && !pickupDate) {
+      return res
+        .status(400)
+        .json({ error: "pickupDate es requerido para ENCARGO" });
+    }
+
+    try {
+      const row = await prisma.reservation.update({
+        where: { id },
+        data: {
+          kind,
+          pickupDate:
+            pickupDate === undefined
+              ? undefined
+              : pickupDate
+              ? new Date(pickupDate)
+              : null,
+          ...(kind === "APARTADO"
+            ? { convertedFromEncargo: true, kindChangedAt: new Date() }
+            : { kindChangedAt: new Date() }),
+        },
+      });
+
+      res.json(row);
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err?.code === "P2025")
+        return res.status(404).json({ error: "No encontrado" });
+      res.status(400).json({ error: err?.message || "No se pudo actualizar" });
+    }
   }
-});
+);
 
 // ==================== ADMIN (extra dev) ====================
 app.post("/admin/wipe", requireRole("ADMIN"), async (req, res) => {

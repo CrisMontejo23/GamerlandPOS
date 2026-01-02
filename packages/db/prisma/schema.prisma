@@ -22,9 +22,10 @@ model Product {
   minStock  Int              @default(0)
   active    Boolean          @default(true)
   createdAt DateTime         @default(now())
+  
   SaleItem  SaleItem[]
-  StockMove StockMovement[]
-  Layaway   Layaway[]
+  StockMove StockMovement[]  
+  ReservationItem ReservationItem[]
 
   @@index([sku])
   @@index([name])
@@ -45,7 +46,7 @@ model Sale {
   createdAt DateTime @default(now())
   items     SaleItem[]
   payments  Payment[]
-  Layaway   Layaway[]
+  reservations Reservation[]
 }
 
 model SaleItem {
@@ -187,62 +188,92 @@ model WorkOrderPayment {
   @@index([workOrderId, createdAt])
 }
 
-enum LayawayStatus {
-  OPEN   // ABIERTO
-  CLOSED // CERRADO
+enum ReservationStatus {
+  OPEN        // equivalente a LayawayStatus.OPEN
+  CLOSED      // equivalente a LayawayStatus.CLOSED (pagado/completado)
+  CANCELLED   // nuevo (por si cancelas apartados)
 }
 
-model Layaway {
-  id           Int            @id @default(autoincrement())
-  code         String         @unique                 // AP-00001
-  status       LayawayStatus  @default(OPEN)
+enum ReservationKind {
+  APARTADO
+  ENCARGO
+}
 
-  // Producto asociado al apartado (1 producto por sistema)
-  product      Product        @relation(fields: [productId], references: [id])
-  productId    Int
+model Reservation {
+  id        Int               @id @default(autoincrement())
+  code      String            @unique
+  status    ReservationStatus @default(OPEN)
 
-  // Snapshot de info del producto al abrir el apartado
-  productName  String
-  productPrice Decimal        @db.Decimal(12, 2)      // precio que se usa en el contrato
+  kind      ReservationKind   @default(APARTADO) // ✅ NUEVO
+  pickupDate DateTime?        // ✅ NUEVO (solo ENCARGO)
+  convertedFromEncargo Boolean @default(false) // ✅ NUEVO
+  kindChangedAt DateTime?     // ✅ NUEVO (auditoría)
 
-  // Datos del cliente
   customerName  String
   customerPhone String
-  city          String?                               // ciudad de residencia (opcional)
+  customerDoc   String?
+  city          String?
 
-  // Dinero
-  initialDeposit Decimal      @db.Decimal(12, 2)      // abono inicial obligatorio
-  totalPrice     Decimal      @db.Decimal(12, 2)      // valor objetivo a pagar (puede = productPrice)
-  totalPaid      Decimal      @db.Decimal(12, 2) @default(0) // suma de todos los pagos (incluye inicial)
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  closedAt   DateTime?
 
-  // Fechas
-  createdAt  DateTime     @default(now())            // fecha de apertura del sistema de apartado
-  updatedAt  DateTime     @updatedAt
-  closedAt   DateTime?                               // cuando se cierra (se completó o se canceló)
+  subtotal   Decimal    @db.Decimal(12, 2) @default(0)
+  discount   Decimal    @db.Decimal(12, 2) @default(0)
+  totalPrice Decimal    @db.Decimal(12, 2) @default(0)
+  totalPaid  Decimal    @db.Decimal(12, 2) @default(0)
 
-  notes      String?                                 // notas internas si las necesitas
+  items     ReservationItem[]
+  payments  ReservationPayment[]
 
-  // Relación con abonos
-  payments   LayawayPayment[]
+  saleId    Int?
+  sale      Sale?      @relation(fields: [saleId], references: [id])
 
-  // Link opcional a la venta final en POS (cuando hagas FINALIZAR VENTA)
-  saleId     Int?
-  sale       Sale?         @relation(fields: [saleId], references: [id])
-
+  @@index([kind, status, createdAt])  // ✅ útil para columnas
+  @@index([pickupDate])              // ✅ útil para vencidos
   @@index([status, createdAt])
   @@index([customerPhone])
+  @@index([code])
 }
 
-model LayawayPayment {
-  id         Int      @id @default(autoincrement())
-  layaway    Layaway  @relation(fields: [layawayId], references: [id], onDelete: Cascade)
-  layawayId  Int
 
-  amount     Decimal  @db.Decimal(12, 2)             // valor del abono
-  method     String                                  // EFECTIVO | QR_LLAVE | DATAFONO
+model ReservationItem {
+  id            Int          @id @default(autoincrement())
+  reservation   Reservation  @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservationId Int
+
+  // Producto (opcional pero recomendado para stock y trazabilidad)
+  product   Product? @relation(fields: [productId], references: [id])
+  productId Int?
+
+  // Snapshot al momento del apartado
+  productName   String
+  skuSnapshot   String?
+  unitPrice     Decimal   @db.Decimal(12, 2) @default(0)
+  qty           Int       @default(1)
+
+  discount      Decimal   @db.Decimal(12, 2) @default(0)  // descuento por línea (opcional)
+  totalLine     Decimal   @db.Decimal(12, 2) @default(0)  // (unitPrice*qty) - discount
+
+  createdAt     DateTime  @default(now())
+
+  @@index([reservationId])
+  @@index([productId])
+}
+
+model ReservationPayment {
+  id            Int          @id @default(autoincrement())
+  reservation   Reservation  @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservationId Int
+
+  amount     Decimal  @db.Decimal(12, 2) @default(0)
+  method     String   // EFECTIVO | QR_LLAVE | DATAFONO  (igual que LayawayPayment)
+  reference  String?
   note       String?
   createdAt  DateTime @default(now())
-  createdBy  String?                                  // usuario que registró el abono
+  createdBy  String?
 
-  @@index([layawayId, createdAt])
+  @@index([reservationId, createdAt])
+  @@index([method])
 }

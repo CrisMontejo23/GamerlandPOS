@@ -9,7 +9,8 @@ import logo from "../../assets/logo.png";
 import Image from "next/image";
 
 type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
-type LayawayStatus = "OPEN" | "CLOSED";
+type ReservationStatus = "OPEN" | "CLOSED";
+type ReservationKind = "ENCARGO" | "APARTADO";
 
 type JsPDFWithAutoTable = jsPDF & {
   lastAutoTable?: { finalY: number };
@@ -22,7 +23,22 @@ type Product = {
   price: number;
 };
 
-type LayawayPayment = {
+type ReservationItem = {
+  id?: number; // cuando venga del back
+  productId: number;
+  sku?: string;
+  name: string;
+  unitPrice: number;
+  qty: number;
+};
+
+type ReservationItemApi = Omit<ReservationItem, "unitPrice" | "qty"> & {
+  unitPrice?: number | string | null;
+  qty?: number | string | null;
+  product?: { sku?: string | null; name?: string | null } | null;
+};
+
+type ReservationPayment = {
   id: number;
   amount: number;
   method: PayMethod;
@@ -31,44 +47,98 @@ type LayawayPayment = {
   createdBy?: string | null;
 };
 
-type Layaway = {
+type Reservation = {
   id: number;
   code: string;
-  status: LayawayStatus;
-  productId: number;
-  productName: string;
-  productPrice: number;
+  status: ReservationStatus;
+
+  // ✅ nuevo
+  kind: ReservationKind;
+  pickupDate?: string | null; // solo encargo (fecha retiro)
+  deliveredAt?: string | null; // si el back lo envía (entregado a tarjeta/tienda)
+
   customerName: string;
   customerPhone: string;
   city?: string | null;
-  initialDeposit: number;
+
   totalPrice: number;
+  initialDeposit: number;
   totalPaid: number;
+
   createdAt: string;
   updatedAt: string;
   closedAt?: string | null;
-  payments?: LayawayPayment[];
+
+  items?: ReservationItem[];
 };
 
-type LayawayApi = Omit<
-  Layaway,
-  "productPrice" | "initialDeposit" | "totalPrice" | "totalPaid"
+type ReservationApi = Omit<
+  Reservation,
+  "totalPrice" | "initialDeposit" | "totalPaid" | "kind"
 > & {
-  productPrice: number | string | null;
-  initialDeposit: number | string | null;
+  kind?: ReservationKind | string | null;
+  type?: ReservationKind | string | null;
+
   totalPrice: number | string | null;
+  initialDeposit: number | string | null;
   totalPaid: number | string | null;
+
+  pickupDate?: string | null;
+  deliveredAt?: string | null;
+
+  items?: ReservationItemApi[];
 };
 
-type LayawayPaymentApi = Omit<LayawayPayment, "amount"> & {
+type ReservationPaymentApi = Omit<ReservationPayment, "amount"> & {
   amount: number | string | null;
 };
 
+type CreateReservationResponse =
+  | ReservationApi
+  | { reservation: ReservationApi }
+  | { res: ReservationApi }
+  | { lay: ReservationApi };
+
+type CreatePaymentResponse =
+  | { reservation: ReservationApi; payment: ReservationPaymentApi }
+  | { layaway: ReservationApi; payment: ReservationPaymentApi }
+  | { lay: ReservationApi; pay: ReservationPaymentApi }
+  | { reservation: ReservationApi; pay: ReservationPaymentApi };
+
+function pickReservationFromCreate(
+  resp: CreateReservationResponse
+): ReservationApi {
+  if ("reservation" in resp) return resp.reservation;
+  if ("res" in resp) return resp.res;
+  if ("lay" in resp) return resp.lay;
+  return resp; // cuando el back devuelve la reserva “plana”
+}
+
+function pickReservationFromPayment(
+  resp: CreatePaymentResponse
+): ReservationApi {
+  if ("reservation" in resp) return resp.reservation;
+  if ("layaway" in resp) return resp.layaway;
+  return resp.lay;
+}
+
+function pickPaymentFromPayment(
+  resp: CreatePaymentResponse
+): ReservationPaymentApi {
+  if ("payment" in resp) return resp.payment;
+  return resp.pay;
+}
+
 const COLORS = { bgCard: "#14163A", border: "#1E1F4B", input: "#0F1030" };
 
-const STATUS_LABEL: Record<LayawayStatus, string> = {
+const STATUS_LABEL: Record<ReservationStatus, string> = {
   OPEN: "ABIERTO",
   CLOSED: "CERRADO",
+};
+
+const KIND_LABEL: Record<ReservationKind, string> = {
+  ENCARGO: "ENCARGO",
+  APARTADO: "APARTADO",
 };
 
 const PaymentLabels: Record<PayMethod, string> = {
@@ -78,6 +148,9 @@ const PaymentLabels: Record<PayMethod, string> = {
 };
 
 const PAGE_SIZE = 5;
+
+// ✅ API NUEVA
+const RES_API = "/reservations";
 
 const U = (s: unknown) =>
   (typeof s === "string" ? s.toUpperCase() : s) as string;
@@ -91,118 +164,147 @@ function toCOP(n: number | null | undefined) {
   });
 }
 
-function normalizeLayaway(raw: LayawayApi): Layaway {
-  return {
-    ...raw,
-    productPrice: Number(raw.productPrice ?? 0),
-    initialDeposit: Number(raw.initialDeposit ?? 0),
-    totalPrice: Number(raw.totalPrice ?? 0),
-    totalPaid: Number(raw.totalPaid ?? 0),
-  };
-}
-
-function normalizePayment(raw: LayawayPaymentApi): LayawayPayment {
-  return {
-    ...raw,
-    amount: Number(raw.amount ?? 0),
-  };
-}
-
 function fmt(d: string | Date) {
   return new Date(d).toLocaleString("es-CO");
+}
+
+function onlyDateISO(d: string) {
+  // para mostrar bonito si viene ISO
+  try {
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return d;
+    return dt.toLocaleDateString("es-CO");
+  } catch {
+    return d;
+  }
+}
+
+function normalizeReservation(raw: ReservationApi): Reservation {
+  const items: ReservationItem[] = (raw.items ?? []).map(
+    (it: ReservationItemApi) => ({
+      id: it.id,
+      productId: Number(it.productId),
+      sku: it.sku ?? it.product?.sku ?? "",
+      name: U(it.name ?? it.product?.name ?? ""),
+      unitPrice: Number(it.unitPrice ?? 0),
+      qty: Number(it.qty ?? 0),
+    })
+  );
+
+  const kindRaw = String(raw.kind ?? raw.type ?? "APARTADO").toUpperCase();
+  const kind: ReservationKind = kindRaw === "ENCARGO" ? "ENCARGO" : "APARTADO";
+
+  return {
+    ...raw,
+    kind,
+    pickupDate: raw.pickupDate ?? null,
+    deliveredAt: raw.deliveredAt ?? null,
+    totalPrice: Number(raw.totalPrice ?? 0),
+    initialDeposit: Number(raw.initialDeposit ?? 0),
+    totalPaid: Number(raw.totalPaid ?? 0),
+    items,
+  };
+}
+
+function normalizePayment(raw: ReservationPaymentApi): ReservationPayment {
+  return { ...raw, amount: Number(raw.amount ?? 0) };
 }
 
 export default function LayawaysPage() {
   const { ready, role } = useAuth();
 
-  const [rows, setRows] = useState<Layaway[]>([]);
+  const [rows, setRows] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const [products, setProducts] = useState<Product[]>([]);
-
-  const [statusFilter, setStatusFilter] = useState<LayawayStatus | "">("OPEN");
+  // ===== filtros =====
+  const [statusFilter, setStatusFilter] = useState<ReservationStatus | "">(
+    "OPEN"
+  );
   const [q, setQ] = useState("");
 
-  // paginación por columna
-  const [visibleByStatus, setVisibleByStatus] = useState<
-    Record<LayawayStatus, number>
+  // paginación por columna (ENCARGO/APARTADO)
+  const [visibleByKind, setVisibleByKind] = useState<
+    Record<ReservationKind, number>
   >({
-    OPEN: PAGE_SIZE,
-    CLOSED: PAGE_SIZE,
+    ENCARGO: PAGE_SIZE,
+    APARTADO: PAGE_SIZE,
   });
 
-  // modal crear
+  // ===== modal crear =====
   const [openForm, setOpenForm] = useState(false);
-  const [selProductId, setSelProductId] = useState<number | "">("");
-  const [productPrice, setProductPrice] = useState<number | null>(null);
+
+  // tipo
+  const [kind, setKind] = useState<ReservationKind>("APARTADO");
+
+  // encargo: fecha retiro obligatoria
+  const [pickupDate, setPickupDate] = useState<string>("");
+
+  // datos cliente
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [city, setCity] = useState("");
-  const [initialDeposit, setInitialDeposit] = useState<string>("");
-  const [initialMethod, setInitialMethod] = useState<PayMethod>("EFECTIVO");
+
+  // items UI
+  const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const productSearchRef = useRef<HTMLDivElement | null>(null);
+  const [draftQty, setDraftQty] = useState<string>("1");
+  const [draftSelected, setDraftSelected] = useState<Product | null>(null);
+  const [draftItems, setDraftItems] = useState<ReservationItem[]>([]);
+
+  // pagos iniciales
+  const [initialDeposit, setInitialDeposit] = useState<string>("");
+  const [initialMethod, setInitialMethod] = useState<PayMethod>("EFECTIVO");
 
   // modal contrato obligatorio
-  const [contractLayaway, setContractLayaway] = useState<Layaway | null>(null);
+  const [contractReservation, setContractReservation] =
+    useState<Reservation | null>(null);
 
   // modal devolución
-  const [refundLayaway, setRefundLayaway] = useState<Layaway | null>(null);
+  const [refundReservation, setRefundReservation] =
+    useState<Reservation | null>(null);
 
   // modal abonos
   const [paymentsOpenId, setPaymentsOpenId] = useState<number | null>(null);
   const [paymentsCache, setPaymentsCache] = useState<
-    Record<number, LayawayPayment[]>
+    Record<number, ReservationPayment[]>
   >({});
   const [newPayAmount, setNewPayAmount] = useState<string>("");
   const [newPayMethod, setNewPayMethod] = useState<PayMethod>("EFECTIVO");
   const [newPayNote, setNewPayNote] = useState("");
 
-  // ==== LOADERS ====
+  // confirm genérico
+  const [confirmData, setConfirmData] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    onConfirm: () => void | Promise<void>;
+  } | null>(null);
 
-  const loadProducts = async () => {
-    try {
-      const r = await apiFetch(
-        "/products?includeInactive=false&pageSize=200&withStock=false"
-      );
+  const openGamerConfirm = (cfg: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    onConfirm: () => void | Promise<void>;
+  }) => setConfirmData(cfg);
 
-      type ProductApiRow = {
-        id: number;
-        sku: string;
-        name: string;
-        price?: number | string | null;
-      };
-
-      const data = (await r.json()) as { total: number; rows: ProductApiRow[] };
-
-      const mapped: Product[] = data.rows.map((p) => ({
-        id: p.id,
-        sku: p.sku,
-        name: p.name,
-        price: Number(p.price ?? 0),
-      }));
-
-      setProducts(mapped);
-    } catch {
-      setMsg("NO SE PUDIERON CARGAR LOS PRODUCTOS");
-      setTimeout(() => setMsg(""), 2200);
-    }
-  };
-
-  const loadLayaways = async () => {
+  // ===== LOADERS =====
+  const loadReservations = async () => {
     setLoading(true);
     try {
       const p = new URLSearchParams();
       if (statusFilter) p.set("status", statusFilter);
       if (q.trim()) p.set("q", q.trim().toUpperCase());
 
-      const r = await apiFetch(`/layaways?${p.toString()}`);
-      const data = (await r.json()) as LayawayApi[];
-      setRows(data.map(normalizeLayaway));
+      const r = await apiFetch(`${RES_API}?${p.toString()}`);
+      const data = (await r.json()) as ReservationApi[];
+      setRows(data.map(normalizeReservation));
     } catch {
-      setMsg("NO SE PUDIERON CARGAR LOS SISTEMAS DE APARTADO");
+      setMsg("NO SE PUDIERON CARGAR LOS REGISTROS");
       setTimeout(() => setMsg(""), 2200);
     } finally {
       setLoading(false);
@@ -211,33 +313,14 @@ export default function LayawaysPage() {
 
   useEffect(() => {
     if (!ready) return;
-    //loadProducts();
-  }, [ready]);
-
-  useEffect(() => {
-    if (!ready) return;
-    loadLayaways();
+    loadReservations();
   }, [ready, statusFilter]);
 
   useEffect(() => {
-    setVisibleByStatus({ OPEN: PAGE_SIZE, CLOSED: PAGE_SIZE });
+    setVisibleByKind({ ENCARGO: PAGE_SIZE, APARTADO: PAGE_SIZE });
   }, [statusFilter]);
 
-  // actualizar precio al cambiar producto
-  useEffect(() => {
-    if (!selProductId) {
-      setProductPrice(null);
-      return;
-    }
-
-    const found = products.find((p) => p.id === selProductId);
-
-    // Solo actualiza si encuentra el producto, si no, deja el precio como está
-    if (found) {
-      setProductPrice(found.price);
-    }
-  }, [selProductId, products]);
-
+  // cerrar dropdown si clic afuera
   useEffect(() => {
     function handleClickOutside(ev: MouseEvent) {
       if (!productSearchRef.current) return;
@@ -245,25 +328,15 @@ export default function LayawaysPage() {
         setProductDropdownOpen(false);
       }
     }
-
     document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (!productSearch.trim()) {
-      setProductDropdownOpen(false);
-    }
-  }, [productSearch]);
-
-  // Buscar productos para el modal de apartados (igual que stock-in)
+  // buscar productos para el modal
   useEffect(() => {
     if (!ready) return;
 
     let abort = false;
-
     const run = async () => {
       const term = productSearch.trim();
       if (!term) {
@@ -272,10 +345,10 @@ export default function LayawaysPage() {
       }
 
       const params = new URLSearchParams();
-      params.set("q", term.toUpperCase()); // como en stock-in
-      params.set("withStock", "false"); // para apartados no necesitamos stock
+      params.set("q", term.toUpperCase());
+      params.set("withStock", "false");
       params.set("includeInactive", "false");
-      params.set("pageSize", "50"); // o 100 si quieres
+      params.set("pageSize", "50");
 
       try {
         const r = await apiFetch(`/products?${params.toString()}`);
@@ -304,48 +377,202 @@ export default function LayawaysPage() {
       }
     };
 
-    const t = setTimeout(run, 200); // pequeño debounce
+    const t = setTimeout(run, 200);
     return () => {
       abort = true;
       clearTimeout(t);
     };
   }, [ready, productSearch]);
 
-  // modal de confirmación genérico
-  const [confirmData, setConfirmData] = useState<{
-    title: string;
-    message: string;
-    confirmLabel: string;
-    cancelLabel?: string;
-    onConfirm: () => void | Promise<void>;
-  } | null>(null);
+  const filteredProducts = useMemo(() => products, [products]);
 
-  // ==== HELPERS ====
+  // ===== ITEMS UI =====
+  const itemsTotal = useMemo(() => {
+    return draftItems.reduce((acc, it) => acc + it.unitPrice * it.qty, 0);
+  }, [draftItems]);
 
-  // abrir modal de confirmación genérico
-  const openGamerConfirm = (cfg: {
-    title: string;
-    message: string;
-    confirmLabel: string;
-    cancelLabel?: string;
-    onConfirm: () => void | Promise<void>;
-  }) => {
-    setConfirmData(cfg);
+  const resetForm = () => {
+    setKind("APARTADO");
+    setPickupDate("");
+    setCustomerName("");
+    setCustomerPhone("");
+    setCity("");
+    setInitialDeposit("");
+    setInitialMethod("EFECTIVO");
+    setProductSearch("");
+    setProductDropdownOpen(false);
+    setDraftSelected(null);
+    setDraftQty("1");
+    setDraftItems([]);
   };
 
-  const openPaymentsModal = async (lay: Layaway) => {
-    setPaymentsOpenId(lay.id);
+  function handleSelectProduct(p: Product) {
+    setDraftSelected(p);
+    setProductSearch(`${p.sku} — ${p.name}`);
+    setProductDropdownOpen(false);
+  }
+
+  const addDraftItem = () => {
+    if (!draftSelected) {
+      setMsg("SELECCIONA UN PRODUCTO");
+      setTimeout(() => setMsg(""), 2000);
+      return;
+    }
+    const qty = Number(draftQty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setMsg("CANTIDAD INVÁLIDA");
+      setTimeout(() => setMsg(""), 2000);
+      return;
+    }
+
+    setDraftItems((prev) => {
+      const idx = prev.findIndex((x) => x.productId === draftSelected.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], qty: copy[idx].qty + qty };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          productId: draftSelected.id,
+          sku: draftSelected.sku,
+          name: U(draftSelected.name),
+          unitPrice: Number(draftSelected.price ?? 0),
+          qty,
+        },
+      ];
+    });
+
+    setDraftSelected(null);
+    setProductSearch("");
+    setProducts([]);
+    setDraftQty("1");
+  };
+
+  const removeDraftItem = (productId: number) => {
+    setDraftItems((prev) => prev.filter((x) => x.productId !== productId));
+  };
+
+  const updateDraftQty = (productId: number, qtyStr: string) => {
+    const qty = Number(qtyStr);
+    setDraftItems((prev) =>
+      prev.map((x) =>
+        x.productId === productId
+          ? { ...x, qty: Number.isFinite(qty) && qty > 0 ? qty : x.qty }
+          : x
+      )
+    );
+  };
+
+  type ReservationCreateBody = {
+    kind: ReservationKind;
+    customerName: string;
+    customerPhone: string;
+    city?: string;
+    initialDeposit: number;
+    method: PayMethod;
+    pickupDate?: string; // solo ENCARGO
+    items: Array<{
+      productId: number;
+      qty: number;
+      unitPrice: number;
+      name: string;
+    }>;
+  };
+
+  // ===== CREAR (ENCARGO/APARTADO) =====
+  const createReservation = async () => {
+    if (!customerName.trim() || !customerPhone.trim()) {
+      setMsg("NOMBRE Y WHATSAPP SON OBLIGATORIOS");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+    if (!draftItems.length) {
+      setMsg("DEBES AGREGAR AL MENOS 1 ÍTEM");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    if (kind === "ENCARGO") {
+      if (!pickupDate.trim()) {
+        setMsg("FECHA DE RETIRO ES OBLIGATORIA PARA ENCARGO");
+        setTimeout(() => setMsg(""), 2400);
+        return;
+      }
+    }
+
+    const depStr = initialDeposit.trim();
+    const dep = depStr ? Number(depStr) : 0;
+
+    if (!Number.isFinite(dep) || dep < 0) {
+      setMsg("ABONO INICIAL INVÁLIDO");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    const total = draftItems.reduce((a, it) => a + it.unitPrice * it.qty, 0);
+    if (dep > total + 0.01) {
+      setMsg("EL ABONO INICIAL NO PUEDE SER MAYOR AL TOTAL");
+      setTimeout(() => setMsg(""), 2400);
+      return;
+    }
+
+    const body: ReservationCreateBody = {
+      kind,
+      customerName: customerName.trim().toUpperCase(),
+      customerPhone: customerPhone.trim(),
+      city: city.trim() ? city.trim().toUpperCase() : undefined,
+      initialDeposit: dep,
+      method: initialMethod,
+      items: draftItems.map((it) => ({
+        productId: it.productId,
+        qty: it.qty,
+        unitPrice: it.unitPrice,
+        name: it.name,
+      })),
+    };
+
+    if (kind === "ENCARGO") body.pickupDate = pickupDate;
+
+    const r = await apiFetch(RES_API, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) {
+      const e = (await r.json().catch(() => ({}))) as { error?: string };
+      setMsg("ERROR: " + U(e?.error || "NO SE PUDO CREAR"));
+      setTimeout(() => setMsg(""), 2500);
+      return;
+    }
+
+    const result = (await r.json()) as CreateReservationResponse;
+    const resvRaw = pickReservationFromCreate(result);
+    const resvNorm = normalizeReservation(resvRaw);
+
+    setMsg(`${KIND_LABEL[resvNorm.kind]} CREADO ✅`);
+    setOpenForm(false);
+    resetForm();
+    await loadReservations();
+
+    setContractReservation(resvNorm);
+  };
+
+  // ===== ABONOS =====
+  const openPaymentsModal = async (resv: Reservation) => {
+    setPaymentsOpenId(resv.id);
     setNewPayAmount("");
     setNewPayMethod("EFECTIVO");
     setNewPayNote("");
 
-    if (!paymentsCache[lay.id]) {
+    if (!paymentsCache[resv.id]) {
       try {
-        const r = await apiFetch(`/layaways/${lay.id}/payments`);
-        const data = (await r.json()) as LayawayPaymentApi[];
+        const r = await apiFetch(`${RES_API}/${resv.id}/payments`);
+        const data = (await r.json()) as ReservationPaymentApi[];
         setPaymentsCache((prev) => ({
           ...prev,
-          [lay.id]: data.map(normalizePayment),
+          [resv.id]: data.map(normalizePayment),
         }));
       } catch {
         setMsg("NO SE PUDIERON CARGAR LOS ABONOS");
@@ -365,86 +592,6 @@ export default function LayawaysPage() {
     return paymentsCache[paymentsOpenId] ?? [];
   }, [paymentsOpenId, paymentsCache]);
 
-  const filteredProducts = useMemo(() => products, [products]);
-
-  function handleSelectProduct(p: Product) {
-    setSelProductId(p.id);
-    setProductPrice(p.price);
-    setProductSearch(`${p.sku} — ${p.name}`);
-    setProductDropdownOpen(false);
-  }
-
-  // ==== CREAR APARTADO ====
-
-  const resetForm = () => {
-    setSelProductId("");
-    setProductPrice(null);
-    setCustomerName("");
-    setCustomerPhone("");
-    setCity("");
-    setInitialDeposit("");
-    setInitialMethod("EFECTIVO");
-    setProductSearch("");
-    setProductDropdownOpen(false);
-  };
-
-  const createLayaway = async () => {
-    if (!selProductId || !productPrice) {
-      setMsg("DEBES SELECCIONAR UN PRODUCTO");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-    if (!customerName.trim() || !customerPhone.trim()) {
-      setMsg("NOMBRE Y WHATSAPP SON OBLIGATORIOS");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-    const dep = Number(initialDeposit);
-    if (!Number.isFinite(dep) || dep <= 0) {
-      setMsg("ABONO INICIAL INVÁLIDO");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-
-    const body = {
-      productId: selProductId,
-      customerName: customerName.trim().toUpperCase(),
-      customerPhone: customerPhone.trim(),
-      city: city.trim() ? city.trim().toUpperCase() : undefined,
-      initialDeposit: dep,
-      method: initialMethod,
-    };
-
-    const r = await apiFetch("/layaways", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-
-    if (!r.ok) {
-      const e = (await r.json().catch(() => ({}))) as { error?: string };
-      setMsg("ERROR: " + U(e?.error || "NO SE PUDO CREAR"));
-      setTimeout(() => setMsg(""), 2500);
-      return;
-    }
-
-    const result = (await r.json()) as {
-      lay: LayawayApi;
-      payments: LayawayPaymentApi[];
-    };
-
-    const layNorm = normalizeLayaway(result.lay);
-
-    setMsg("SISTEMA DE APARTADO CREADO ✅");
-    setOpenForm(false);
-    resetForm();
-    await loadLayaways();
-
-    // abrimos modal de contrato con datos normalizados
-    setContractLayaway(layNorm);
-  };
-
-  // ==== ABONO NUEVO + FACTURA PDF ====
-
   const registerPayment = async () => {
     if (!paymentsOpenId) return;
     const dep = Number(newPayAmount);
@@ -454,7 +601,7 @@ export default function LayawaysPage() {
       return;
     }
 
-    const r = await apiFetch(`/layaways/${paymentsOpenId}/payments`, {
+    const r = await apiFetch(`${RES_API}/${paymentsOpenId}/payments`, {
       method: "POST",
       body: JSON.stringify({
         amount: dep,
@@ -470,32 +617,27 @@ export default function LayawaysPage() {
       return;
     }
 
-    const result = (await r.json()) as {
-      layaway: LayawayApi;
-      payment: LayawayPaymentApi;
-    };
+    const result = (await r.json()) as CreatePaymentResponse;
+    const updatedRaw = pickReservationFromPayment(result);
+    const payRaw = pickPaymentFromPayment(result);
 
-    const layNorm = normalizeLayaway(result.layaway);
-    const payNorm = normalizePayment(result.payment);
+    const updated = normalizeReservation(updatedRaw);
+    const pay = normalizePayment(payRaw);
 
-    // recargar caches
     setPaymentsCache((prev) => ({
       ...prev,
-      [layNorm.id]: [...(prev[layNorm.id] || []), payNorm],
+      [updated.id]: [...(prev[updated.id] || []), pay],
     }));
 
-    await loadLayaways();
-
-    // generar factura media carta con números reales
-    generatePaymentReceiptPdf(layNorm, payNorm);
+    await loadReservations();
+    generatePaymentReceiptPdf(updated, pay);
 
     setMsg("ABONO REGISTRADO ✅");
     setNewPayAmount("");
     setNewPayNote("");
   };
 
-  // ==== ELIMINAR ABONO ====
-  const deletePayment = (p: LayawayPayment) => {
+  const deletePayment = (p: ReservationPayment) => {
     if (!paymentsOpenId) return;
 
     openGamerConfirm({
@@ -508,10 +650,8 @@ export default function LayawaysPage() {
       onConfirm: async () => {
         try {
           const r = await apiFetch(
-            `/layaways/${paymentsOpenId}/payments/${p.id}`,
-            {
-              method: "DELETE",
-            }
+            `${RES_API}/${paymentsOpenId}/payments/${p.id}`,
+            { method: "DELETE" }
           );
 
           if (!r.ok) {
@@ -521,7 +661,6 @@ export default function LayawaysPage() {
             return;
           }
 
-          // Actualizar cache local del modal
           setPaymentsCache((prev) => ({
             ...prev,
             [paymentsOpenId]: (prev[paymentsOpenId] || []).filter(
@@ -529,8 +668,7 @@ export default function LayawaysPage() {
             ),
           }));
 
-          // Refrescar totales del apartado
-          await loadLayaways();
+          await loadReservations();
 
           setMsg("ABONO ELIMINADO ✅");
           setTimeout(() => setMsg(""), 2200);
@@ -544,17 +682,49 @@ export default function LayawaysPage() {
     });
   };
 
-  // ==== FINALIZAR VENTA ====
+  type PosPreloadItem = {
+    productId: number;
+    productName: string;
+    price: number;
+    qty: number;
+  };
 
-  const finalizeLayaway = (lay: Layaway) => {
+  type PosPreload =
+    | {
+        source: "ORDER" | "RESERVATION";
+        reservationId: number;
+        code: string;
+        customerName: string;
+        kind: ReservationKind;
+        pickupDate?: string;
+        items: PosPreloadItem[];
+        // legacy fields opcionales si hay 1 item
+        productId?: number;
+        productName?: string;
+        price?: number;
+        qty?: number;
+      }
+    | {
+        source: "RESERVATION_REFUND";
+        reservationId: number;
+        code: string;
+        customerName: string;
+        refundAmount: number;
+        kind: ReservationKind;
+      };
+
+  // ===== FINALIZAR → POS =====
+  const finalizeReservation = (resv: Reservation) => {
     openGamerConfirm({
-      title: "FINALIZAR SISTEMA",
-      message: `Vas a finalizar el sistema de apartado ${lay.code} y pasar a POS para registrar la venta final.`,
+      title: "FINALIZAR",
+      message: `Vas a finalizar el ${KIND_LABEL[resv.kind]} ${
+        resv.code
+      } y pasar a POS para registrar la venta final.`,
       confirmLabel: "SÍ, FINALIZAR E IR A POS",
       cancelLabel: "CANCELAR",
       onConfirm: async () => {
         try {
-          const r = await apiFetch(`/layaways/${lay.id}/close`, {
+          const r = await apiFetch(`${RES_API}/${resv.id}/close`, {
             method: "POST",
           });
 
@@ -565,16 +735,32 @@ export default function LayawaysPage() {
             return;
           }
 
-          // Guardamos info en localStorage para que POS la recoja
+          const items = resv.items ?? [];
+          const first = items[0];
+
           try {
-            const payload = {
-              source: "LAYAWAY",
-              layawayId: lay.id,
-              productId: lay.productId,
-              productName: lay.productName,
-              price: lay.productPrice,
-              customerName: lay.customerName,
+            const payload: PosPreload = {
+              source: resv.kind === "ENCARGO" ? "ORDER" : "RESERVATION",
+              reservationId: resv.id,
+              code: resv.code,
+              customerName: resv.customerName,
+              kind: resv.kind,
+              pickupDate: resv.pickupDate ?? undefined,
+              items: items.map((it) => ({
+                productId: it.productId,
+                productName: it.name,
+                price: it.unitPrice,
+                qty: it.qty,
+              })),
             };
+
+            if (items.length === 1 && first) {
+              payload.productId = first.productId;
+              payload.productName = first.name;
+              payload.price = first.unitPrice;
+              payload.qty = first.qty;
+            }
+
             window.localStorage.setItem("POS_PRELOAD", JSON.stringify(payload));
           } catch {
             /* ignore */
@@ -591,24 +777,28 @@ export default function LayawaysPage() {
     });
   };
 
-  // ==== ELIMINAR APARTADO (ADMIN) ====
-  const deleteLayaway = (lay: Layaway) => {
+  // ===== ELIMINAR (ADMIN) =====
+  const deleteReservation = (resv: Reservation) => {
     openGamerConfirm({
-      title: "ELIMINAR SISTEMA DE APARTADO",
-      message: `¿Eliminar el sistema de apartado ${lay.code} y todos sus abonos? Esta acción no se puede deshacer.`,
+      title: "ELIMINAR",
+      message: `¿Eliminar el ${KIND_LABEL[resv.kind]} ${
+        resv.code
+      } y todos sus abonos? Esta acción no se puede deshacer.`,
       confirmLabel: "SÍ, ELIMINAR TODO",
       cancelLabel: "CANCELAR",
       onConfirm: async () => {
         try {
-          const r = await apiFetch(`/layaways/${lay.id}`, { method: "DELETE" });
+          const r = await apiFetch(`${RES_API}/${resv.id}`, {
+            method: "DELETE",
+          });
           if (!r.ok) {
             const e = (await r.json().catch(() => ({}))) as { error?: string };
             setMsg("ERROR: " + U(e?.error || "NO SE PUDO ELIMINAR"));
             setTimeout(() => setMsg(""), 2500);
             return;
           }
-          setMsg("SISTEMA DE APARTADO ELIMINADO ✅");
-          await loadLayaways();
+          setMsg("REGISTRO ELIMINADO ✅");
+          await loadReservations();
         } catch {
           setMsg("ERROR: NO SE PUDO ELIMINAR");
           setTimeout(() => setMsg(""), 2500);
@@ -619,15 +809,13 @@ export default function LayawaysPage() {
     });
   };
 
-  // ==== DEVOLUCIÓN 50% Y PASAR A POS ====
-  const openRefundModal = (lay: Layaway) => {
-    setRefundLayaway(lay);
-  };
+  // ===== DEVOLUCIÓN 50% =====
+  const openRefundModal = (resv: Reservation) => setRefundReservation(resv);
 
   const confirmRefund = async () => {
-    if (!refundLayaway) return;
+    if (!refundReservation) return;
 
-    const half = Math.round(refundLayaway.totalPaid * 0.5);
+    const half = Math.round(refundReservation.totalPaid * 0.5);
     if (!Number.isFinite(half) || half <= 0) {
       setMsg("NO HAY ABONOS PARA DEVOLVER");
       setTimeout(() => setMsg(""), 2200);
@@ -635,8 +823,7 @@ export default function LayawaysPage() {
     }
 
     try {
-      // Cerramos el sistema de apartado (queda como CERRADO)
-      const r = await apiFetch(`/layaways/${refundLayaway.id}/close`, {
+      const r = await apiFetch(`${RES_API}/${refundReservation.id}/close`, {
         method: "POST",
       });
       if (!r.ok) {
@@ -646,23 +833,22 @@ export default function LayawaysPage() {
         return;
       }
 
-      // Guardamos payload para que POS precargue el ítem SALDO VENTA
       try {
-        const payload = {
-          source: "LAYAWAY_REFUND",
-          layawayId: refundLayaway.id,
-          code: refundLayaway.code,
-          customerName: refundLayaway.customerName,
-          // este es el valor que se debe cobrar en POS
+        const payload: PosPreload = {
+          source: "RESERVATION_REFUND",
+          reservationId: refundReservation.id,
+          code: refundReservation.code,
+          customerName: refundReservation.customerName,
           refundAmount: half,
+          kind: refundReservation.kind,
         };
+
         window.localStorage.setItem("POS_PRELOAD", JSON.stringify(payload));
       } catch {
         /* ignore */
       }
 
-      setRefundLayaway(null);
-      // Redirigimos a POS
+      setRefundReservation(null);
       window.location.href = "/pos";
     } catch {
       setMsg("ERROR: NO SE PUDO PROCESAR LA DEVOLUCIÓN");
@@ -670,34 +856,28 @@ export default function LayawaysPage() {
     }
   };
 
-  // ==== PDFs ====
-
-  function generateContractPdf(lay: Layaway) {
+  // ===== PDFs =====
+  function generateContractPdf(resv: Reservation) {
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: "letter", // carta
+      format: "letter",
     }) as JsPDFWithAutoTable;
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 15;
-    const firmaY = pageHeight - 40; // zona reservada para firmas
+    const firmaY = pageHeight - 40;
     let y = 12;
 
-    // ==== ENCABEZADO GAMER MINIMALISTA ====
     doc.setFillColor(5, 10, 40);
     doc.rect(0, 0, pageWidth, 24, "F");
 
-    // Logo cuadrado (mantiene proporción visual)
     try {
       const imgSrc = (logo as StaticImageData).src;
-      doc.addImage(imgSrc, "PNG", marginX, 3.5, 18, 18); // 18x18 "cuadrado"
-    } catch {
-      /* noop */
-    }
+      doc.addImage(imgSrc, "PNG", marginX, 3.5, 18, 18);
+    } catch {}
 
-    // Texto encabezado
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(0, 255, 255);
@@ -709,46 +889,57 @@ export default function LayawaysPage() {
     doc.text("Facatativá, Cundinamarca", pageWidth / 2, 13, {
       align: "center",
     });
-    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 16, {
-      align: "center",
-    });
+    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 16, { align: "center" });
     doc.text("NIT 1003511062-1", pageWidth / 2, 19, { align: "center" });
 
-    // Línea neón
     doc.setDrawColor(0, 255, 255);
     doc.setLineWidth(0.4);
     doc.line(marginX, 26, pageWidth - marginX, 26);
 
-    // ==== TÍTULO ====
     y = 31;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(0, 0, 0);
-    doc.text("CONTRATO DE SISTEMA DE APARTADO", pageWidth / 2, y, {
-      align: "center",
-    });
 
-    // Fecha
+    const title =
+      resv.kind === "ENCARGO"
+        ? "CONTRATO DE ENCARGO"
+        : "CONTRATO SISTEMA DE APARTADO";
+
+    doc.text(title, pageWidth / 2, y, { align: "center" });
+
     y += 5;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
-    doc.text(`Facatativá, ${fmt(lay.createdAt)}`, pageWidth / 2, y, {
+    doc.text(`Facatativá, ${fmt(resv.createdAt)}`, pageWidth / 2, y, {
       align: "center",
     });
 
-    // ==== TABLA RESUMEN MÁS COMPACTA ====
     y += 5;
 
-    const resumenBody = [
-      ["CÓDIGO", lay.code],
-      ["CLIENTE", lay.customerName],
-      ["WHATSAPP", lay.customerPhone],
-      ["CIUDAD", lay.city || "NO REGISTRA"],
-      ["PRODUCTO", lay.productName],
-      ["PRECIO DEL PRODUCTO", toCOP(lay.totalPrice)],
-      ["ABONO INICIAL", toCOP(lay.initialDeposit)],
-      ["TOTAL ABONADO A LA FECHA", toCOP(lay.totalPaid)],
+    const resumenBody: Array<[string, string]> = [
+      ["TIPO", KIND_LABEL[resv.kind]],
+      ["CÓDIGO", resv.code],
+      ["CLIENTE", resv.customerName],
+      ["WHATSAPP", resv.customerPhone],
+      ["CIUDAD", resv.city || "NO REGISTRA"],
     ];
+
+    if (resv.kind === "ENCARGO") {
+      resumenBody.push([
+        "FECHA DE RETIRO",
+        resv.pickupDate ? onlyDateISO(resv.pickupDate) : "NO REGISTRA",
+      ]);
+      if (resv.deliveredAt) {
+        resumenBody.push(["ENTREGADO", fmt(resv.deliveredAt)]);
+      }
+    }
+
+    resumenBody.push(
+      ["TOTAL OBJETIVO", toCOP(resv.totalPrice)],
+      ["ABONO INICIAL", toCOP(resv.initialDeposit)],
+      ["TOTAL ABONADO A LA FECHA", toCOP(resv.totalPaid)]
+    );
 
     autoTable(doc, {
       startY: y,
@@ -756,45 +947,43 @@ export default function LayawaysPage() {
       theme: "grid",
       head: [["DATO", "VALOR"]],
       body: resumenBody,
-      styles: {
-        font: "helvetica",
-        fontSize: 7.5,
-        cellPadding: 1.8,
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1,
-        textColor: [0, 0, 0],
-        fillColor: [255, 255, 255],
-      },
-      headStyles: {
-        fillColor: [0, 255, 255],
-        textColor: [0, 0, 0],
-        fontStyle: "bold",
-        fontSize: 8,
-      },
-      alternateRowStyles: {
-        fillColor: [245, 248, 255],
-      },
+      styles: { font: "helvetica", fontSize: 7.5, cellPadding: 1.8 },
+      headStyles: { fillColor: [0, 255, 255], textColor: [0, 0, 0] },
+      alternateRowStyles: { fillColor: [245, 248, 255] },
     });
 
-    const lastY = doc.lastAutoTable?.finalY ?? y;
-    y = lastY + 6;
+    y = (doc.lastAutoTable?.finalY ?? y) + 5;
 
-    // ==== CUERPO LEGAL MÁS PEQUEÑO ====
+    // tabla items
+    const items = resv.items ?? [];
+    autoTable(doc, {
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      theme: "grid",
+      head: [["ÍTEM", "CANT", "V. UNIT", "SUBTOTAL"]],
+      body: items.map((it) => [
+        it.name,
+        String(it.qty),
+        toCOP(it.unitPrice),
+        toCOP(it.unitPrice * it.qty),
+      ]),
+      styles: { font: "helvetica", fontSize: 7.5, cellPadding: 1.8 },
+      headStyles: { fillColor: [15, 16, 48], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [245, 248, 255] },
+    });
+
+    y = (doc.lastAutoTable?.finalY ?? y) + 6;
+
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9); // antes 10
+    doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
-
     const maxWidth = pageWidth - marginX * 2;
 
     const writeParagraph = (text: string, extraSpace = 2) => {
       const lines = doc.splitTextToSize(text, maxWidth);
-      doc.text(lines, marginX, y, {
-        maxWidth,
-        lineHeightFactor: 1.25, // antes 1.4 → más compacto
-      });
+      doc.text(lines, marginX, y, { maxWidth, lineHeightFactor: 1.25 });
       y += lines.length * 3.4 + extraSpace;
     };
-
     const tituloClausula = (t: string) => {
       doc.setFont("helvetica", "bold");
       doc.text(t, marginX, y);
@@ -803,58 +992,76 @@ export default function LayawaysPage() {
     };
 
     writeParagraph(
-      `Entre GAMERLAND PC, identificado con NIT 1003511062-1, ubicado en Facatativá, Cundinamarca, en adelante "LA TIENDA", y el(la) cliente ${lay.customerName}, identificado para efectos de contacto con el número de WhatsApp ${lay.customerPhone}, en adelante "EL CLIENTE", se celebra el presente contrato de sistema de apartado, el cual se regirá por las siguientes cláusulas:`,
+      `Entre GAMERLAND PC (NIT 1003511062-1), en adelante "LA TIENDA", y el(la) cliente ${resv.customerName} (WhatsApp ${resv.customerPhone}), en adelante "EL CLIENTE", se celebra el presente contrato, regido por las siguientes cláusulas:`,
       4
     );
 
     tituloClausula("CLÁUSULA PRIMERA – OBJETO");
     writeParagraph(
-      `El objeto del presente contrato es la reserva, a favor de EL CLIENTE, del producto ${
-        lay.productName
-      }, por un valor estimado de ${toCOP(
-        lay.totalPrice
-      )}, mediante el sistema de apartado ofrecido por LA TIENDA.`
+      `El objeto del presente contrato es la ${
+        resv.kind === "ENCARGO"
+          ? "gestión de encargo y reserva"
+          : "reserva (sistema de apartado)"
+      } a favor de EL CLIENTE, de los ítems descritos en este documento, por un valor objetivo total de ${toCOP(
+        resv.totalPrice
+      )}.`
     );
 
-    tituloClausula("CLÁUSULA SEGUNDA – VALOR Y FORMA DE PAGO");
+    if (resv.kind === "ENCARGO") {
+      tituloClausula("CLÁUSULA SEGUNDA – FECHA DE RETIRO (ENCARGO)");
+      writeParagraph(
+        `EL CLIENTE se compromete a recoger el encargo en la fecha pactada: ${
+          resv.pickupDate ? onlyDateISO(resv.pickupDate) : "NO REGISTRA"
+        }.`
+      );
+
+      tituloClausula("CLÁUSULA TERCERA – INCUMPLIMIENTO FECHA DE RETIRO");
+      writeParagraph(
+        `Si el encargo no se recoge en la fecha establecida, a partir de ese momento pasan a regir las condiciones del SISTEMA DE APARTADO (incluida la cláusula de cancelación y devolución).`
+      );
+    }
+
+    tituloClausula(
+      "CLÁUSULA " +
+        (resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA") +
+        " – ABONOS"
+    );
     writeParagraph(
       `EL CLIENTE realiza un abono inicial de ${toCOP(
-        lay.initialDeposit
-      )}, el cual constituye parte del precio total del producto y no corresponde a una reserva gratuita. EL CLIENTE se compromete a efectuar los abonos posteriores hasta completar el valor total del producto, en los plazos y montos que libremente acuerde con LA TIENDA.`
+        resv.initialDeposit
+      )}. Los abonos posteriores se irán registrando hasta completar el valor total.`
     );
 
-    tituloClausula("CLÁUSULA TERCERA – CANCELACIÓN DEL SISTEMA");
+    tituloClausula(
+      "CLÁUSULA " +
+        (resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA") +
+        " – CANCELACIÓN / DEVOLUCIÓN"
+    );
     writeParagraph(
-      `En caso de que EL CLIENTE decida cancelar el sistema de apartado en cualquier momento, acepta y reconoce que LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del valor total abonado hasta la fecha de la cancelación. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales asumidos por LA TIENDA.`
+      `Si EL CLIENTE cancela, LA TIENDA devolverá únicamente el 50% del total abonado a la fecha. El 50% restante se entiende como compensación por costos administrativos, logísticos y comerciales.`
     );
 
-    tituloClausula("CLÁUSULA CUARTA – AVISO PARA RECLAMAR EL PRODUCTO");
+    tituloClausula(
+      "CLÁUSULA " +
+        (resv.kind === "ENCARGO" ? "SEXTA" : "CUARTA") +
+        " – ENTREGA"
+    );
     writeParagraph(
-      `Para reclamar el producto apartado, EL CLIENTE deberá informar a LA TIENDA con un mínimo de una (1) semana de anticipación, a través de los medios de contacto disponibles, con el fin de garantizar la disponibilidad del producto en inventario y su correcta preparación para la entrega.`
+      `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`
     );
 
-    tituloClausula("CLÁUSULA QUINTA – GARANTÍA DEL PRODUCTO");
-    writeParagraph(
-      `La garantía legal y/o comercial aplicable al producto comenzará a regir a partir de la fecha efectiva de entrega del mismo a EL CLIENTE. La cobertura, plazos y condiciones de garantía se sujetarán a las políticas vigentes de LA TIENDA y, en lo pertinente, a la normatividad de protección al consumidor.`
+    tituloClausula(
+      "CLÁUSULA " +
+        (resv.kind === "ENCARGO" ? "SÉPTIMA" : "QUINTA") +
+        " – ACEPTACIÓN"
     );
-
-    tituloClausula("CLÁUSULA SEXTA – VARIACIÓN DEL PRECIO");
     writeParagraph(
-      `EL CLIENTE reconoce que el precio del producto puede estar sujeto a variación según las condiciones del mercado, la tasa de cambio y otros factores externos. En caso de que el tiempo transcurrido para completar el pago sea considerable, LA TIENDA podrá actualizar el valor del producto. En todo caso, LA TIENDA informará previamente a EL CLIENTE sobre cualquier ajuste de precio antes de la cancelación del saldo final.`
-    );
-
-    tituloClausula("CLÁUSULA SÉPTIMA – ACEPTACIÓN");
-    writeParagraph(
-      `Firmado el presente documento, EL CLIENTE manifiesta que ha leído, entendido y aceptado en su totalidad las cláusulas del contrato de sistema de apartado, y declara recibir una copia de este documento generado en la tienda.`,
+      `EL CLIENTE declara haber leído y aceptado este contrato.`,
       6
     );
 
-    // Por si acaso, si el texto se pasa, evitamos pintar firmas muy encima
-    if (y > firmaY - 15) {
-      y = firmaY - 15;
-    }
+    if (y > firmaY - 15) y = firmaY - 15;
 
-    // ==== FIRMAS ====
     doc.setDrawColor(0, 0, 0);
     doc.line(marginX, firmaY, marginX + 70, firmaY);
     doc.line(pageWidth - marginX - 70, firmaY, pageWidth - marginX, firmaY);
@@ -866,87 +1073,65 @@ export default function LayawaysPage() {
       align: "center",
     });
 
-    doc.save(`Contrato_Apartado_${lay.code}.pdf`);
+    doc.save(`Contrato_${KIND_LABEL[resv.kind]}_${resv.code}.pdf`);
   }
 
-  function generatePaymentReceiptPdf(lay: Layaway, payment: LayawayPayment) {
+  function generatePaymentReceiptPdf(
+    resv: Reservation,
+    payment: ReservationPayment
+  ) {
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: "letter", // carta completa
+      format: "letter",
     }) as JsPDFWithAutoTable;
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 10;
-    const usableHeight = pageHeight / 2 - 10; // solo media carta (zona superior)
+    const usableHeight = pageHeight / 2 - 10;
 
     let y = 8;
 
-    // Barra gamer superior
     doc.setFillColor(5, 10, 40);
     doc.rect(0, 0, pageWidth, 20, "F");
 
-    // Logo cuadrado
     try {
       const imgSrc = (logo as StaticImageData).src;
-      doc.addImage(imgSrc, "PNG", marginX, 3.5, 18, 18); // 18x18
-    } catch {
-      /* noop */
-    }
+      doc.addImage(imgSrc, "PNG", marginX, 3.5, 18, 18);
+    } catch {}
 
-    // Encabezado texto centrado
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(0, 255, 255);
-    doc.text("RECIBO DE ABONO – SISTEMA DE APARTADO", pageWidth / 2, 9, {
-      align: "center",
-    });
+    doc.text(
+      `RECIBO DE ABONO – ${resv.kind === "ENCARGO" ? "ENCARGO" : "APARTADO"}`,
+      pageWidth / 2,
+      9,
+      { align: "center" }
+    );
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(255, 255, 255);
     doc.text("GAMERLAND PC", pageWidth / 2, 13, { align: "center" });
-    doc.text("Facatativá, Cundinamarca", pageWidth / 2, 16, {
-      align: "center",
-    });
-    doc.text("Carrera 3 #4-13 Local 1", pageWidth / 2, 19, {
-      align: "center",
-    });
-    doc.text("NIT 1003511062-1", pageWidth / 2, 22, { align: "center" });
 
-    // Línea separadora
     doc.setDrawColor(0, 255, 255);
     doc.setLineWidth(0.4);
     doc.line(marginX, 26, pageWidth - marginX, 26);
 
-    // ==== CUERPO EN NEGRO SOBRE BLANCO ====
     y = 32;
     doc.setFontSize(8.5);
-    doc.setTextColor(0, 0, 0); // antes blanco → no se veía
+    doc.setTextColor(0, 0, 0);
 
-    doc.text(`Sistema de apartado: ${lay.code}`, marginX, y);
+    doc.text(`${KIND_LABEL[resv.kind]}: ${resv.code}`, marginX, y);
     y += 4;
-    doc.text(`Cliente: ${lay.customerName}`, marginX, y);
+    doc.text(`Cliente: ${resv.customerName}`, marginX, y);
     y += 4;
-    doc.text(`WhatsApp: ${lay.customerPhone}`, marginX, y);
-    y += 4;
-    if (lay.city) {
-      doc.text(`Ciudad: ${lay.city}`, marginX, y);
-      y += 4;
-    }
-
-    doc.text(`Producto: ${lay.productName}`, marginX, y);
-    y += 4;
-    doc.text(
-      `Precio objetivo del producto: ${toCOP(lay.totalPrice)}`,
-      marginX,
-      y
-    );
+    doc.text(`WhatsApp: ${resv.customerPhone}`, marginX, y);
     y += 5;
 
-    // Tabla resumen del abono
-    const saldo = lay.totalPrice - lay.totalPaid;
+    const saldo = resv.totalPrice - resv.totalPaid;
 
     autoTable(doc, {
       startY: y,
@@ -957,37 +1142,21 @@ export default function LayawaysPage() {
         ["Fecha del abono", fmt(payment.createdAt)],
         ["Método de pago", PaymentLabels[payment.method]],
         ["Valor del abono", toCOP(payment.amount)],
-        ["Total abonado a la fecha", toCOP(lay.totalPaid)],
+        ["Total abonado a la fecha", toCOP(resv.totalPaid)],
         ["Saldo pendiente", toCOP(saldo)],
       ],
-      styles: {
-        font: "helvetica",
-        fontSize: 8,
-        cellPadding: 2,
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1,
-        textColor: [0, 0, 0],
-        fillColor: [255, 255, 255],
-      },
-      headStyles: {
-        fillColor: [0, 255, 255],
-        textColor: [0, 0, 0],
-        fontStyle: "bold",
-      },
-      alternateRowStyles: {
-        fillColor: [245, 248, 255],
-      },
+      styles: { font: "helvetica", fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [0, 255, 255], textColor: [0, 0, 0] },
+      alternateRowStyles: { fillColor: [245, 248, 255] },
     });
 
-    const lastY = doc.lastAutoTable?.finalY ?? y;
-    y = lastY + 4;
+    y = (doc.lastAutoTable?.finalY ?? y) + 4;
 
-    // Nota legal (si cabe dentro de la media carta)
     if (y < usableHeight - 16) {
       doc.setFontSize(7.5);
       doc.setTextColor(80, 80, 80);
       const notaLines = doc.splitTextToSize(
-        `Este comprobante acredita el abono realizado al sistema de apartado indicado. La suma abonada hace parte del valor total del producto y se rige por las condiciones establecidas en el contrato de sistema de apartado firmado por el cliente.`,
+        `Este comprobante acredita el abono realizado al registro indicado. La suma abonada hace parte del valor total y se rige por las condiciones establecidas en el contrato.`,
         pageWidth - marginX * 2
       );
       doc.text(notaLines, marginX, y, {
@@ -997,10 +1166,8 @@ export default function LayawaysPage() {
       y += notaLines.length * 3.5 + 4;
     }
 
-    // Firma dentro de la media carta
     doc.setTextColor(0, 0, 0);
     const firmaY = Math.min(usableHeight - 10, y + 6);
-
     doc.setDrawColor(0, 0, 0);
     doc.line(marginX, firmaY, marginX + 60, firmaY);
     doc.setFontSize(8);
@@ -1008,13 +1175,10 @@ export default function LayawaysPage() {
       align: "center",
     });
 
-    doc.save(`Recibo_Abono_${lay.code}.pdf`);
+    doc.save(`Recibo_Abono_${KIND_LABEL[resv.kind]}_${resv.code}.pdf`);
   }
 
-  // ==== RENDER ====
-
-  const statusOrder: LayawayStatus[] = ["OPEN", "CLOSED"];
-
+  // ===== RENDER helpers =====
   const sortedRows = useMemo(() => {
     return [...rows].sort(
       (a, b) =>
@@ -1022,11 +1186,21 @@ export default function LayawaysPage() {
     );
   }, [rows]);
 
+  const getCardItemsLabel = (resv: Reservation) => {
+    const its = resv.items ?? [];
+    if (its.length === 0) return "—";
+    if (its.length === 1) return `${its[0].name} (x${its[0].qty})`;
+    const first = its[0];
+    return `${first.name} (x${first.qty}) + ${its.length - 1} más`;
+  };
+
+  const kinds: ReservationKind[] = ["ENCARGO", "APARTADO"];
+
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-cyan-400">
-          SISTEMAS DE APARTADO
+          ENCARGOS / SISTEMAS DE APARTADO
         </h1>
 
         <div className="flex flex-col w-full gap-2 sm:flex-row sm:w-auto sm:items-center">
@@ -1038,7 +1212,7 @@ export default function LayawaysPage() {
             }}
             value={statusFilter}
             onChange={(e) =>
-              setStatusFilter((e.target.value as LayawayStatus | "") || "")
+              setStatusFilter((e.target.value as ReservationStatus | "") || "")
             }
           >
             <option value="">TODOS</option>
@@ -1047,7 +1221,7 @@ export default function LayawaysPage() {
           </select>
 
           <input
-            placeholder="BUSCAR POR CÓDIGO, CLIENTE, PRODUCTO..."
+            placeholder="BUSCAR POR CÓDIGO, CLIENTE..."
             className="rounded px-3 py-2 text-gray-100 w-full sm:w-72 uppercase"
             style={{
               backgroundColor: COLORS.input,
@@ -1055,12 +1229,12 @@ export default function LayawaysPage() {
             }}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && loadLayaways()}
+            onKeyDown={(e) => e.key === "Enter" && loadReservations()}
           />
 
           <div className="flex gap-2">
             <button
-              onClick={loadLayaways}
+              onClick={loadReservations}
               className="px-4 py-2 rounded-lg font-semibold w-full sm:w-auto uppercase"
               style={{
                 color: "#001014",
@@ -1077,7 +1251,7 @@ export default function LayawaysPage() {
               className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
               style={{ borderColor: COLORS.border }}
             >
-              + NUEVO APARTADO
+              + NUEVO
             </button>
           </div>
         </div>
@@ -1085,265 +1259,241 @@ export default function LayawaysPage() {
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
 
-      {loading && (
-        <div className="text-gray-400 text-sm">CARGANDO SISTEMAS…</div>
-      )}
+      {loading && <div className="text-gray-400 text-sm">CARGANDO…</div>}
 
       {!loading && rows.length === 0 && (
-        <div className="text-gray-400 text-sm">NO HAY SISTEMAS REGISTRADOS</div>
+        <div className="text-gray-400 text-sm">NO HAY REGISTROS</div>
       )}
 
-      {/* 2 columnas: ABIERTO / CERRADO */}
+      {/* ✅ 2 columnas fijas: Encargos (izq) / Apartados (der) */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {statusOrder
-          .filter((st) => !statusFilter || st === statusFilter)
-          .map((st) => {
-            const all = sortedRows.filter((r) => r.status === st);
-            const limit = visibleByStatus[st] ?? PAGE_SIZE;
-            const colRows = all.slice(0, limit);
-            const hasMore = all.length > limit;
+        {kinds.map((k) => {
+          const all = sortedRows
+            .filter((r) => r.kind === k)
+            .filter((r) => !statusFilter || r.status === statusFilter);
 
-            return (
-              <div key={st} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
-                    {STATUS_LABEL[st]}{" "}
-                    <span className="text-xs text-gray-400">
-                      ({all.length})
-                    </span>
-                  </h2>
-                </div>
+          const limit = visibleByKind[k] ?? PAGE_SIZE;
+          const colRows = all.slice(0, limit);
+          const hasMore = all.length > limit;
 
-                <div className="space-y-3">
-                  {colRows.map((lay) => {
-                    const saldo = lay.totalPrice - lay.totalPaid;
-                    const canFinalize = lay.status === "OPEN" && saldo <= 500; // pequeño margen
-
-                    return (
-                      <article
-                        key={lay.id}
-                        className="rounded-xl p-4 space-y-2 border"
-                        style={{
-                          backgroundColor: COLORS.bgCard,
-                          borderColor: COLORS.border,
-                        }}
-                      >
-                        <header className="flex items-center justify-between">
-                          <div className="font-semibold text-cyan-300 uppercase">
-                            {lay.code}
-                          </div>
-                          <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 uppercase">
-                            {STATUS_LABEL[lay.status]}
-                          </span>
-                        </header>
-
-                        <div className="text-xs text-gray-300">
-                          <div>
-                            <b>APERTURA:</b> {fmt(lay.createdAt)}
-                          </div>
-                          {lay.closedAt && (
-                            <div>
-                              <b>CERRADO:</b> {fmt(lay.closedAt)}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-sm uppercase">
-                          <div>
-                            <b>PRODUCTO:</b> {lay.productName}
-                          </div>
-                          <div>
-                            <b>PRECIO OBJETIVO:</b> {toCOP(lay.totalPrice)}
-                          </div>
-                          <div>
-                            <b>CLIENTE:</b> {lay.customerName} •{" "}
-                            {lay.customerPhone}
-                          </div>
-                          {lay.city && (
-                            <div>
-                              <b>CIUDAD:</b> {lay.city}
-                            </div>
-                          )}
-                          <div>
-                            <b>ABONO INICIAL:</b> {toCOP(lay.initialDeposit)}
-                          </div>
-                          <div className="text-emerald-300">
-                            <b>TOTAL ABONADO:</b> {toCOP(lay.totalPaid)}
-                          </div>
-                          <div className="text-pink-300">
-                            <b>SALDO:</b> {toCOP(saldo)}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 pt-2">
-                          <button
-                            className="px-3 py-1 rounded border text-xs uppercase"
-                            style={{ borderColor: COLORS.border }}
-                            onClick={() => openPaymentsModal(lay)}
-                          >
-                            VER / ABONAR
-                          </button>
-
-                          {lay.status === "OPEN" && (
-                            <>
-                              <button
-                                className="px-3 py-1 rounded border text-xs uppercase"
-                                style={{ borderColor: COLORS.border }}
-                                onClick={() => generateContractPdf(lay)}
-                              >
-                                IMPRIMIR CONTRATO
-                              </button>
-
-                              {/* DEVOLUCIÓN 50% (EMPLOYEE + ADMIN) */}
-                              <button
-                                className="px-3 py-1 rounded border text-xs uppercase text-pink-300"
-                                style={{ borderColor: COLORS.border }}
-                                onClick={() => openRefundModal(lay)}
-                              >
-                                DEVOLUCIÓN 50%
-                              </button>
-                            </>
-                          )}
-
-                          {canFinalize && (
-                            <button
-                              className="px-3 py-1 rounded border text-xs uppercase text-emerald-300"
-                              style={{ borderColor: COLORS.border }}
-                              onClick={() => finalizeLayaway(lay)}
-                            >
-                              FINALIZAR VENTA → POS
-                            </button>
-                          )}
-
-                          {/* ELIMINAR SOLO ADMIN */}
-                          {role === "ADMIN" && (
-                            <button
-                              className="px-3 py-1 rounded border text-xs uppercase text-red-300"
-                              style={{ borderColor: COLORS.border }}
-                              onClick={() => deleteLayaway(lay)}
-                            >
-                              ELIMINAR
-                            </button>
-                          )}
-                        </div>
-                      </article>
-                    );
-                  })}
-
-                  {hasMore && (
-                    <button
-                      className="mt-1 px-3 py-1 rounded border text-xs uppercase"
-                      style={{ borderColor: COLORS.border }}
-                      onClick={() =>
-                        setVisibleByStatus((prev) => ({
-                          ...prev,
-                          [st]: (prev[st] ?? PAGE_SIZE) + PAGE_SIZE,
-                        }))
-                      }
-                    >
-                      MOSTRAR MÁS
-                    </button>
-                  )}
-
-                  {!loading && all.length === 0 && (
-                    <div className="text-xs text-gray-500">
-                      Sin sistemas en este estado.
-                    </div>
-                  )}
-                </div>
+          return (
+            <div key={k} className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
+                  {KIND_LABEL[k]}{" "}
+                  <span className="text-xs text-gray-400">({all.length})</span>
+                </h2>
               </div>
-            );
-          })}
+
+              <div className="space-y-3">
+                {colRows.map((resv) => {
+                  const saldo = resv.totalPrice - resv.totalPaid;
+                  const canFinalize = resv.status === "OPEN" && saldo <= 500;
+
+                  return (
+                    <article
+                      key={resv.id}
+                      className="rounded-xl p-4 space-y-2 border"
+                      style={{
+                        backgroundColor: COLORS.bgCard,
+                        borderColor: COLORS.border,
+                      }}
+                    >
+                      <header className="flex items-center justify-between gap-2">
+                        <div className="font-semibold text-cyan-300 uppercase">
+                          {resv.code}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-800 uppercase">
+                            {KIND_LABEL[resv.kind]}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 uppercase">
+                            {STATUS_LABEL[resv.status]}
+                          </span>
+                        </div>
+                      </header>
+
+                      <div className="text-xs text-gray-300">
+                        <div>
+                          <b>APERTURA:</b> {fmt(resv.createdAt)}
+                        </div>
+                        {resv.closedAt && (
+                          <div>
+                            <b>CERRADO:</b> {fmt(resv.closedAt)}
+                          </div>
+                        )}
+                        {resv.kind === "ENCARGO" && resv.pickupDate && (
+                          <div>
+                            <b>RETIRO:</b> {onlyDateISO(resv.pickupDate)}
+                          </div>
+                        )}
+                        {resv.kind === "ENCARGO" && resv.deliveredAt && (
+                          <div className="text-emerald-300">
+                            <b>ENTREGADO:</b> {fmt(resv.deliveredAt)}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-sm uppercase space-y-1">
+                        <div>
+                          <b>ÍTEMS:</b> {getCardItemsLabel(resv)}
+                        </div>
+                        <div>
+                          <b>TOTAL OBJETIVO:</b> {toCOP(resv.totalPrice)}
+                        </div>
+                        <div>
+                          <b>CLIENTE:</b> {resv.customerName} •{" "}
+                          {resv.customerPhone}
+                        </div>
+                        {resv.city && (
+                          <div>
+                            <b>CIUDAD:</b> {resv.city}
+                          </div>
+                        )}
+                        <div>
+                          <b>ABONO INICIAL:</b> {toCOP(resv.initialDeposit)}
+                        </div>
+                        <div className="text-emerald-300">
+                          <b>TOTAL ABONADO:</b> {toCOP(resv.totalPaid)}
+                        </div>
+                        <div className="text-pink-300">
+                          <b>SALDO:</b> {toCOP(saldo)}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <button
+                          className="px-3 py-1 rounded border text-xs uppercase"
+                          style={{ borderColor: COLORS.border }}
+                          onClick={() => openPaymentsModal(resv)}
+                        >
+                          VER / ABONAR
+                        </button>
+
+                        {resv.status === "OPEN" && (
+                          <>
+                            <button
+                              className="px-3 py-1 rounded border text-xs uppercase"
+                              style={{ borderColor: COLORS.border }}
+                              onClick={() => generateContractPdf(resv)}
+                            >
+                              IMPRIMIR CONTRATO
+                            </button>
+
+                            <button
+                              className="px-3 py-1 rounded border text-xs uppercase text-pink-300"
+                              style={{ borderColor: COLORS.border }}
+                              onClick={() => openRefundModal(resv)}
+                            >
+                              DEVOLUCIÓN 50%
+                            </button>
+                          </>
+                        )}
+
+                        {canFinalize && (
+                          <button
+                            className="px-3 py-1 rounded border text-xs uppercase text-emerald-300"
+                            style={{ borderColor: COLORS.border }}
+                            onClick={() => finalizeReservation(resv)}
+                          >
+                            FINALIZAR VENTA → POS
+                          </button>
+                        )}
+
+                        {role === "ADMIN" && (
+                          <button
+                            className="px-3 py-1 rounded border text-xs uppercase text-red-300"
+                            style={{ borderColor: COLORS.border }}
+                            onClick={() => deleteReservation(resv)}
+                          >
+                            ELIMINAR
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {hasMore && (
+                  <button
+                    className="mt-1 px-3 py-1 rounded border text-xs uppercase"
+                    style={{ borderColor: COLORS.border }}
+                    onClick={() =>
+                      setVisibleByKind((prev) => ({
+                        ...prev,
+                        [k]: (prev[k] ?? PAGE_SIZE) + PAGE_SIZE,
+                      }))
+                    }
+                  >
+                    MOSTRAR MÁS
+                  </button>
+                )}
+
+                {!loading && all.length === 0 && (
+                  <div className="text-xs text-gray-500">
+                    Sin registros en este tipo.
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </section>
 
-      {/* Modal nuevo apartado */}
+      {/* Modal nuevo */}
       {openForm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-xl rounded-xl p-4 space-y-3"
+            className="w-full max-w-2xl rounded-xl p-4 space-y-3"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
             }}
           >
             <h2 className="text-lg font-semibold text-cyan-300 uppercase">
-              NUEVO SISTEMA DE APARTADO
+              NUEVO ENCARGO / APARTADO
             </h2>
 
+            {/* Tipo */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="md:col-span-2">
-                <label className="block text-sm mb-1 uppercase">
-                  PRODUCTO *
-                </label>
-
-                <div className="relative" ref={productSearchRef}>
-                  {/* Input de búsqueda / selección */}
-                  <input
-                    placeholder="Escribe para buscar por SKU o nombre..."
-                    className="w-full rounded px-3 py-2 text-gray-100 uppercase text-sm"
-                    style={{
-                      backgroundColor: COLORS.input,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                    value={productSearch}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setProductSearch(value);
-                      // solo mostramos opciones si hay texto
-                      setProductDropdownOpen(!!value.trim());
-                    }}
-                  />
-
-                  {/* Dropdown de resultados: solo si hay texto y está abierto */}
-                  {productDropdownOpen && productSearch.trim() && (
-                    <div
-                      className="absolute z-50 mt-1 w-full rounded-xl shadow-lg max-h-64 overflow-auto text-sm"
-                      style={{
-                        backgroundColor: COLORS.input,
-                        border: `1px solid ${COLORS.border}`,
-                      }}
-                    >
-                      {filteredProducts.length === 0 && (
-                        <div className="px-3 py-2 text-xs text-gray-400">
-                          No se encontraron productos.
-                        </div>
-                      )}
-
-                      {filteredProducts.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => handleSelectProduct(p)}
-                          className="w-full text-left px-3 py-2 hover:bg-white/5 flex flex-col"
-                        >
-                          <span className="font-semibold text-cyan-300">
-                            {p.sku} — {p.name}
-                          </span>
-                          <span className="text-xs text-gray-300">
-                            {toCOP(p.price)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div>
-                <label className="block text-sm mb-1 uppercase">
-                  PRECIO PRODUCTO
-                </label>
-                <input
-                  disabled
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                <label className="block text-sm mb-1 uppercase">TIPO *</label>
+                <select
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
                   }}
-                  value={productPrice != null ? toCOP(productPrice) : ""}
-                />
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value as ReservationKind)}
+                >
+                  <option value="ENCARGO">ENCARGO</option>
+                  <option value="APARTADO">APARTADO</option>
+                </select>
               </div>
 
+              {kind === "ENCARGO" && (
+                <div>
+                  <label className="block text-sm mb-1 uppercase">
+                    FECHA DE RETIRO *
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full rounded px-3 py-2 text-gray-100"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    value={pickupDate}
+                    onChange={(e) => setPickupDate(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Cliente */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm mb-1 uppercase">
                   NOMBRE CLIENTE *
@@ -1358,7 +1508,6 @@ export default function LayawaysPage() {
                   onChange={(e) => setCustomerName(e.target.value)}
                 />
               </div>
-
               <div>
                 <label className="block text-sm mb-1 uppercase">
                   WHATSAPP CLIENTE *
@@ -1373,10 +1522,9 @@ export default function LayawaysPage() {
                   onChange={(e) => setCustomerPhone(e.target.value)}
                 />
               </div>
-
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm mb-1 uppercase">
-                  CIUDAD RESIDENCIA (OPCIONAL)
+                  CIUDAD (OPCIONAL)
                 </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -1388,10 +1536,196 @@ export default function LayawaysPage() {
                   onChange={(e) => setCity(e.target.value)}
                 />
               </div>
+            </div>
 
+            {/* Items */}
+            <div className="mt-2 space-y-2">
+              <div className="text-sm font-semibold uppercase text-gray-300">
+                ÍTEMS *
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
+                <div className="md:col-span-4">
+                  <label className="block text-sm mb-1 uppercase">
+                    BUSCAR PRODUCTO
+                  </label>
+                  <div className="relative" ref={productSearchRef}>
+                    <input
+                      placeholder="Escribe para buscar por SKU o nombre..."
+                      className="w-full rounded px-3 py-2 text-gray-100 uppercase text-sm"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={productSearch}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setProductSearch(value);
+                        setProductDropdownOpen(!!value.trim());
+                      }}
+                    />
+
+                    {productDropdownOpen && productSearch.trim() && (
+                      <div
+                        className="absolute z-50 mt-1 w-full rounded-xl shadow-lg max-h-64 overflow-auto text-sm"
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                      >
+                        {filteredProducts.length === 0 && (
+                          <div className="px-3 py-2 text-xs text-gray-400">
+                            No se encontraron productos.
+                          </div>
+                        )}
+
+                        {filteredProducts.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => handleSelectProduct(p)}
+                            className="w-full text-left px-3 py-2 hover:bg-white/5 flex flex-col"
+                          >
+                            <span className="font-semibold text-cyan-300">
+                              {p.sku} — {p.name}
+                            </span>
+                            <span className="text-xs text-gray-300">
+                              {toCOP(p.price)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="md:col-span-1">
+                  <label className="block text-sm mb-1 uppercase">CANT</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step="1"
+                    className="w-full rounded px-3 py-2 text-gray-100"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    value={draftQty}
+                    onChange={(e) => setDraftQty(e.target.value)}
+                  />
+                </div>
+
+                <div className="md:col-span-1">
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 rounded-lg font-semibold uppercase"
+                    style={{
+                      color: "#001014",
+                      background:
+                        "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                      boxShadow:
+                        "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                    }}
+                    onClick={addDraftItem}
+                  >
+                    AGREGAR
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabla items */}
+              <div
+                className="rounded-xl border overflow-hidden"
+                style={{ borderColor: COLORS.border }}
+              >
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-black/40">
+                    <tr>
+                      <th className="px-2 py-2 border-b border-gray-700">
+                        ÍTEM
+                      </th>
+                      <th className="px-2 py-2 border-b border-gray-700">
+                        V. UNIT
+                      </th>
+                      <th className="px-2 py-2 border-b border-gray-700">
+                        CANT
+                      </th>
+                      <th className="px-2 py-2 border-b border-gray-700">
+                        SUBTOTAL
+                      </th>
+                      <th className="px-2 py-2 border-b border-gray-700 text-right">
+                        ACC
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftItems.map((it) => (
+                      <tr key={it.productId}>
+                        <td className="px-2 py-2 border-b border-gray-800 uppercase">
+                          {it.sku ? `${it.sku} — ` : ""}
+                          {it.name}
+                        </td>
+                        <td className="px-2 py-2 border-b border-gray-800">
+                          {toCOP(it.unitPrice)}
+                        </td>
+                        <td className="px-2 py-2 border-b border-gray-800">
+                          <input
+                            type="number"
+                            min={1}
+                            step="1"
+                            className="w-20 rounded px-2 py-1 text-gray-100"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            value={String(it.qty)}
+                            onChange={(e) =>
+                              updateDraftQty(it.productId, e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="px-2 py-2 border-b border-gray-800">
+                          {toCOP(it.unitPrice * it.qty)}
+                        </td>
+                        <td className="px-2 py-2 border-b border-gray-800 text-right">
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded border text-red-300 uppercase"
+                            style={{ borderColor: COLORS.border }}
+                            onClick={() => removeDraftItem(it.productId)}
+                          >
+                            QUITAR
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {draftItems.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="px-3 py-3 text-center text-gray-500"
+                        >
+                          Agrega productos para armar el registro.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between text-sm uppercase">
+                <div className="text-gray-300">TOTAL OBJETIVO</div>
+                <div className="text-cyan-300 font-semibold">
+                  {toCOP(itemsTotal)}
+                </div>
+              </div>
+            </div>
+
+            {/* Pago inicial */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  ABONO INICIAL *
+                  ABONO INICIAL (OPCIONAL)
                 </label>
                 <input
                   type="number"
@@ -1409,7 +1743,7 @@ export default function LayawaysPage() {
 
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  MÉTODO PAGO *
+                  MÉTODO PAGO
                 </label>
                 <select
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -1428,10 +1762,8 @@ export default function LayawaysPage() {
                 </select>
               </div>
 
-              <div className="md:col-span-2 text-xs text-gray-300 uppercase">
-                💬 Al registrar el sistema de apartado se generará un{" "}
-                <b>contrato PDF</b> que debe ser impreso y firmado por el
-                cliente.
+              <div className="md:col-span-1 text-xs text-gray-300 uppercase flex items-end">
+                💬 Al crear se generará un <b>contrato PDF</b> para firma.
               </div>
             </div>
 
@@ -1455,7 +1787,7 @@ export default function LayawaysPage() {
                   boxShadow:
                     "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
-                onClick={createLayaway}
+                onClick={createReservation}
               >
                 REGISTRAR
               </button>
@@ -1475,7 +1807,7 @@ export default function LayawaysPage() {
             }}
           >
             <h3 className="text-lg font-semibold text-cyan-300 uppercase">
-              ABONOS SISTEMA {rows.find((r) => r.id === paymentsOpenId)?.code}
+              ABONOS {rows.find((r) => r.id === paymentsOpenId)?.code}
             </h3>
 
             <div className="max-h-64 overflow-auto text-xs">
@@ -1621,7 +1953,7 @@ export default function LayawaysPage() {
       )}
 
       {/* Modal contrato obligatorio al crear */}
-      {contractLayaway && (
+      {contractReservation && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
             className="w-full max-w-md rounded-xl p-4 space-y-3 text-center"
@@ -1631,11 +1963,12 @@ export default function LayawaysPage() {
             }}
           >
             <h3 className="text-lg font-semibold text-cyan-300 uppercase">
-              SISTEMA CREADO
+              {KIND_LABEL[contractReservation.kind]} CREADO
             </h3>
             <p className="text-sm text-gray-200">
-              Debes imprimir el contrato del sistema de apartado{" "}
-              <b>{contractLayaway.code}</b> y hacer que el cliente lo firme.
+              Debes imprimir el contrato del{" "}
+              <b>{KIND_LABEL[contractReservation.kind]}</b>{" "}
+              <b>{contractReservation.code}</b> y hacerlo firmar.
             </p>
             <p className="text-xs text-gray-400">
               Este aviso no se cerrará hasta que imprimas el contrato.
@@ -1651,8 +1984,8 @@ export default function LayawaysPage() {
                   "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
               }}
               onClick={() => {
-                generateContractPdf(contractLayaway);
-                setContractLayaway(null);
+                generateContractPdf(contractReservation);
+                setContractReservation(null);
               }}
             >
               IMPRIMIR CONTRATO
@@ -1660,8 +1993,9 @@ export default function LayawaysPage() {
           </div>
         </div>
       )}
+
       {/* Modal devolución 50% */}
-      {refundLayaway && (
+      {refundReservation && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
             className="w-full max-w-md rounded-xl p-4 space-y-3"
@@ -1671,28 +2005,27 @@ export default function LayawaysPage() {
             }}
           >
             <h3 className="text-lg font-semibold text-cyan-300 uppercase text-center">
-              DEVOLUCIÓN SISTEMA {refundLayaway.code}
+              DEVOLUCIÓN {refundReservation.code}
             </h3>
 
             <p className="text-sm text-gray-200">
-              Total abonado a la fecha: <b>{toCOP(refundLayaway.totalPaid)}</b>
+              Total abonado a la fecha:{" "}
+              <b>{toCOP(refundReservation.totalPaid)}</b>
             </p>
             <p className="text-sm text-gray-200">
-              Valor a devolver al cliente (50% acordado):{" "}
-              <b>{toCOP(Math.round(refundLayaway.totalPaid * 0.5))}</b>
+              Valor a devolver (50%):{" "}
+              <b>{toCOP(Math.round(refundReservation.totalPaid * 0.5))}</b>
             </p>
             <p className="text-xs text-gray-400">
-              Al confirmar, el sistema de apartado se marcará como{" "}
-              <b>CERRADO</b> y se abrirá la ventana POS con un ítem
-              <b> SALDO VENTA</b> por este valor para registrar la venta en el
-              sistema.
+              Al confirmar, quedará <b>CERRADA</b> y abrirá POS con ítem{" "}
+              <b>SALDO VENTA</b>.
             </p>
 
             <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
                 style={{ borderColor: COLORS.border }}
-                onClick={() => setRefundLayaway(null)}
+                onClick={() => setRefundReservation(null)}
               >
                 CANCELAR
               </button>
@@ -1714,7 +2047,7 @@ export default function LayawaysPage() {
         </div>
       )}
 
-      {/* Gamer Confirm global */}
+      {/* Confirm global */}
       {confirmData && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div

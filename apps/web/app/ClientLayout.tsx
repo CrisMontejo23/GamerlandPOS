@@ -21,7 +21,7 @@ const NAV_ALL: Array<{
   { href: "/works", label: "🛠️ Trabajos", allow: ["ADMIN", "EMPLOYEE"] },
   {
     href: "/layaways",
-    label: "📜 Encargos/Apartados",
+    label: "📜 Encargos / Apartados",
     allow: ["ADMIN", "EMPLOYEE"],
   },
   { href: "/reports", label: "📄 Balances", allow: ["ADMIN", "EMPLOYEE"] },
