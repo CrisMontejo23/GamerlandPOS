@@ -666,7 +666,7 @@ export default function ExpensesPage() {
                 style={{ borderBottom: `1px solid ${COLORS.border}` }}
               >
                 <th className="py-2 px-3 text-gray-300">Fecha</th>
-                <th className="px-3 text-gray-300">Usuario</th>
+                <th className="px-3 text-gray-300">Vendedor</th>
                 <th className="px-3 text-gray-300">Descripción</th>
                 <th className="px-3 text-gray-300">Método</th>
                 <th className="px-3 text-gray-300">Categoría</th>

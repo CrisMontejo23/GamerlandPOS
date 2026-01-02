@@ -610,7 +610,7 @@ export default function SalesPage() {
                 style={{ borderBottom: `1px solid ${COLORS.border}` }}
               >
                 <Th>Fecha</Th>
-                <Th>Usuario</Th>
+                <Th>Vendedor</Th>
                 <Th>SKU</Th>
                 <Th>Producto</Th>
                 <Th className="text-right">Precio</Th>
