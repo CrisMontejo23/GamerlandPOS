@@ -291,7 +291,10 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
     String(req.query.includeInactive || "").toLowerCase() === "true";
   const withStock = String(req.query.withStock || "").toLowerCase() === "true";
 
-  const pageSize = Math.min(Math.max(Number(req.query.pageSize || 10), 1), 1000);
+  const pageSize = Math.min(
+    Math.max(Number(req.query.pageSize || 10), 1),
+    1000
+  );
   const page = Math.max(Number(req.query.page || 1), 1);
   const skip = (page - 1) * pageSize;
 
@@ -542,7 +545,8 @@ const saleSchema = z.object({
     .min(1),
 });
 
-app.post("/sales", requireRole("EMPLOYEE"), async (req, res) => {
+app.post("/sales", requireRole("EMPLOYEE"), async (req: AuthRequest, res) => {
+  const userId = req.user!.id;
   const parsed = saleSchema.safeParse(req.body);
   if (!parsed.success) {
     return res
@@ -566,6 +570,7 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req, res) => {
     const sale = await prisma.$transaction(async (tx) => {
       const s = await tx.sale.create({
         data: {
+          userId,
           customer: customer ? U(customer) : null,
           subtotal,
           tax,
@@ -607,6 +612,7 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req, res) => {
             qty: it.qty,
             unitCost: avgCost,
             reference: `sale#${s.id}`,
+            userId,
           },
         });
       }
@@ -944,33 +950,39 @@ const expenseSchema = z.object({
   category: z.enum(ExpenseCategories), // "INTERNO" | "EXTERNO"
 });
 
-app.post("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
-  const parsed = expenseSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: "Datos inválidos", issues: parsed.error.format() });
+app.post(
+  "/expenses",
+  requireRole("EMPLOYEE"),
+  async (req: AuthRequest, res) => {
+    const userId = req.user!.id;
+    const parsed = expenseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.format() });
+    }
+
+    const d = parsed.data;
+
+    // Normalización: si cae en preset ≠ "OTRO", forzamos category=INTERNO y descripción exacta en mayúscula.
+    const isPreset = (desc: string) => EXPENSE_PRESETS.includes(desc as any);
+    const descU = U(d.description);
+    const descFinal = isPreset(descU) ? descU : descU; // el front ya lo envía, aquí solo normalizamos
+    const catFinal: ExpenseCategory = isPreset(descU) ? "INTERNO" : d.category;
+
+    const e = await prisma.expense.create({
+      data: {
+        userId,
+        category: catFinal,
+        description: descFinal,
+        amount: d.amount,
+        paymentMethod: d.paymentMethod,
+      },
+    });
+
+    res.status(201).json(e);
   }
-
-  const d = parsed.data;
-
-  // Normalización: si cae en preset ≠ "OTRO", forzamos category=INTERNO y descripción exacta en mayúscula.
-  const isPreset = (desc: string) => EXPENSE_PRESETS.includes(desc as any);
-  const descU = U(d.description);
-  const descFinal = isPreset(descU) ? descU : descU; // el front ya lo envía, aquí solo normalizamos
-  const catFinal: ExpenseCategory = isPreset(descU) ? "INTERNO" : d.category;
-
-  const e = await prisma.expense.create({
-    data: {
-      category: catFinal, // "INTERNO" | "EXTERNO"
-      description: descFinal,
-      amount: d.amount,
-      paymentMethod: d.paymentMethod,
-    },
-  });
-
-  res.status(201).json(e);
-});
+);
 
 app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   const fromParam = req.query.from ? String(req.query.from) : "";
@@ -995,6 +1007,9 @@ app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   const rows = await prisma.expense.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    include: {
+      user: { select: { id: true, username: true } },
+    },
   });
   res.json(rows);
 });
@@ -1150,6 +1165,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
   const sales = (await prisma.sale.findMany({
     where: { createdAt: { gte: from, lte: to }, status: "paid" },
     include: {
+      user: { select: { id: true, username: true } },
       items: {
         include: {
           product: { select: { sku: true, name: true, category: true } },
@@ -1157,10 +1173,12 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       },
       payments: true,
     },
+
     orderBy: { createdAt: "desc" },
   })) as Array<{
     id: number;
     createdAt: Date;
+    user: { id: number; username: string } | null;
     items: Array<{
       productId: number;
       unitPrice: unknown;
@@ -1210,6 +1228,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       return {
         saleId: s.id,
         createdAt: s.createdAt,
+        user: s.user ? { id: s.user.id, username: s.user.username } : null,
         sku: it.product?.sku ?? "",
         name: it.product?.name ?? "",
         category: it.product?.category ?? null,
@@ -1220,7 +1239,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
         unitCost,
         revenue,
         cost,
-        profit: profitByRule(it.product?.name ?? "", unitPrice, unitCost, qty), // <— REGLA
+        profit: profitByRule(it.product?.name ?? "", unitPrice, unitCost, qty),
         paymentMethods: s.payments.map((p) => ({
           method: p.method,
           amount: toN(p.amount),

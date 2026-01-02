@@ -182,6 +182,7 @@ function GamerConfirm({
 /* ===== Tipos ===== */
 type Expense = {
   id: number;
+  user?: { id: number; username: string } | null;
   description?: string | null;
   amount: string | number;
   paymentMethod?: "EFECTIVO" | "QR_LLAVE" | "DATAFONO" | null;
@@ -665,6 +666,7 @@ export default function ExpensesPage() {
                 style={{ borderBottom: `1px solid ${COLORS.border}` }}
               >
                 <th className="py-2 px-3 text-gray-300">Fecha</th>
+                <th className="px-3 text-gray-300">Usuario</th>
                 <th className="px-3 text-gray-300">Descripción</th>
                 <th className="px-3 text-gray-300">Método</th>
                 <th className="px-3 text-gray-300">Categoría</th>
@@ -677,7 +679,7 @@ export default function ExpensesPage() {
                 <tr>
                   <td
                     className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 6 : 5}
+                    colSpan={isAdmin ? 7 : 6}
                   >
                     Cargando…
                   </td>
@@ -687,7 +689,7 @@ export default function ExpensesPage() {
                 <tr>
                   <td
                     className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 6 : 5}
+                    colSpan={isAdmin ? 7 : 6}
                   >
                     Sin registros
                   </td>
@@ -703,6 +705,10 @@ export default function ExpensesPage() {
                   >
                     <td className="py-2 px-3">
                       {new Date(r.createdAt).toLocaleString("es-CO")}
+                    </td>
+
+                    <td className="px-3 font-semibold text-cyan-200">
+                      {r.user?.username || "-"}
                     </td>
 
                     <td className="px-3">

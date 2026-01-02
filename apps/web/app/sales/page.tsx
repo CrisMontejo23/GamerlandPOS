@@ -187,6 +187,7 @@ type Payment = {
 
 type Row = {
   saleId: number;
+  user?: { id: number; username: string } | null;
   createdAt: string;
   sku: string;
   name: string;
@@ -609,6 +610,7 @@ export default function SalesPage() {
                 style={{ borderBottom: `1px solid ${COLORS.border}` }}
               >
                 <Th>Fecha</Th>
+                <Th>Usuario</Th>
                 <Th>SKU</Th>
                 <Th>Producto</Th>
                 <Th className="text-right">Precio</Th>
@@ -626,7 +628,7 @@ export default function SalesPage() {
                 <tr>
                   <td
                     className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 11 : 10}
+                    colSpan={isAdmin ? 12 : 11}
                   >
                     Cargando…
                   </td>
@@ -636,7 +638,7 @@ export default function SalesPage() {
                 <tr>
                   <td
                     className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 11 : 10}
+                    colSpan={isAdmin ? 12 : 11}
                   >
                     Sin registros
                   </td>
@@ -660,6 +662,9 @@ export default function SalesPage() {
                     style={{ borderBottom: `1px solid ${COLORS.border}` }}
                   >
                     <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
+                    <Td className="font-semibold text-cyan-200">
+                      {r.user?.username || "-"}
+                    </Td>
                     <Td className="font-mono">{r.sku}</Td>
                     <Td>{r.name}</Td>
 
