@@ -1061,9 +1061,9 @@ export default function LayawaysPage() {
         `Desde dicha fecha empezarán a regir las siguientes condiciones propias del SISTEMA DE APARTADO:`,
         1
       );
-      writeParagraph(`1. CANCELACIÓN / DEVOLUCIÓN.`, 0.5);
+      writeParagraph(`1. CANCELACIÓN / DEVOLUCIÓN (CLAUSULA QUINTA).`, 0.5);
       writeParagraph(
-        `2. ENTREGA (reclamo con mínimo una (1) semana de anticipación).`,
+        `2. ENTREGA (El cliente debe avisar para reclamar los producto(s) con mínimo una (1) semana de anticipación).`,
         2
       );
     }
