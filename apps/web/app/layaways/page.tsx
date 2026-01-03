@@ -1039,7 +1039,11 @@ export default function LayawaysPage() {
 
       tituloClausula("CLÁUSULA TERCERA – INCUMPLIMIENTO FECHA DE RETIRO");
       writeParagraph(
-        `En caso de no recoger el encargo en la fecha establecida, a partir de ese momento el ENCARGO se entiende como un SISTEMA DE APARTADO y empezarán a regir, como mínimo, las siguientes condiciones del APARTADO:`,
+        `En caso de que EL CLIENTE no recoja el encargo en la fecha establecida, a partir de ese momento el presente ENCARGO se entenderá convertido en un SISTEMA DE APARTADO.`,
+        1
+      );
+      writeParagraph(
+        `Desde dicha fecha empezarán a regir las siguientes condiciones propias del SISTEMA DE APARTADO:`,
         1
       );
       writeParagraph(`1. CANCELACIÓN / DEVOLUCIÓN.`, 0.5);
@@ -1060,13 +1064,9 @@ export default function LayawaysPage() {
     );
 
     // CANCELACIÓN / DEVOLUCIÓN
-    tituloClausula(
-      `CLÁUSULA ${
-        resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA"
-      } – CANCELACIÓN / DEVOLUCIÓN`
-    );
+    tituloClausula("CLÁUSULA QUINTA – CANCELACIÓN / DEVOLUCIÓN");
     writeParagraph(
-      `Si EL CLIENTE cancela, LA TIENDA devolverá únicamente el 50% del total abonado a la fecha. El 50% restante se entiende como compensación por costos administrativos, logísticos y comerciales.`
+      `Si EL CLIENTE decide cancelar el proceso, LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del total abonado a la fecha. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales.`
     );
 
     // ENTREGA -> SOLO PARA APARTADO
