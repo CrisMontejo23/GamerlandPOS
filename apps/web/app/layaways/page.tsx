@@ -1039,15 +1039,19 @@ export default function LayawaysPage() {
 
       tituloClausula("CLÁUSULA TERCERA – INCUMPLIMIENTO FECHA DE RETIRO");
       writeParagraph(
-        `Si el encargo no se recoge en la fecha establecida, a partir de ese momento el presente ENCARGO se entiende como un SISTEMA DE APARTADO, y pasan a regir las condiciones de APARTADO, en especial las cláusulas equivalentes a CANCELACIÓN / DEVOLUCIÓN y ENTREGA (Cláusulas QUINTA y SEXTA del presente documento).`
+        `En caso de no recoger el encargo en la fecha establecida, a partir de ese momento el ENCARGO se entiende como un SISTEMA DE APARTADO y empezarán a regir, como mínimo, las siguientes condiciones del APARTADO:`,
+        1
+      );
+      writeParagraph(`1. CANCELACIÓN / DEVOLUCIÓN.`, 0.5);
+      writeParagraph(
+        `2. ENTREGA (reclamo con mínimo una (1) semana de anticipación).`,
+        2
       );
     }
 
     // ABONOS
     tituloClausula(
-      "CLÁUSULA " +
-        (resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA") +
-        " – ABONOS"
+      `CLÁUSULA ${resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA"} – ABONOS`
     );
     writeParagraph(
       `EL CLIENTE realiza un abono inicial de ${toCOP(
@@ -1057,12 +1061,12 @@ export default function LayawaysPage() {
 
     // CANCELACIÓN / DEVOLUCIÓN
     tituloClausula(
-      "CLÁUSULA " +
-        (resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA") +
-        " – CANCELACIÓN / DEVOLUCIÓN"
+      `CLÁUSULA ${
+        resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA"
+      } – CANCELACIÓN / DEVOLUCIÓN`
     );
     writeParagraph(
-      `Si el encargo no se recoge en la fecha establecida, a partir de ese momento el presente ENCARGO se entiende como un SISTEMA DE APARTADO, y pasan a regir las condiciones del SISTEMA DE APARTADO (en especial las cláusulas de CANCELACIÓN / DEVOLUCIÓN y ENTREGA propias del APARTADO).`
+      `Si EL CLIENTE cancela, LA TIENDA devolverá únicamente el 50% del total abonado a la fecha. El 50% restante se entiende como compensación por costos administrativos, logísticos y comerciales.`
     );
 
     // ENTREGA -> SOLO PARA APARTADO
@@ -1078,7 +1082,7 @@ export default function LayawaysPage() {
         6
       );
     } else {
-      // ENCARGO: ACEPTACIÓN = SÉPTIMA
+      // ENCARGO: termina en SEXTA – ACEPTACIÓN
       tituloClausula("CLÁUSULA SEXTA – ACEPTACIÓN");
       writeParagraph(
         `EL CLIENTE declara haber leído y aceptado este contrato.`,
