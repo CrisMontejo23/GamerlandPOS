@@ -1028,12 +1028,35 @@ export default function LayawaysPage() {
       doc.setFont("helvetica", "normal");
     };
 
+    // =========================
+    // NUMERACIÓN DE CLÁUSULAS
+    // =========================
+    const N = {
+      OBJETO: "PRIMERA",
+
+      // ENCARGO
+      FECHA: "SEGUNDA",
+      INCUMPLIMIENTO: "TERCERA",
+
+      // COMUNES (dependen del tipo)
+      ABONOS: resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA",
+      CANCELACION: resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA",
+      ENTREGA: "CUARTA", // solo APARTADO
+      ACEPTACION: resv.kind === "ENCARGO" ? "SEXTA" : "QUINTA",
+    };
+
+    // =========================
+    // INTRO
+    // =========================
     writeParagraph(
       `Entre GAMERLAND PC (NIT 1003511062-1), en adelante "LA TIENDA", y el(la) cliente ${resv.customerName} (WhatsApp ${resv.customerPhone}), en adelante "EL CLIENTE", se celebra el presente contrato, regido por las siguientes cláusulas:`,
       4
     );
 
-    tituloClausula("CLÁUSULA PRIMERA – OBJETO");
+    // =========================
+    // OBJETO
+    // =========================
+    tituloClausula(`CLÁUSULA ${N.OBJETO} – OBJETO`);
     writeParagraph(
       `El objeto del presente contrato es la ${
         resv.kind === "ENCARGO"
@@ -1044,15 +1067,20 @@ export default function LayawaysPage() {
       )}.`
     );
 
+    // =========================
+    // ENCARGO: FECHA + INCUMPLIMIENTO
+    // =========================
     if (resv.kind === "ENCARGO") {
-      tituloClausula("CLÁUSULA SEGUNDA – FECHA DE RETIRO (ENCARGO)");
+      tituloClausula(`CLÁUSULA ${N.FECHA} – FECHA DE RETIRO (ENCARGO)`);
       writeParagraph(
         `EL CLIENTE se compromete a recoger el encargo en la fecha pactada: ${
           resv.pickupDate ? onlyDateISO(resv.pickupDate) : "NO REGISTRA"
         }.`
       );
 
-      tituloClausula("CLÁUSULA TERCERA – INCUMPLIMIENTO FECHA DE RETIRO");
+      tituloClausula(
+        `CLÁUSULA ${N.INCUMPLIMIENTO} – INCUMPLIMIENTO FECHA DE RETIRO`
+      );
       writeParagraph(
         `En caso de que EL CLIENTE no recoja el encargo en la fecha establecida, a partir de ese momento el presente ENCARGO se entenderá convertido en un SISTEMA DE APARTADO.`,
         1
@@ -1061,49 +1089,52 @@ export default function LayawaysPage() {
         `Desde dicha fecha empezarán a regir las siguientes condiciones propias del SISTEMA DE APARTADO:`,
         1
       );
-      writeParagraph(`1. CANCELACIÓN / DEVOLUCIÓN (CLAUSULA QUINTA).`, 0.5);
       writeParagraph(
-        `2. ENTREGA (El cliente debe avisar para reclamar los producto(s) con mínimo una (1) semana de anticipación).`,
+        `1. CANCELACIÓN / DEVOLUCIÓN (Cláusula ${N.CANCELACION}).`,
+        0.5
+      );
+      writeParagraph(
+        `2. ENTREGA (Cláusula ${N.ENTREGA} – el cliente deberá avisar con mínimo una (1) semana de anticipación para reclamar los producto(s)).`,
         2
       );
     }
 
+    // =========================
     // ABONOS
-    tituloClausula(
-      `CLÁUSULA ${resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA"} – ABONOS`
-    );
+    // =========================
+    tituloClausula(`CLÁUSULA ${N.ABONOS} – ABONOS`);
     writeParagraph(
       `EL CLIENTE realiza un abono inicial de ${toCOP(
         resv.initialDeposit
       )}. Los abonos posteriores se irán registrando hasta completar el valor total.`
     );
 
+    // =========================
     // CANCELACIÓN / DEVOLUCIÓN
-    tituloClausula("CLÁUSULA QUINTA – CANCELACIÓN / DEVOLUCIÓN");
+    // =========================
+    tituloClausula(`CLÁUSULA ${N.CANCELACION} – CANCELACIÓN / DEVOLUCIÓN`);
     writeParagraph(
       `Si EL CLIENTE decide cancelar el proceso, LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del total abonado a la fecha. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales.`
     );
 
-    // ENTREGA -> SOLO PARA APARTADO
+    // =========================
+    // ENTREGA (SOLO APARTADO)
+    // =========================
     if (resv.kind === "APARTADO") {
-      tituloClausula("CLÁUSULA CUARTA – ENTREGA");
+      tituloClausula(`CLÁUSULA ${N.ENTREGA} – ENTREGA`);
       writeParagraph(
         `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`
       );
-
-      tituloClausula("CLÁUSULA QUINTA – ACEPTACIÓN");
-      writeParagraph(
-        `EL CLIENTE declara haber leído y aceptado este contrato.`,
-        6
-      );
-    } else {
-      // ENCARGO: termina en SEXTA – ACEPTACIÓN
-      tituloClausula("CLÁUSULA SEXTA – ACEPTACIÓN");
-      writeParagraph(
-        `EL CLIENTE declara haber leído y aceptado este contrato.`,
-        6
-      );
     }
+
+    // =========================
+    // ACEPTACIÓN
+    // =========================
+    tituloClausula(`CLÁUSULA ${N.ACEPTACION} – ACEPTACIÓN`);
+    writeParagraph(
+      `EL CLIENTE declara haber leído y aceptado este contrato.`,
+      6
+    );
 
     if (y > firmaY - 15) y = firmaY - 15;
 
