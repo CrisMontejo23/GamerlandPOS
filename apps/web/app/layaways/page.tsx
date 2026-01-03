@@ -1039,10 +1039,11 @@ export default function LayawaysPage() {
 
       tituloClausula("CLÁUSULA TERCERA – INCUMPLIMIENTO FECHA DE RETIRO");
       writeParagraph(
-        `Si el encargo no se recoge en la fecha establecida, a partir de ese momento pasan a regir las condiciones del SISTEMA DE APARTADO (incluida la cláusula de cancelación y devolución).`
+        `Si el encargo no se recoge en la fecha establecida, a partir de ese momento el presente ENCARGO se entiende como un SISTEMA DE APARTADO, y pasan a regir las condiciones de APARTADO, en especial las cláusulas equivalentes a CANCELACIÓN / DEVOLUCIÓN y ENTREGA (Cláusulas QUINTA y SEXTA del presente documento).`
       );
     }
 
+    // ABONOS
     tituloClausula(
       "CLÁUSULA " +
         (resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA") +
@@ -1054,6 +1055,7 @@ export default function LayawaysPage() {
       )}. Los abonos posteriores se irán registrando hasta completar el valor total.`
     );
 
+    // CANCELACIÓN / DEVOLUCIÓN
     tituloClausula(
       "CLÁUSULA " +
         (resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA") +
@@ -1063,24 +1065,26 @@ export default function LayawaysPage() {
       `Si EL CLIENTE cancela, LA TIENDA devolverá únicamente el 50% del total abonado a la fecha. El 50% restante se entiende como compensación por costos administrativos, logísticos y comerciales.`
     );
 
-    tituloClausula(
-      "CLÁUSULA " +
-        (resv.kind === "ENCARGO" ? "SEXTA" : "CUARTA") +
-        " – ENTREGA"
-    );
-    writeParagraph(
-      `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`
-    );
+    // ENTREGA -> SOLO PARA APARTADO
+    if (resv.kind === "APARTADO") {
+      tituloClausula("CLÁUSULA CUARTA – ENTREGA");
+      writeParagraph(
+        `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`
+      );
 
-    tituloClausula(
-      "CLÁUSULA " +
-        (resv.kind === "ENCARGO" ? "SÉPTIMA" : "QUINTA") +
-        " – ACEPTACIÓN"
-    );
-    writeParagraph(
-      `EL CLIENTE declara haber leído y aceptado este contrato.`,
-      6
-    );
+      tituloClausula("CLÁUSULA QUINTA – ACEPTACIÓN");
+      writeParagraph(
+        `EL CLIENTE declara haber leído y aceptado este contrato.`,
+        6
+      );
+    } else {
+      // ENCARGO: ACEPTACIÓN = SÉPTIMA
+      tituloClausula("CLÁUSULA SÉPTIMA – ACEPTACIÓN");
+      writeParagraph(
+        `EL CLIENTE declara haber leído y aceptado este contrato.`,
+        6
+      );
+    }
 
     if (y > firmaY - 15) y = firmaY - 15;
 
