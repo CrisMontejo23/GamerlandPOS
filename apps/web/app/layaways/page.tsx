@@ -424,6 +424,12 @@ export default function LayawaysPage() {
     setProductDropdownOpen(false);
   }
 
+  function dateOnlyToIso(dateStr: string) {
+    // dateStr = "YYYY-MM-DD"
+    // lo mandamos como ISO para que Zod .datetime() lo acepte
+    return new Date(`${dateStr}T00:00:00.000Z`).toISOString();
+  }
+
   const addDraftItem = () => {
     if (!draftSelected) {
       setMsg("SELECCIONA UN PRODUCTO");
@@ -547,7 +553,9 @@ export default function LayawaysPage() {
       })),
     };
 
-    if (kind === "ENCARGO") body.pickupDate = pickupDate;
+    if (kind === "ENCARGO") {
+      body.pickupDate = dateOnlyToIso(pickupDate);
+    }
 
     const r = await apiFetch(RES_API, {
       method: "POST",

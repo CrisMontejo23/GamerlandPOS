@@ -2663,7 +2663,16 @@ app.delete(
 
 const reservationKindPatchSchema = z.object({
   kind: z.enum(["APARTADO", "ENCARGO"]),
-  pickupDate: z.string().datetime().nullable().optional(),
+  pickupDate: z
+    .string()
+    .optional()
+    .refine((v) => {
+      if (!v) return true;
+      // acepta "YYYY-MM-DD" o ISO datetime
+      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const isIso = !Number.isNaN(Date.parse(v));
+      return isDateOnly || isIso;
+    }, "pickupDate inválida"),
 });
 
 app.patch(
