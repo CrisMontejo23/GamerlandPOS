@@ -117,6 +117,21 @@ type ReservationItemRowApi = {
   totalLine?: number | string | null;
 };
 
+function inferInitialDepositFromPayments(
+  resv: Reservation,
+  payments: ReservationPayment[]
+) {
+  if (resv.initialDeposit > 0) return resv.initialDeposit;
+  if (!payments.length) return 0;
+
+  // asumiendo que el primer pago registrado es el abono inicial
+  const first = [...payments].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  )[0];
+
+  return Number(first?.amount ?? 0);
+}
+
 function pickReservationFromCreate(
   resp: CreateReservationResponse
 ): ReservationApi {
@@ -1124,20 +1139,33 @@ export default function LayawaysPage() {
   }
 
   async function printContractSafe(resv: Reservation) {
-    const hasItems = (resv.items?.length ?? 0) > 0;
+    let items = resv.items ?? [];
+    let initialDepositFixed = resv.initialDeposit;
 
-    // Si no hay items (o vienen vacíos), los pedimos al endpoint /items
-    if (!hasItems) {
+    // si faltan items, los pides
+    if (!items.length) {
       try {
-        const items = await fetchReservationItems(resv.id);
-        generateContractPdf({ ...resv, items });
-        return;
-      } catch {
-        // si falla, imprimimos igual (pero al menos no revienta)
-      }
+        items = await fetchReservationItems(resv.id);
+      } catch {}
     }
 
-    generateContractPdf(resv);
+    // si initialDeposit viene 0 pero hay pagos, inferir desde payments
+    if (initialDepositFixed <= 0 && resv.totalPaid > 0) {
+      try {
+        const r = await apiFetch(`${RES_API}/${resv.id}/payments`);
+        if (r.ok) {
+          const data = (await r.json()) as ReservationPaymentApi[];
+          const pays = data.map(normalizePayment);
+          initialDepositFixed = inferInitialDepositFromPayments(resv, pays);
+        }
+      } catch {}
+    }
+
+    generateContractPdf({
+      ...resv,
+      items,
+      initialDeposit: initialDepositFixed,
+    });
   }
 
   function generatePaymentReceiptPdf(
