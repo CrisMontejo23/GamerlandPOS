@@ -1062,7 +1062,7 @@ export default function LayawaysPage() {
         " – CANCELACIÓN / DEVOLUCIÓN"
     );
     writeParagraph(
-      `Si EL CLIENTE cancela, LA TIENDA devolverá únicamente el 50% del total abonado a la fecha. El 50% restante se entiende como compensación por costos administrativos, logísticos y comerciales.`
+      `Si el encargo no se recoge en la fecha establecida, a partir de ese momento el presente ENCARGO se entiende como un SISTEMA DE APARTADO, y pasan a regir las condiciones del SISTEMA DE APARTADO (en especial las cláusulas de CANCELACIÓN / DEVOLUCIÓN y ENTREGA propias del APARTADO).`
     );
 
     // ENTREGA -> SOLO PARA APARTADO
@@ -1079,7 +1079,7 @@ export default function LayawaysPage() {
       );
     } else {
       // ENCARGO: ACEPTACIÓN = SÉPTIMA
-      tituloClausula("CLÁUSULA SÉPTIMA – ACEPTACIÓN");
+      tituloClausula("CLÁUSULA SEXTA – ACEPTACIÓN");
       writeParagraph(
         `EL CLIENTE declara haber leído y aceptado este contrato.`,
         6
