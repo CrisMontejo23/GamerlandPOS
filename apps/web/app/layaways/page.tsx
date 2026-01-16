@@ -32,10 +32,25 @@ type ReservationItem = {
   qty: number;
 };
 
-type ReservationItemApi = Omit<ReservationItem, "unitPrice" | "qty"> & {
+type ReservationItemApi = {
+  id?: number;
+  reservationId?: number;
+  productId: number | null;
+
+  // ✅ backend real:
+  productName?: string | null;
+  skuSnapshot?: string | null;
+
+  // por si en algún punto mandas "name/sku" desde otro endpoint
+  name?: string | null;
+  sku?: string | null;
+
   unitPrice?: number | string | null;
   qty?: number | string | null;
-  product?: { sku?: string | null; name?: string | null } | null;
+
+  // opcionales del backend
+  discount?: number | string | null;
+  totalLine?: number | string | null;
 };
 
 type ReservationPayment = {
@@ -208,14 +223,19 @@ function onlyDateISO(d: string) {
 
 function normalizeReservation(raw: ReservationApi): Reservation {
   const items: ReservationItem[] = (raw.items ?? []).map(
-    (it: ReservationItemApi) => ({
-      id: it.id,
-      productId: Number(it.productId),
-      sku: it.sku ?? it.product?.sku ?? "",
-      name: U(it.name ?? it.product?.name ?? ""),
-      unitPrice: Number(it.unitPrice ?? 0),
-      qty: Number(it.qty ?? 0),
-    })
+    (it: ReservationItemApi) => {
+      const sku = String(it.skuSnapshot ?? it.sku ?? "").trim();
+      const name = U(String(it.productName ?? it.name ?? "ITEM")).trim();
+
+      return {
+        id: it.id,
+        productId: Number(it.productId ?? 0),
+        sku,
+        name,
+        unitPrice: Number(it.unitPrice ?? 0),
+        qty: Number(it.qty ?? 0),
+      };
+    }
   );
 
   const kindRaw = String(raw.kind ?? raw.type ?? "APARTADO").toUpperCase();
