@@ -339,6 +339,34 @@ export default function LayawaysPage() {
   };
 
   useEffect(() => {
+    const missing = rows.filter((r) => (r.items ?? []).length === 0);
+
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      for (const r of missing.slice(0, 10)) {
+        // evita flood (ajusta si quieres)
+        try {
+          const items = await fetchReservationItems(r.id);
+          if (cancelled) return;
+
+          setRows((prev) =>
+            prev.map((x) => (x.id === r.id ? { ...x, items } : x))
+          );
+        } catch {
+          // ignore
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows]);
+
+  useEffect(() => {
     if (!ready) return;
     loadReservations();
   }, [ready, statusFilter]);
@@ -1310,11 +1338,27 @@ export default function LayawaysPage() {
   }, [rows]);
 
   const getCardItemsLabel = (resv: Reservation) => {
-    const its = resv.items ?? [];
+    const its = (resv.items ?? [])
+      .filter((x) => (x.name || "").trim())
+      .map((x) => ({
+        name: U(String(x.name || "")).trim(),
+        qty: Number(x.qty ?? 0),
+      }))
+      .filter((x) => x.qty > 0);
+
     if (its.length === 0) return "—";
+
+    // si hay 1 item
     if (its.length === 1) return `${its[0].name} (x${its[0].qty})`;
-    const first = its[0];
-    return `${first.name} (x${first.qty}) + ${its.length - 1} más`;
+
+    // mostrar máximo 2 o 3 en la tarjeta
+    const MAX = 2; // si quieres 3, pon 3
+    const shown = its.slice(0, MAX).map((it) => `${it.name} (x${it.qty})`);
+
+    const remaining = its.length - shown.length;
+    return remaining > 0
+      ? `${shown.join(" • ")} • +${remaining} más`
+      : shown.join(" • ");
   };
 
   const kinds: ReservationKind[] = ["ENCARGO", "APARTADO"];
