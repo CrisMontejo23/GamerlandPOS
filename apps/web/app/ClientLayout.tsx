@@ -6,7 +6,6 @@ import { useState, useEffect, useMemo } from "react";
 import logo from "../assets/logo.png";
 import { useAuth } from "./auth/AuthProvider";
 
-// 🔧 Define el tipo Role y úsalo en NAV_ALL
 type Role = "ADMIN" | "EMPLOYEE";
 
 const NAV_ALL: Array<{
@@ -37,9 +36,8 @@ export default function ClientLayout({
   const isLogin = pathname === "/login";
 
   const [open, setOpen] = useState(false);
-  const { role, username, logout, ready } = useAuth(); // role: Role | null
+  const { role, username, logout, ready } = useAuth();
 
-  // Cerrar menú al navegar
   useEffect(() => {
     const t = setTimeout(() => setOpen(false), 0);
     return () => clearTimeout(t);
@@ -52,7 +50,9 @@ export default function ClientLayout({
   );
 
   if (isLogin) {
-    return <main className="flex-1 overflow-y-auto w-full">{children}</main>;
+    return (
+      <main className="flex-1 min-h-0 overflow-y-auto w-full">{children}</main>
+    );
   }
 
   return (
@@ -82,18 +82,17 @@ export default function ClientLayout({
       <aside
         className={[
           "bg-panel border-r border-eon w-64 z-50",
-          // ✅ desktop: altura dinámica real de pantalla
+          // desktop fijo y alto real
           "md:fixed md:top-0 md:left-0 md:h-[100dvh] md:translate-x-0 md:block",
-          // ✅ mobile drawer igual
+          // drawer mobile
           "fixed inset-y-0 left-0 transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
-          // ✅ estructura interna
-          "flex flex-col",
-          // ✅ evita que el contenedor crezca y se salga
-          "overflow-hidden",
+          // estructura: el nav debe ser el que scrollea
+          "flex flex-col overflow-hidden",
         ].join(" ")}
       >
-        <div className="p-6 flex flex-col items-center border-b border-eon">
+        {/* ✅ header NO debe crecer */}
+        <div className="p-6 flex-none flex flex-col items-center border-b border-eon">
           <Image
             src={logo}
             alt="Gamerland Logo"
@@ -120,6 +119,7 @@ export default function ClientLayout({
           )}
         </div>
 
+        {/* ✅ nav: scroll interno siempre (clave: min-h-0) */}
         <nav className="flex-1 min-h-0 p-4 space-y-2 overflow-y-auto">
           {nav.map((item) => {
             const active = pathname === item.href;
@@ -140,7 +140,8 @@ export default function ClientLayout({
           })}
         </nav>
 
-        <footer className="p-3 text-center text-xs text-gray-500 border-t border-eon">
+        {/* ✅ footer NO debe crecer */}
+        <footer className="p-3 flex-none text-center text-xs text-gray-500 border-t border-eon">
           <button
             onClick={logout}
             className="w-full mb-2 py-2 rounded-lg font-semibold"
@@ -168,7 +169,7 @@ export default function ClientLayout({
       )}
 
       {/* Contenido */}
-      <main className="flex-1 overflow-y-auto w-full px-4 md:px-6 pt-14 md:pt-6 md:ml-64">
+      <main className="flex-1 min-h-0 overflow-y-auto w-full px-4 md:px-6 pt-14 md:pt-6 md:ml-64">
         {children}
       </main>
     </>
