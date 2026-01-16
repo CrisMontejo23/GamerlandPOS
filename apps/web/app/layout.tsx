@@ -14,8 +14,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body className="theme-gamer min-h-[100dvh] flex text-[17px] md:text[18px]">
+    <html lang="es" className="h-full">
+      <body className="theme-gamer h-[100dvh] overflow-hidden flex min-h-0 text-[17px] md:text-[18px]">
         <AuthProvider>
           <ClientLayout>{children}</ClientLayout>
         </AuthProvider>

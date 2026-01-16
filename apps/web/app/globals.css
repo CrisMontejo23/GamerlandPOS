@@ -92,3 +92,7 @@
     background-color: var(--border);
   }
 }
+
+html, body {
+  height: 100%;
+}
