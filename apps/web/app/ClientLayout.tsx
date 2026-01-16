@@ -82,17 +82,18 @@ export default function ClientLayout({
       <aside
         className={[
           "bg-panel border-r border-eon w-64 z-50",
-          // desktop fijo y alto real
-          "md:fixed md:top-0 md:left-0 md:h-[100dvh] md:translate-x-0 md:block",
-          // drawer mobile
+          // ✅ Desktop: top=0 y bottom=0 SIEMPRE (altura exacta del viewport)
+          "md:fixed md:inset-y-0 md:left-0 md:translate-x-0 md:block",
+          // ✅ Mobile drawer igual
           "fixed inset-y-0 left-0 transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
-          // estructura: el nav debe ser el que scrollea
-          "flex flex-col overflow-hidden",
+          // ✅ Layout interno
+          "flex flex-col",
+          // ✅ IMPORTANTÍSIMO para que el nav pueda “encogerse” y no corte el footer
+          "min-h-0",
         ].join(" ")}
       >
-        {/* ✅ header NO debe crecer */}
-        <div className="p-6 flex-none flex flex-col items-center border-b border-eon">
+        <div className="p-6 flex flex-col items-center border-b border-eon shrink-0">
           <Image
             src={logo}
             alt="Gamerland Logo"
@@ -119,7 +120,7 @@ export default function ClientLayout({
           )}
         </div>
 
-        {/* ✅ nav: scroll interno siempre (clave: min-h-0) */}
+        {/* ✅ Scroll SOLO aquí */}
         <nav className="flex-1 min-h-0 p-4 space-y-2 overflow-y-auto">
           {nav.map((item) => {
             const active = pathname === item.href;
@@ -140,8 +141,8 @@ export default function ClientLayout({
           })}
         </nav>
 
-        {/* ✅ footer NO debe crecer */}
-        <footer className="p-3 flex-none text-center text-xs text-gray-500 border-t border-eon">
+        {/* ✅ Footer NO se corta */}
+        <footer className="p-3 text-center text-xs text-gray-500 border-t border-eon shrink-0">
           <button
             onClick={logout}
             className="w-full mb-2 py-2 rounded-lg font-semibold"
