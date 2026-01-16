@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="theme-gamer h-[100dvh] overflow-hidden flex text-[17px] md:text-[18px]">
+      <body className="theme-gamer h-[100dvh] overflow-hidden flex text-[16px] md:text-[16px]">
         <AuthProvider>
           <ClientLayout>{children}</ClientLayout>
         </AuthProvider>

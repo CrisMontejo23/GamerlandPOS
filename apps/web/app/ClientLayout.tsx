@@ -82,31 +82,48 @@ export default function ClientLayout({
       <aside
         className={[
           "bg-panel border-r border-eon w-64 z-50",
-          // ✅ desktop: altura dinámica real de pantalla
+          // desktop fijo
           "md:fixed md:top-0 md:left-0 md:h-[100dvh] md:translate-x-0 md:block",
-          // ✅ mobile drawer igual
+          // mobile drawer
           "fixed inset-y-0 left-0 transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
-          // ✅ estructura interna
+          // layout
           "flex flex-col",
-          // ✅ evita que el contenedor crezca y se salga
-          "overflow-hidden",
+          // ✅ en vez de overflow-hidden: deja que el sidebar scrollee si hace falta
+          "overflow-y-auto",
         ].join(" ")}
       >
-        <div className="p-6 flex flex-col items-center border-b border-eon">
+        {/* Header (shrink + se adapta en pantallas bajitas) */}
+        <div
+          className={[
+            "border-b border-eon flex flex-col items-center",
+            "p-6",
+            // ✅ cuando la pantalla es bajita: menos padding
+            "[@media(max-height:750px)]:p-4",
+            "[@media(max-height:650px)]:p-3",
+          ].join(" ")}
+        >
           <Image
             src={logo}
             alt="Gamerland Logo"
             width={140}
             height={140}
-            className="rounded-full"
+            className={[
+              "rounded-full",
+              // ✅ reduce el logo si la altura es baja
+              "[@media(max-height:750px)]:w-[110px] [@media(max-height:750px)]:h-[110px]",
+              "[@media(max-height:650px)]:w-[90px] [@media(max-height:650px)]:h-[90px]",
+            ].join(" ")}
           />
+
           <h1 className="mt-3 text-neon font-bold text-lg text-center">
             GAMERLAND POS
           </h1>
+
           <p className="text-[11px] text-neon-2 tracking-wider mt-1 text-center">
             Tierra soñada de jugadores
           </p>
+
           {ready && (
             <div className="mt-3 text-xs text-gray-400">
               {username ? (
@@ -120,7 +137,8 @@ export default function ClientLayout({
           )}
         </div>
 
-        <nav className="flex-1 min-h-0 p-4 space-y-2 overflow-y-auto">
+        {/* Nav (puede crecer, pero el sidebar completo ya scrollea si toca) */}
+        <nav className="p-4 space-y-2">
           {nav.map((item) => {
             const active = pathname === item.href;
             return (
@@ -140,7 +158,8 @@ export default function ClientLayout({
           })}
         </nav>
 
-        <footer className="p-3 text-center text-xs text-gray-500 border-t border-eon">
+        {/* Footer sticky para que SIEMPRE esté visible al final del sidebar */}
+        <footer className="mt-auto sticky bottom-0 p-3 text-center text-xs text-gray-500 border-t border-eon bg-panel">
           <button
             onClick={logout}
             className="w-full mb-2 py-2 rounded-lg font-semibold"
@@ -168,7 +187,7 @@ export default function ClientLayout({
       )}
 
       {/* Contenido */}
-      <main className="flex-1 overflow-y-auto w-full px-4 md:px-6 pt-14 md:pt-6 md:ml-64">
+      <main className="flex-1 min-h-0 overflow-y-auto w-full px-4 md:px-6 pt-14 md:pt-6 md:ml-64">
         {children}
       </main>
     </>
