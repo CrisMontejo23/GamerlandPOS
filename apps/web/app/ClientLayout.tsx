@@ -81,14 +81,16 @@ export default function ClientLayout({
       {/* Sidebar */}
       <aside
         className={[
-          // ✅ IGUAL, pero en desktop queda fijo
           "bg-panel border-r border-eon w-64 z-50",
-          "md:fixed md:top-0 md:left-0 md:h-screen md:translate-x-0 md:block",
-          // ✅ Mobile drawer igual
+          // ✅ desktop: altura dinámica real de pantalla
+          "md:fixed md:top-0 md:left-0 md:h-[100dvh] md:translate-x-0 md:block",
+          // ✅ mobile drawer igual
           "fixed inset-y-0 left-0 transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
-          // ✅ Para que footer se pegue abajo
+          // ✅ estructura interna
           "flex flex-col",
+          // ✅ evita que el contenedor crezca y se salga
+          "overflow-hidden",
         ].join(" ")}
       >
         <div className="p-6 flex flex-col items-center border-b border-eon">
@@ -118,7 +120,7 @@ export default function ClientLayout({
           )}
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 min-h-0 p-4 space-y-2 overflow-y-auto">
           {nav.map((item) => {
             const active = pathname === item.href;
             return (

@@ -8,10 +8,14 @@ export const metadata: Metadata = {
   description: "Sistema de punto de venta e inventario para Gamerland PC",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="es">
-      <body className="theme-gamer min-h-screen flex text-[17px] md:text[18px]">
+      <body className="theme-gamer min-h-[100dvh] flex text-[17px] md:text[18px]">
         <AuthProvider>
           <ClientLayout>{children}</ClientLayout>
         </AuthProvider>
