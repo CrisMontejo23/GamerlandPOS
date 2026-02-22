@@ -174,6 +174,8 @@ export default function POSPage() {
   const { role } = useAuth(); // "ADMIN" | "EMPLOYEE" | null
   const resultsRef = useRef<HTMLDivElement>(null);
   const [openResults, setOpenResults] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Toast global de esta pantalla
   const [toast, setToast] = useState<ToastState>({
@@ -195,6 +197,7 @@ export default function POSPage() {
       if (!q) {
         setFound([]);
         setOpenResults(false);
+        setActiveIndex(-1);
         return;
       }
       setLoading(true);
@@ -212,7 +215,9 @@ export default function POSPage() {
 
         if (!abort) {
           setFound(list);
-          setOpenResults(list.length > 0);
+          const has = list.length > 0;
+          setOpenResults(has);
+          setActiveIndex(has ? 0 : -1);
         }
       } finally {
         if (!abort) setLoading(false);
@@ -245,6 +250,48 @@ export default function POSPage() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!openResults) return;
+    if (activeIndex < 0) return;
+
+    const el = itemRefs.current[activeIndex];
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, openResults]);
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!openResults || found.length === 0) {
+      // comportamiento actual: Enter agrega el primero
+      if (e.key === "Enter" && found[0]) add(found[0]);
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(found.length - 1, i < 0 ? 0 : i + 1));
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(0, i < 0 ? 0 : i - 1));
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const idx = activeIndex >= 0 ? activeIndex : 0;
+      const p = found[idx];
+      if (p) add(p);
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpenResults(false);
+      return;
+    }
+  };
 
   // Carrito
   const add = (p: Product) => {
@@ -696,79 +743,92 @@ export default function POSPage() {
             border: `1px solid ${COLORS.border}`,
           }}
         >
-          <div className="flex items-center gap-2">
-            <input
-              ref={searchRef}
-              className="rounded px-3 py-3 w-full text-lg outline-none placeholder-gray-400 shadow-inner"
-              style={{
-                backgroundColor: COLORS.input,
-                border: `1px solid ${COLORS.border}`,
-              }}
-              placeholder="F2 para enfocar. Buscar por nombre o SKU / escanear código"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={addOnEnter}
-              autoFocus
-            />
+          <div className="relative">
+            <div className="flex items-center gap-2">
+              <input
+                ref={searchRef}
+                className="rounded px-3 py-3 w-full text-lg outline-none placeholder-gray-400 shadow-inner"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                placeholder="F2 para enfocar. Buscar por nombre o SKU / escanear código"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+                autoFocus
+                onFocus={() => {
+                  if (found.length > 0) setOpenResults(true);
+                }}
+              />
 
-            <button
-              onClick={addPaperItem}
-              className="px-3 py-2 rounded-lg text-xs font-medium transition shadow"
-              style={{
-                background:
-                  "linear-gradient(180deg, rgba(0,255,255,0.15), rgba(255,0,255,0.15))",
-                border: `1px solid ${COLORS.border}`,
-              }}
-              title="Agregar item de servicio PAPELERÍA"
-            >
-              <span className="text-cyan-300">+ PAP</span>
-            </button>
-          </div>
-
-          {loading && (
-            <div className="text-sm mt-2 text-gray-400">Buscando…</div>
-          )}
-
-          {openResults && found.length > 0 && (
-            <div
-              ref={resultsRef}
-              className="absolute z-30 mt-2 w-full rounded-xl overflow-hidden"
-              style={{
-                backgroundColor: COLORS.input,
-                border: `1px solid ${COLORS.border}`,
-                boxShadow:
-                  "0 0 18px rgba(0,0,0,.35), 0 0 22px rgba(0,255,255,.07), 0 0 22px rgba(255,0,255,.07)",
-              }}
-            >
-              <ul className="divide-y divide-[#1E1F4B]">
-                {found.map((p) => (
-                  <li key={p.id} className="py-2">
-                    <button
-                      className="w-full text-left rounded-lg p-2 transition"
-                      onClick={() => add(p)}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-xs text-gray-400 font-mono truncate">
-                            {p.sku}
-                          </div>
-                          <div className="font-medium truncate">{p.name}</div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="font-semibold text-cyan-300">
-                            {fmt(Number(p.price))}
-                          </div>
-                          <div className="text-[11px] text-gray-300">
-                            Stock: {Number(p.stock ?? 0)}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <button
+                onClick={addPaperItem}
+                className="px-3 py-2 rounded-lg text-xs font-medium transition shadow"
+                style={{
+                  background:
+                    "linear-gradient(180deg, rgba(0,255,255,0.15), rgba(255,0,255,0.15))",
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                title="Agregar item de servicio PAPELERÍA"
+              >
+                <span className="text-cyan-300">+ PAP</span>
+              </button>
             </div>
-          )}
+
+            {openResults && found.length > 0 && (
+              <div
+                ref={resultsRef}
+                className="absolute left-0 right-0 z-[60] mt-2 rounded-xl overflow-hidden"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                  boxShadow:
+                    "0 0 18px rgba(0,0,0,.35), 0 0 22px rgba(0,255,255,.07), 0 0 22px rgba(255,0,255,.07)",
+                }}
+              >
+                <div className="max-h-56 overflow-auto">
+                  <ul className="divide-y divide-[#1E1F4B]">
+                    {found.map((p, idx) => (
+                      <li key={p.id}>
+                        <button
+                          ref={(el) => {
+                            itemRefs.current[idx] = el;
+                          }}
+                          className="w-full text-left rounded-lg p-2 transition"
+                          style={{
+                            backgroundColor:
+                              idx === activeIndex ? "#191B4B" : "transparent",
+                          }}
+                          onClick={() => add(p)}
+                          onMouseEnter={() => setActiveIndex(idx)}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs text-gray-400 font-mono truncate">
+                                {p.sku}
+                              </div>
+                              <div className="font-medium truncate">
+                                {p.name}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="font-semibold text-cyan-300">
+                                {fmt(Number(p.price))}
+                              </div>
+                              <div className="text-[11px] text-gray-300">
+                                Stock: {Number(p.stock ?? 0)}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Carrito scroll (deja espacio para el footer fijo) */}
@@ -1108,7 +1168,7 @@ export default function POSPage() {
                     placeholder="Buscar por nombre o SKU / escanear código"
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    onKeyDown={addOnEnter}
+                    onKeyDown={onSearchKeyDown}
                     onFocus={() => {
                       if (found.length > 0) setOpenResults(true);
                     }}
@@ -1120,9 +1180,10 @@ export default function POSPage() {
                     </div>
                   )}
 
-                  {found.length > 0 && (
+                  {openResults && found.length > 0 && (
                     <div
-                      className="absolute z-30 mt-2 w-full rounded-xl overflow-hidden"
+                      ref={resultsRef}
+                      className="absolute left-0 right-0 z-[60] mt-2 rounded-xl overflow-hidden"
                       style={{
                         backgroundColor: COLORS.input,
                         border: `1px solid ${COLORS.border}`,
@@ -1132,20 +1193,23 @@ export default function POSPage() {
                     >
                       <div className="max-h-80 overflow-auto">
                         <ul className="divide-y divide-[#1E1F4B]">
-                          {found.map((p) => (
+                          {found.map((p, idx) => (
                             <li key={p.id}>
                               <button
+                                ref={(el) => {
+                                  itemRefs.current[idx] = el;
+                                }}
                                 className="w-full text-left px-3 py-3 transition"
+                                style={{
+                                  backgroundColor:
+                                    idx === activeIndex
+                                      ? "#191B4B"
+                                      : "transparent",
+                                }}
                                 onClick={() => add(p)}
-                                onMouseEnter={(e) =>
-                                  (e.currentTarget.style.backgroundColor =
-                                    "#191B4B")
-                                }
-                                onMouseLeave={(e) =>
-                                  (e.currentTarget.style.backgroundColor =
-                                    "transparent")
-                                }
+                                onMouseEnter={() => setActiveIndex(idx)}
                               >
+                                {/* tu contenido igual */}
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="min-w-0">
                                     <div className="text-xs text-gray-400 font-mono truncate">
@@ -1174,8 +1238,7 @@ export default function POSPage() {
                         className="px-3 py-2 text-[11px] text-gray-400"
                         style={{ borderTop: `1px solid ${COLORS.border}` }}
                       >
-                        Tip: Enter agrega el primero • Click agrega el
-                        seleccionado
+                        ↑ ↓ para navegar • Enter agrega • Esc cierra
                       </div>
                     </div>
                   )}
