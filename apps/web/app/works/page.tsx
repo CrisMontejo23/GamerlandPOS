@@ -60,6 +60,38 @@ const COLORS = {
   text: "#E5E5E5",
 };
 
+const BTN = {
+  base: "px-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition active:scale-[.98] hover:opacity-95",
+  secondary:
+    "px-3 py-1.5 rounded-lg text-xs uppercase border transition hover:bg-white/5",
+  danger:
+    "px-3 py-1.5 rounded-lg text-xs font-semibold uppercase border transition hover:bg-pink-500/10",
+};
+
+const BTN_STYLE = {
+  received: {
+    color: "#111827",
+    background: "linear-gradient(90deg, #FDE68A, #F59E0B)", // ámbar
+    boxShadow: "0 0 14px rgba(245,158,11,.25)",
+  },
+  progress: {
+    color: "#0B1220",
+    background: "linear-gradient(90deg, #93C5FD, #3B82F6)", // azul
+    boxShadow: "0 0 14px rgba(59,130,246,.25)",
+  },
+  delivered: {
+    color: "#052014",
+    background: "linear-gradient(90deg, #86EFAC, #10B981)", // verde
+    boxShadow: "0 0 14px rgba(16,185,129,.25)",
+  },
+  pinkNeon: {
+    color: "#001014",
+    background:
+      "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
+    boxShadow: "0 0 18px rgba(0,255,255,.18), 0 0 22px rgba(255,0,255,.18)",
+  },
+};
+
 const niceStatus: Record<WorkStatus, string> = {
   RECEIVED: "RECIBIDO",
   IN_PROGRESS: "EN PROCESO",
@@ -148,6 +180,14 @@ const PAGE_SIZE = 5;
 export default function WorksPage() {
   const { role, ready, username } = useAuth();
   const canDelete = role === "ADMIN";
+
+  const [viewMode] = useState<"ACTIVE" | "DELIVERED">("ACTIVE");
+  const statusOrderActive: WorkStatus[] = [
+    "RECEIVED",
+    "IN_PROGRESS",
+    "FINISHED",
+  ];
+  const [showDelivered, setShowDelivered] = useState(false);
 
   // Filtros
   const [status, setStatus] = useState<WorkStatus | "">("");
@@ -244,7 +284,7 @@ export default function WorksPage() {
 
   // === CHECKLIST POR TRABAJO ===
   const [itemsByWork, setItemsByWork] = useState<Record<number, WorkItem[]>>(
-    {}
+    {},
   );
   const [itemsLoading, setItemsLoading] = useState<Record<number, boolean>>({});
   const [itemsError, setItemsError] = useState<
@@ -254,7 +294,7 @@ export default function WorksPage() {
     Record<number, string>
   >({});
   const [openChecklist, setOpenChecklist] = useState<Record<number, boolean>>(
-    {}
+    {},
   );
 
   function addProductRow() {
@@ -267,12 +307,12 @@ export default function WorksPage() {
   function updateProductRow(
     id: number,
     field: "label" | "description",
-    value: string
+    value: string,
   ) {
     setProductRows((prev) =>
       prev.map((row) =>
-        row.id === id ? { ...row, [field]: value.toUpperCase() } : row
-      )
+        row.id === id ? { ...row, [field]: value.toUpperCase() } : row,
+      ),
     );
   }
 
@@ -394,7 +434,7 @@ export default function WorksPage() {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
       setMsg(
         "ERROR: " +
-          UDATA((e as { error?: string })?.error || "NO SE PUDO ACTUALIZAR")
+          UDATA((e as { error?: string })?.error || "NO SE PUDO ACTUALIZAR"),
       );
       setTimeout(() => setMsg(""), 2500);
       return false;
@@ -404,14 +444,13 @@ export default function WorksPage() {
   async function updateStatusAndNotify(
     w: WorkOrder,
     newStatus: WorkStatus,
-    extraPatch?: Patch
+    extraPatch?: Patch,
   ) {
     const ok = await update(w.id, { status: newStatus, ...(extraPatch || {}) });
     if (!ok) return;
 
     const msgToSend = buildStatusMsg(w, newStatus);
-    openWhatsApp(w.customerPhone, msgToSend);
-    await load();
+    openWhatsApp(w.customerPhone, msgToSend);    
   }
 
   const onDelete = async (id: number) => {
@@ -425,7 +464,7 @@ export default function WorksPage() {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
       setMsg(
         "ERROR: " +
-          UDATA((e as { error?: string })?.error || "NO SE PUDO ELIMINAR")
+          UDATA((e as { error?: string })?.error || "NO SE PUDO ELIMINAR"),
       );
       setTimeout(() => setMsg(""), 2500);
     }
@@ -690,7 +729,7 @@ export default function WorksPage() {
     try {
       const r = await apiFetch(
         `/works/${paymentsTarget.id}/payments/${paymentId}`,
-        { method: "DELETE" }
+        { method: "DELETE" },
       );
       if (!r.ok) throw new Error();
 
@@ -784,7 +823,7 @@ export default function WorksPage() {
         setItemsByWork((prev) => {
           const current = prev[w.id] || [];
           updatedItems = current.map((it) =>
-            it.id === item.id ? { ...it, done: false } : it
+            it.id === item.id ? { ...it, done: false } : it,
           );
           return { ...prev, [w.id]: updatedItems };
         });
@@ -892,7 +931,7 @@ export default function WorksPage() {
           allItems,
           newQuote, // Total arreglos
           depAll,
-          saldo
+          saldo,
         );
         openWhatsApp(w.customerPhone, msgAll);
       } else {
@@ -907,7 +946,7 @@ export default function WorksPage() {
             detail: detalleStr ?? item.detail,
           },
           precioNum,
-          pendingNames
+          pendingNames,
         );
 
         openWhatsApp(w.customerPhone, msgToSend);
@@ -968,7 +1007,7 @@ export default function WorksPage() {
           } catch {
             // si falla alguno, lo ignoramos
           }
-        })
+        }),
       );
     } catch {
       // noop
@@ -1023,14 +1062,14 @@ export default function WorksPage() {
     w: WorkOrder,
     item: WorkItem,
     price: number,
-    pendingNames: string[]
+    pendingNames: string[],
   ) {
     const depAll = Number(w.deposit || 0); // suma de abonos ya calculada en el back
 
     const lineas: string[] = [
       `Hola ${UU(w.customerName)} 🎮`,
       `El producto "${UU(item.label)}" de tu trabajo ${UU(
-        w.code
+        w.code,
       )} ya está LISTO. ✅`,
     ];
 
@@ -1040,18 +1079,18 @@ export default function WorksPage() {
 
     lineas.push(
       `Precio del arreglo de este producto: ${toCOP(price)}.`,
-      `Abonos registrados a tu trabajo: ${toCOP(depAll)}.`
+      `Abonos registrados a tu trabajo: ${toCOP(depAll)}.`,
     );
 
     if (pendingNames.length > 0) {
       lineas.push(
         `Aún falta por terminar: ${pendingNames
           .map((n) => `"${UU(n)}"`)
-          .join(", ")}.`
+          .join(", ")}.`,
       );
     } else {
       lineas.push(
-        `Este era el último producto de tu trabajo. ¡Gracias por confiar en Gamerland!`
+        `Este era el último producto de tu trabajo. ¡Gracias por confiar en Gamerland!`,
       );
     }
 
@@ -1063,7 +1102,7 @@ export default function WorksPage() {
     items: WorkItem[],
     totalProducts: number,
     depAll: number,
-    saldo: number
+    saldo: number,
   ) {
     const lineas: string[] = [
       `Hola ${UU(w.customerName)} 🎮`,
@@ -1086,7 +1125,7 @@ export default function WorksPage() {
       `Total arreglos: ${toCOP(totalProducts)}.`,
       `Abonos registrados: ${toCOP(depAll)}.`,
       `Saldo a pagar: ${toCOP(saldo)}.`,
-      `Puedes pasar por tus productos en horario de atención. ¡Gracias por elegir Gamerland!`
+      `Puedes pasar por tus productos en horario de atención. ¡Gracias por elegir Gamerland!`,
     );
 
     return lineas.join("\n");
@@ -1120,14 +1159,14 @@ export default function WorksPage() {
       } else {
         lineasGarantia.push(
           `Equipo: ${UU(w.item)} 🕹️`,
-          `Descripción: ${UU(w.description)}`
+          `Descripción: ${UU(w.description)}`,
         );
       }
 
       lineasGarantia.push(
         `Este servicio NO genera cobro adicional por el mismo daño reportado.`,
         `Si se detecta un daño diferente te informaremos antes de hacer cualquier cobro.`,
-        `Gracias por confiar en Gamerland.`
+        `Gracias por confiar en Gamerland.`,
       );
       return lineasGarantia.join("\n");
     }
@@ -1145,7 +1184,7 @@ export default function WorksPage() {
     } else {
       partes.push(
         `Equipo: ${UU(w.item)} 🕹️`,
-        `Descripción: ${UU(w.description)}`
+        `Descripción: ${UU(w.description)}`,
       );
     }
 
@@ -1153,7 +1192,7 @@ export default function WorksPage() {
       partes.push(
         `Cotización: ${toCOP(quote)}`,
         `Abonos: ${toCOP(dep)}`,
-        `Saldo: ${toCOP(saldo)}`
+        `Saldo: ${toCOP(saldo)}`,
       );
     }
 
@@ -1181,7 +1220,7 @@ export default function WorksPage() {
         `Hola ${UU(w.customerName)} 🎮`,
         w.isWarranty
           ? `Tu trabajo ${base} (GARANTÍA) está FINALIZADO. ✅`
-          : `Tu trabajo ${base} está FINALIZADO. ✅`
+          : `Tu trabajo ${base} está FINALIZADO. ✅`,
       );
 
       lineas.push(`Descripción del trabajo: ${UU(w.description)}`);
@@ -1190,18 +1229,18 @@ export default function WorksPage() {
         lineas.push(
           `Cotización: ${toCOP(quoteNum)}`,
           `Abono: ${toCOP(dep)}`,
-          `Saldo: ${toCOP(saldo ?? 0)}`
+          `Saldo: ${toCOP(saldo ?? 0)}`,
         );
       }
 
       if (w.isWarranty) {
         lineas.push(
-          `Servicio en garantía SIN costo adicional por el mismo daño reportado.`
+          `Servicio en garantía SIN costo adicional por el mismo daño reportado.`,
         );
       }
 
       lineas.push(
-        `Puedes pasar por tu equipo en horario de atención. ¡Gracias por elegir Gamerland!`
+        `Puedes pasar por tu equipo en horario de atención. ¡Gracias por elegir Gamerland!`,
       );
       return lineas.join("\n");
     }
@@ -1223,7 +1262,7 @@ export default function WorksPage() {
 
   // ====== Ordenar trabajos por fecha (NUEVO: recientes primero) ======
   const sortedRows = [...rows].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
   // sortedRows ya está ordenado de más nuevo a más viejo
@@ -1237,19 +1276,17 @@ export default function WorksPage() {
 
   const boardRows = Array.from(latestByCode.values());
 
-  const statusOrder: WorkStatus[] = [
-    "RECEIVED",
-    "IN_PROGRESS",
-    "FINISHED",
-    "DELIVERED",
-  ];
-
-  const visibleStatuses: WorkStatus[] = status === "" ? statusOrder : [status];
+  const visibleStatuses: WorkStatus[] =
+    viewMode === "DELIVERED"
+      ? ["DELIVERED"]
+      : status === ""
+        ? statusOrderActive
+        : [status as WorkStatus].filter((s) => s !== "DELIVERED");
 
   function openWarranty(w: WorkOrder) {
     setWarrantyTarget(w);
     setWarrantyDescription(
-      `GARANTÍA: ${UU(w.description || "REVISIÓN GARANTÍA")}`
+      `GARANTÍA: ${UU(w.description || "REVISIÓN GARANTÍA")}`,
     );
     setWarrantyModalOpen(true);
   }
@@ -1288,7 +1325,7 @@ export default function WorksPage() {
     } else {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
       setMsg(
-        "ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR LA ORDEN DE GARANTÍA")
+        "ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR LA ORDEN DE GARANTÍA"),
       );
       setTimeout(() => setMsg(""), 2500);
     }
@@ -1340,7 +1377,6 @@ export default function WorksPage() {
           </div>
         </div>
 
-        {/* CHECKLIST DE TAREAS */}
         {/* CHECKLIST DE TAREAS */}
         <section className="mt-2 pt-2 border-t border-white/10">
           {(() => {
@@ -1523,9 +1559,10 @@ export default function WorksPage() {
               <>
                 {!w.informedCustomer && (
                   <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
+                    className={BTN.base}
+                    style={BTN_STYLE.received}
                     onClick={() => markInformedAndNotify(w)}
+                    title="Enviar mensaje de recibido por WhatsApp"
                   >
                     INFORMAR AL CLIENTE
                   </button>
@@ -1534,9 +1571,10 @@ export default function WorksPage() {
                 {/* EN PROCESO SOLO DESPUÉS DE INFORMAR AL CLIENTE */}
                 {w.informedCustomer && (
                   <button
-                    className="px-3 py-1 rounded border text-xs uppercase"
-                    style={{ borderColor: COLORS.border }}
+                    className={BTN.base}
+                    style={BTN_STYLE.progress}
                     onClick={() => updateStatusAndNotify(w, "IN_PROGRESS")}
+                    title="Pasar este trabajo a EN PROCESO"
                   >
                     EN PROCESO
                   </button>
@@ -1544,21 +1582,14 @@ export default function WorksPage() {
               </>
             )}
 
-            {w.status === "IN_PROGRESS" && (
-              <button
-                className="px-3 py-1 rounded border text-xs uppercase"
-                style={{ borderColor: COLORS.border }}
-                onClick={() => openFinish(w)}
-              >
-                FINALIZADO
-              </button>
-            )}
+            {/* OJO: EN IN_PROGRESS NO HAY BOTÓN FINALIZADO */}
 
             {w.status === "FINISHED" && (
               <button
-                className="px-3 py-1 rounded border text-xs uppercase"
-                style={{ borderColor: COLORS.border }}
+                className={BTN.base}
+                style={BTN_STYLE.delivered}
                 onClick={() => updateStatusAndNotify(w, "DELIVERED")}
+                title="Marcar como ENTREGADO"
               >
                 ENTREGADO
               </button>
@@ -1566,7 +1597,7 @@ export default function WorksPage() {
 
             {/* ACCIONES SIEMPRE DISPONIBLES MIENTRAS NO ESTÉ ENTREGADO */}
             <button
-              className="px-3 py-1 rounded border text-xs uppercase"
+              className={BTN.secondary}
               style={{ borderColor: COLORS.border }}
               onClick={() => openEditDetails(w)}
               title="Editar descripción y 'qué se recibe'"
@@ -1575,8 +1606,8 @@ export default function WorksPage() {
             </button>
 
             <button
-              className="px-3 py-1 rounded border text-xs uppercase"
-              style={{ borderColor: COLORS.border }}
+              className={BTN.base}
+              style={BTN_STYLE.pinkNeon}
               onClick={() => openEditQuoteDeposit(w)}
               title={
                 w.quote != null
@@ -1588,7 +1619,7 @@ export default function WorksPage() {
             </button>
 
             <button
-              className="px-3 py-1 rounded border text-xs uppercase"
+              className={BTN.secondary}
               style={{ borderColor: COLORS.border }}
               onClick={() => openPaymentsModal(w)}
               title="Ver historial de abonos"
@@ -1599,9 +1630,10 @@ export default function WorksPage() {
             {/* Eliminar (solo ADMIN) */}
             {canDelete && (
               <button
-                className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
-                style={{ borderColor: COLORS.border }}
+                className={BTN.danger}
+                style={{ borderColor: COLORS.border, color: "#F472B6" }}
                 onClick={() => onDelete(w.id)}
+                title="Eliminar definitivamente este trabajo"
               >
                 ELIMINAR
               </button>
@@ -1613,8 +1645,8 @@ export default function WorksPage() {
           <div className="flex flex-wrap gap-2 pt-2">
             {/* Botón GARANTÍA disponible para cualquier rol */}
             <button
-              className="px-3 py-1 rounded border text-xs uppercase"
-              style={{ borderColor: COLORS.border }}
+              className={BTN.base}
+              style={BTN_STYLE.pinkNeon}
               onClick={() => openWarranty(w)}
               title="Ver historial y crear nueva orden por garantía"
             >
@@ -1622,7 +1654,7 @@ export default function WorksPage() {
             </button>
 
             <button
-              className="px-3 py-1 rounded border text-xs uppercase"
+              className={BTN.secondary}
               style={{ borderColor: COLORS.border }}
               onClick={() => openPaymentsModal(w)}
               title="Ver historial de abonos"
@@ -1632,8 +1664,8 @@ export default function WorksPage() {
 
             {canDelete && (
               <button
-                className="px-3 py-1 rounded border text-xs text-pink-400 uppercase"
-                style={{ borderColor: COLORS.border }}
+                className={BTN.danger}
+                style={{ borderColor: COLORS.border, color: "#F472B6" }}
                 onClick={() => onDelete(w.id)}
                 title="Eliminar definitivamente este trabajo (ADMIN)"
               >
@@ -1641,7 +1673,7 @@ export default function WorksPage() {
               </button>
             )}
           </div>
-        )}
+        )}        
       </article>
     );
   };
@@ -1654,7 +1686,7 @@ export default function WorksPage() {
           .filter((w) => w.code === warrantyTarget.code)
           .sort(
             (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           );
 
   return (
@@ -1753,9 +1785,10 @@ export default function WorksPage() {
           <div className="text-gray-400 text-sm">NO HAY TRABAJOS</div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
-          {statusOrder
-            .filter((st) => visibleStatuses.includes(st))
+        {/* === TABLERO ACTIVO (3 columnas) === */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+          {statusOrderActive
+            .filter((st) => (status === "" ? true : st === status)) // respeta tus tabs
             .map((st) => {
               const colRowsAll = boardRows.filter((w) => w.status === st);
               const limit = visibleByStatus[st] ?? PAGE_SIZE;
@@ -1796,6 +1829,69 @@ export default function WorksPage() {
                 </div>
               );
             })}
+        </div>
+
+        {/* === ENTREGADOS (DESPLEGABLE) === */}
+        <div className="mt-6">
+          {(() => {
+            const deliveredAll = boardRows.filter(
+              (w) => w.status === "DELIVERED",
+            );
+            const st: WorkStatus = "DELIVERED";
+            const limit = visibleByStatus[st] ?? PAGE_SIZE;
+            const deliveredRows = deliveredAll.slice(0, limit);
+            const hasMore = deliveredAll.length > limit;
+
+            return (
+              <div className="space-y-3">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border uppercase text-sm"
+                  style={{
+                    borderColor: COLORS.border,
+                    backgroundColor: COLORS.bgCard,
+                  }}
+                  onClick={() => setShowDelivered((v) => !v)}
+                >
+                  <span className="font-semibold text-gray-300">
+                    ENTREGADOS{" "}
+                    <span className="text-gray-400">
+                      ({deliveredAll.length})
+                    </span>
+                  </span>
+                  <span className="text-cyan-300">
+                    {showDelivered ? "▲" : "▼"}
+                  </span>
+                </button>
+
+                {showDelivered && (
+                  <div className="space-y-3">
+                    {deliveredRows.length === 0 && (
+                      <div className="text-xs text-gray-500 px-2">
+                        Sin entregados
+                      </div>
+                    )}
+
+                    {deliveredRows.map((w) => renderWorkCard(w))}
+
+                    {hasMore && (
+                      <button
+                        className="mt-1 px-3 py-1 rounded border text-xs uppercase"
+                        style={{ borderColor: COLORS.border }}
+                        onClick={() =>
+                          setVisibleByStatus((prev) => ({
+                            ...prev,
+                            [st]: (prev[st] ?? PAGE_SIZE) + PAGE_SIZE,
+                          }))
+                        }
+                      >
+                        MOSTRAR MÁS
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </section>
 
@@ -2055,7 +2151,7 @@ export default function WorksPage() {
 
                   // validar productos recibidos (al menos 1 con label, filas vacías permitidas)
                   const nonEmptyProducts = productRows.filter((p) =>
-                    p.label.trim()
+                    p.label.trim(),
                   );
 
                   if (nonEmptyProducts.length === 0) {
@@ -2119,7 +2215,7 @@ export default function WorksPage() {
 
                       // 👇 crear productos iniciales (SOLO los que tienen label)
                       const nonEmptyProducts = productRows.filter((p) =>
-                        p.label.trim()
+                        p.label.trim(),
                       );
                       setProductsCountByWork((prev) => ({
                         ...prev,
@@ -2140,7 +2236,7 @@ export default function WorksPage() {
                               method: "POST",
                               body: JSON.stringify({ label: fullLabel }),
                             }).catch(() => null);
-                          })
+                          }),
                         );
                       }
 
