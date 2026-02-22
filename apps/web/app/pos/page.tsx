@@ -75,8 +75,8 @@ function GamerToast({
     kind === "success"
       ? "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))"
       : kind === "error"
-      ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
-      : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.8))";
+        ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
+        : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.8))";
 
   return (
     <div
@@ -95,8 +95,8 @@ function GamerToast({
             kind === "success"
               ? "0 0 22px rgba(0,255,255,.25), 0 0 34px rgba(255,0,255,.25)"
               : kind === "error"
-              ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
-              : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
+                ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
+                : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
         }}
       >
         <div
@@ -118,8 +118,8 @@ function GamerToast({
                   kind === "success"
                     ? "#7CF9FF"
                     : kind === "error"
-                    ? "#ff90b1"
-                    : "#c4b5fd",
+                      ? "#ff90b1"
+                      : "#c4b5fd",
               }}
             >
               {kind === "success" ? "✔" : kind === "error" ? "!" : "i"}
@@ -132,8 +132,8 @@ function GamerToast({
                 kind === "success"
                   ? "#7CF9FF"
                   : kind === "error"
-                  ? "#ff90b1"
-                  : COLORS.text,
+                    ? "#ff90b1"
+                    : COLORS.text,
             }}
           >
             {title}
@@ -150,8 +150,8 @@ function GamerToast({
                 kind === "success"
                   ? "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))"
                   : kind === "error"
-                  ? "linear-gradient(90deg, rgba(255,99,132,.95), rgba(255,0,128,.9))"
-                  : "linear-gradient(90deg, rgba(99,102,241,.95), rgba(168,85,247,.9))",
+                    ? "linear-gradient(90deg, rgba(255,99,132,.95), rgba(255,0,128,.9))"
+                    : "linear-gradient(90deg, rgba(99,102,241,.95), rgba(168,85,247,.9))",
               boxShadow: "0 0 14px rgba(255,255,255,.15)",
             }}
           >
@@ -205,7 +205,7 @@ export default function POSPage() {
           | Product[]
           | { total: number; rows: Product[] };
 
-        const list = Array.isArray(payload) ? payload : payload?.rows ?? [];
+        const list = Array.isArray(payload) ? payload : (payload?.rows ?? []);
 
         if (!abort) setFound(list);
       } finally {
@@ -226,7 +226,7 @@ export default function POSPage() {
     if (currentStock <= 0) {
       if (
         confirm(
-          "Este producto no tiene stock. ¿Ir a la página de PRODUCTOS para ajustar el inventario?"
+          "Este producto no tiene stock. ¿Ir a la página de PRODUCTOS para ajustar el inventario?",
         )
       ) {
         window.location.href = "/products";
@@ -258,23 +258,32 @@ export default function POSPage() {
   };
   const inc = (id: number) =>
     setCart((prev) =>
-      prev.map((i) =>
-        i.product.id === id
-          ? { ...i, qty: Math.min((i.product.stock ?? 0) as number, i.qty + 1) }
-          : i
-      )
+      prev.map((i) => {
+        if (i.product.id !== id) return i;
+
+        const stock = Number(i.product.stock ?? 0);
+        const isService = stock >= 9999;
+
+        if (isService) return { ...i, qty: i.qty + 1 };
+        if (stock <= 0) return i;
+
+        const wanted = i.qty + 1;
+        if (wanted > stock) return i;
+
+        return { ...i, qty: wanted };
+      }),
     );
   const dec = (id: number) =>
     setCart((prev) =>
       prev.map((i) =>
-        i.product.id === id ? { ...i, qty: Math.max(1, i.qty - 1) } : i
-      )
+        i.product.id === id ? { ...i, qty: Math.max(1, i.qty - 1) } : i,
+      ),
     );
   const setPrice = (id: number, val: string) =>
     setCart((prev) =>
       prev.map((i) =>
-        i.product.id === id ? { ...i, unitPrice: Number(val || 0) } : i
-      )
+        i.product.id === id ? { ...i, unitPrice: Number(val || 0) } : i,
+      ),
     );
   const addOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && found[0]) add(found[0]);
@@ -283,16 +292,16 @@ export default function POSPage() {
   // Derivados
   const subtotal = useMemo(
     () => cart.reduce((a, i) => a + i.unitPrice * i.qty, 0),
-    [cart]
+    [cart],
   );
   const fee = useMemo(
     () => (payMethod === "DATAFONO" ? Math.round(subtotal * 0.05) : 0),
-    [subtotal, payMethod]
+    [subtotal, payMethod],
   );
   const uiTotal = subtotal + fee;
   const change = useMemo(
     () => Math.max(0, received - uiTotal),
-    [received, uiTotal]
+    [received, uiTotal],
   );
 
   useEffect(() => {
@@ -395,8 +404,8 @@ export default function POSPage() {
 
             setMsg(
               `Producto de SISTEMA DE APARTADO cargado: ${prod.name} (${fmt(
-                prod.price
-              )})`
+                prod.price,
+              )})`,
             );
 
             setToast({
@@ -420,25 +429,25 @@ export default function POSPage() {
             const findOrCreateSaldoVenta =
               async (): Promise<Product | null> => {
                 const r = await apiFetch(
-                  `/products?q=SALDO%20VENTA&withStock=true`
+                  `/products?q=SALDO%20VENTA&withStock=true`,
                 );
                 const rawList = await r.json();
                 const list: Product[] = Array.isArray(rawList)
                   ? rawList
-                  : rawList?.rows ?? [];
+                  : (rawList?.rows ?? []);
 
                 let p = list.find(
                   (x) =>
                     x &&
                     typeof x.name === "string" &&
-                    x.name.toUpperCase() === "SALDO VENTA"
+                    x.name.toUpperCase() === "SALDO VENTA",
                 );
 
                 // Si no existe y eres ADMIN, lo creamos como servicio sin stock
                 if (!p) {
                   if (role !== "ADMIN") {
                     alert(
-                      "No existe el producto 'SALDO VENTA'. Pídele al administrador que lo cree en Productos."
+                      "No existe el producto 'SALDO VENTA'. Pídele al administrador que lo cree en Productos.",
                     );
                     return null;
                   }
@@ -461,7 +470,7 @@ export default function POSPage() {
                     const err = await created.json().catch(() => ({}));
                     alert(
                       err?.error ||
-                        "No se pudo crear el producto SALDO VENTA (se requiere rol ADMIN)."
+                        "No se pudo crear el producto SALDO VENTA (se requiere rol ADMIN).",
                     );
                     return null;
                   }
@@ -602,7 +611,7 @@ export default function POSPage() {
 
     let paper = list.find(
       (x) =>
-        x && typeof x.name === "string" && x.name.toUpperCase() === "PAPELERIA"
+        x && typeof x.name === "string" && x.name.toUpperCase() === "PAPELERIA",
     );
 
     // 2) Si no existe, crearlo (requiere rol ADMIN)
@@ -625,7 +634,7 @@ export default function POSPage() {
         const err = await created.json().catch(() => ({}));
         alert(
           err?.error ||
-            "No se pudo crear el item PAPELERIA (se requiere rol ADMIN)."
+            "No se pudo crear el item PAPELERIA (se requiere rol ADMIN).",
         );
         return;
       }
@@ -647,8 +656,8 @@ export default function POSPage() {
   };
 
   return (
-    <div className="mx-auto text-gray-200">
-      <h1 className="text-2xl font-bold mb-4 text-cyan-400">POS</h1>
+    <div className="mx-auto text-gray-200 px-2 sm:px-4">
+      <h1 className="text-xl sm:text-2xl font-bold mb-3 text-cyan-400">POS</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Columna izquierda */}
@@ -751,7 +760,7 @@ export default function POSPage() {
             }}
           >
             <div
-              className="flex items-center justify-between px-4 py-3"
+              className="flex items-center justify-between px-3 sm:px-4 py-3"
               style={{ borderBottom: `1px solid ${COLORS.border}` }}
             >
               <div className="font-semibold text-cyan-300">Carrito</div>
@@ -770,7 +779,7 @@ export default function POSPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
                   <tr
@@ -827,7 +836,7 @@ export default function POSPage() {
                           onChange={(e) =>
                             setPrice(
                               i.product.id,
-                              e.target.value.replace(/[^\d]/g, "")
+                              e.target.value.replace(/[^\d]/g, ""),
                             )
                           }
                         />
@@ -881,6 +890,142 @@ export default function POSPage() {
                   ))}
                 </tbody>
               </table>
+
+              {/* Carrito (cards) — solo móvil */}
+              <div className="sm:hidden p-3 space-y-2">
+                {cart.length === 0 && (
+                  <div
+                    className="rounded-xl border p-3 text-center text-gray-400 text-sm"
+                    style={{ borderColor: COLORS.border }}
+                  >
+                    Carrito vacío. Busca productos y presiona <b>Enter</b> para
+                    agregarlos.
+                  </div>
+                )}
+
+                {cart.map((i) => {
+                  const stock = Number(i.product.stock ?? 0);
+                  const lineTotal = i.unitPrice * i.qty;
+                  const isService = stock >= 9999; // PAPELERIA / SALDO VENTA
+
+                  return (
+                    <div
+                      key={i.product.id}
+                      className="rounded-xl border p-3 space-y-2"
+                      style={{
+                        borderColor: COLORS.border,
+                        backgroundColor: "rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-gray-400 font-mono truncate">
+                            {i.product.sku || "—"}
+                          </div>
+                          <div className="font-semibold text-cyan-200 leading-tight break-words">
+                            {i.product.name}
+                          </div>
+                          {!isService && (
+                            <div className="text-[11px] text-gray-400 mt-0.5">
+                              Stock: {stock}
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => remove(i.product.id)}
+                          className="shrink-0 inline-flex items-center justify-center rounded-md p-2 hover:bg-white/5 transition"
+                          aria-label="Eliminar producto"
+                        >
+                          <Image
+                            src="/borrar.png"
+                            alt="Eliminar"
+                            width={18}
+                            height={18}
+                            className="opacity-90"
+                          />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] uppercase text-gray-400 mb-1">
+                            Precio unit.
+                          </label>
+                          <input
+                            className="w-full rounded px-3 py-2 text-right outline-none"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            inputMode="numeric"
+                            value={i.unitPrice === 0 ? "" : String(i.unitPrice)}
+                            placeholder="0"
+                            onChange={(e) =>
+                              setPrice(
+                                i.product.id,
+                                e.target.value.replace(/[^\d]/g, ""),
+                              )
+                            }
+                          />
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-[11px] uppercase text-gray-400 mb-1">
+                            Total línea
+                          </div>
+                          <div className="text-lg font-semibold text-pink-300">
+                            {fmt(lineTotal)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <div className="text-xs text-gray-400">
+                          Costo:{" "}
+                          <span className="text-gray-200">
+                            {fmt(Number(i.product.cost))}
+                          </span>
+                        </div>
+
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => dec(i.product.id)}
+                            className="px-3 py-2 rounded"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                          >
+                            -
+                          </button>
+
+                          <span className="min-w-[2rem] text-center font-semibold">
+                            {i.qty}
+                          </span>
+
+                          <button
+                            onClick={() => inc(i.product.id)}
+                            className="px-3 py-2 rounded"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {!isService && stock > 0 && i.qty >= stock && (
+                        <div className="text-[11px] text-amber-300">
+                          ⚠ Llegaste al límite de stock ({stock})
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>
@@ -918,7 +1063,7 @@ export default function POSPage() {
                           {m === "QR_LLAVE" ? "QR / LLAVE" : m}
                         </button>
                       );
-                    }
+                    },
                   )}
                 </div>
               </div>
@@ -971,7 +1116,7 @@ export default function POSPage() {
                 onClick={checkout}
                 disabled={cart.length === 0}
                 title={`Ctrl + Enter para cobrar ${uiTotal.toLocaleString(
-                  "es-CO"
+                  "es-CO",
                 )}`}
               >
                 Cobrar
