@@ -191,7 +191,6 @@ export default function WorksPage() {
 
   // Filtros
   const [status, setStatus] = useState<WorkStatus | "">("");
-  const [location, setLocation] = useState<WorkLocation | "">("");
   const [q, setQ] = useState("");
 
   // Datos
@@ -266,6 +265,14 @@ export default function WorksPage() {
   const [editTarget, setEditTarget] = useState<WorkOrder | null>(null);
   const [editItem, setEditItem] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  // === Modal EDITAR ITEMS (antes era desc/item del WorkOrder) ===
+  type EditItemRow = { id: number; label: string };
+
+  const [editItems, setEditItems] = useState<EditItemRow[]>([]);
+  const [editItemsOriginal, setEditItemsOriginal] = useState<
+    Record<number, string>
+  >({});
+  const [editItemsSaving, setEditItemsSaving] = useState(false);
 
   // === Modal GARANTÍA ===
   const [warrantyModalOpen, setWarrantyModalOpen] = useState(false);
@@ -316,29 +323,89 @@ export default function WorksPage() {
     );
   }
 
-  function openEditDetails(w: WorkOrder) {
+  function updateEditItemLabel(id: number, value: string) {
+    setEditItems((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, label: UU(value) } : r)),
+    );
+  }
+
+  async function openEditDetails(w: WorkOrder) {
     setEditTarget(w);
-    setEditItem(UU(w.item));
-    setEditDescription(UU(w.description));
+
+    // asegurar que tenemos items
+    let items = itemsByWork[w.id];
+    if (!items || items.length === 0) {
+      items = await fetchItemsForMsg(w.id);
+    }
+
+    const rowsToEdit: EditItemRow[] = (items || []).map((it) => ({
+      id: it.id,
+      label: UU(it.label),
+    }));
+
+    const originalMap: Record<number, string> = {};
+    rowsToEdit.forEach((r) => (originalMap[r.id] = r.label));
+
+    setEditItems(rowsToEdit);
+    setEditItemsOriginal(originalMap);
+
     setEditOpen(true);
   }
 
   async function saveEditDetails() {
     if (!editTarget) return;
-    if (!editItem.trim() || !editDescription.trim()) {
-      setMsg("FALTAN CAMPOS OBLIGATORIOS");
+
+    // validar: no vacíos
+    if (editItems.length === 0) {
+      setMsg("NO HAY PRODUCTOS PARA EDITAR");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
-    const ok = await update(editTarget.id, {
-      item: editItem,
-      description: editDescription,
-    });
-    if (ok) {
-      setMsg("DESCRIPCIÓN ACTUALIZADA ✅");
+    if (editItems.some((it) => !it.label.trim())) {
+      setMsg("NO DEJES PRODUCTOS VACÍOS");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
+
+    setEditItemsSaving(true);
+
+    try {
+      // solo enviar los que cambiaron
+      const changed = editItems.filter(
+        (it) => (editItemsOriginal[it.id] ?? "") !== it.label,
+      );
+
+      await Promise.all(
+        changed.map(async (it) => {
+          const r = await apiFetch(`/works/${editTarget.id}/items/${it.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ label: UDATA(it.label) }),
+          });
+          if (!r.ok) {
+            const e = (await r.json().catch(() => ({}))) as { error?: string };
+            throw new Error(e?.error || "NO SE PUDO ACTUALIZAR UN PRODUCTO");
+          }
+        }),
+      );
+
+      // refrescar items y trabajos (para que se vea al instante)
+      await fetchItemsForMsg(editTarget.id);
+      await load();
+
+      setMsg("PRODUCTOS ACTUALIZADOS ✅");
       setTimeout(() => setMsg(""), 1800);
+
       setEditOpen(false);
       setEditTarget(null);
+      setEditItems([]);
+      setEditItemsOriginal({});
+    } catch (err) {
+      setMsg(
+        "ERROR: " + UDATA((err as Error)?.message || "NO SE PUDO GUARDAR"),
+      );
+      setTimeout(() => setMsg(""), 2500);
+    } finally {
+      setEditItemsSaving(false);
     }
   }
 
@@ -375,7 +442,6 @@ export default function WorksPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams();
-      if (location) p.set("location", location);
       if (q.trim()) p.set("q", UDATA(q));
 
       const r = await apiFetch(`/works?${p.toString()}`);
@@ -398,7 +464,18 @@ export default function WorksPage() {
     if (!ready) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, location]); // 👈 ya no recargamos por cambio de status (tab)
+  }, [ready]); // 👈 ya no recargamos por cambio de status (tab)
+
+  useEffect(() => {
+    if (!ready) return;
+
+    const t = setTimeout(() => {
+      load(); // usa el q actual
+    }, 250); // debounce 250ms
+
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, ready]);
 
   useEffect(() => {
     // cada vez que cambies de pestaña, reinicia el contador de items por columna
@@ -450,7 +527,7 @@ export default function WorksPage() {
     if (!ok) return;
 
     const msgToSend = buildStatusMsg(w, newStatus);
-    openWhatsApp(w.customerPhone, msgToSend);    
+    openWhatsApp(w.customerPhone, msgToSend);
   }
 
   const onDelete = async (id: number) => {
@@ -1606,8 +1683,8 @@ export default function WorksPage() {
             </button>
 
             <button
-              className={BTN.base}
-              style={BTN_STYLE.pinkNeon}
+              className={BTN.secondary}
+              style={{ borderColor: COLORS.border }}
               onClick={() => openEditQuoteDeposit(w)}
               title={
                 w.quote != null
@@ -1673,7 +1750,7 @@ export default function WorksPage() {
               </button>
             )}
           </div>
-        )}        
+        )}
       </article>
     );
   };
@@ -1695,24 +1772,10 @@ export default function WorksPage() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-cyan-400">TRABAJOS</h1>
 
-        <div className="flex flex-col w-full gap-2 sm:flex-row sm:w-auto sm:items-center">
-          <select
-            className="rounded px-3 py-2 text-gray-100 w-full sm:w-auto"
-            style={{
-              backgroundColor: COLORS.input,
-              border: `1px solid ${COLORS.border}`,
-            }}
-            value={location}
-            onChange={(e) => setLocation(e.target.value as WorkLocation | "")}
-          >
-            <option value="">UBICACIÓN: TODAS</option>
-            <option value="LOCAL">EN LOCAL</option>
-            <option value="BOGOTA">EN BOGOTÁ</option>
-          </select>
-
+        <div className="flex flex-col w-full gap-2 sm:flex-row sm:items-center">
           <input
             placeholder="BUSCAR POR CÓDIGO, CLIENTE, EQUIPO..."
-            className="rounded px-3 py-2 text-gray-100 w-full sm:w-64 uppercase"
+            className="rounded px-3 py-2 text-gray-100 w-full sm:flex-1 uppercase"
             style={{
               backgroundColor: COLORS.input,
               border: `1px solid ${COLORS.border}`,
@@ -1722,7 +1785,7 @@ export default function WorksPage() {
             onKeyDown={(e) => e.key === "Enter" && load()}
           />
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 sm:flex-none">
             <button
               onClick={load}
               className="px-4 py-2 rounded-lg font-semibold w-full sm:w-auto"
@@ -2596,37 +2659,39 @@ export default function WorksPage() {
               EDITAR — {editTarget ? UU(editTarget.code) : ""}
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="md:col-span-1">
-                <label className="block text-sm mb-1 uppercase">
-                  ¿QUÉ SE RECIBE? *
-                </label>
-                <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={editItem}
-                  onChange={(e) => setEditItem(UU(e.target.value))}
-                  placeholder="EJ: XBOX 360, CONTROL"
-                />
+            <div className="space-y-3">
+              <div className="text-xs text-gray-300 uppercase">
+                Edita los productos del trabajo{" "}
+                {editTarget ? UU(editTarget.code) : ""}
               </div>
-              <div className="md:col-span-1">
-                <label className="block text-sm mb-1 uppercase">
-                  DESCRIPCIÓN *
-                </label>
-                <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(UU(e.target.value))}
-                  placeholder="NO PRENDE / MANTENIMIENTO / ..."
-                />
-              </div>
+
+              {editItems.length === 0 ? (
+                <div className="text-sm text-gray-400">
+                  Sin productos registrados.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {editItems.map((it) => (
+                    <div key={it.id} className="space-y-1">
+                      <label className="block text-[11px] uppercase text-gray-400">
+                        PRODUCTO #{it.id}
+                      </label>
+                      <input
+                        className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                        value={it.label}
+                        onChange={(e) =>
+                          updateEditItemLabel(it.id, e.target.value)
+                        }
+                        placeholder="EJ: CONTROL — STICK DRIFT"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -2641,6 +2706,7 @@ export default function WorksPage() {
                 CANCELAR
               </button>
               <button
+                disabled={editItemsSaving}
                 className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
                 style={{
                   color: "#001014",
@@ -2648,10 +2714,11 @@ export default function WorksPage() {
                     "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
                   boxShadow:
                     "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                  opacity: editItemsSaving ? 0.6 : 1,
                 }}
                 onClick={saveEditDetails}
               >
-                GUARDAR
+                {editItemsSaving ? "GUARDANDO..." : "GUARDAR"}
               </button>
             </div>
           </div>
