@@ -896,10 +896,9 @@ app.delete(
   requireRole("ADMIN"),
   async (req: AuthRequest, res) => {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id))
+    if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "id inválido" });
-
-    const userId = req.user!.id;
+    }
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -907,62 +906,34 @@ app.delete(
           where: { id },
           select: { id: true },
         });
-        if (!sale) return;
 
-        // 1) Tomar TODOS los OUT de esa venta (incluye sale#id, sale#id:edit, etc.)
-        const outs = await tx.stockMovement.findMany({
-          where: {
-            type: "out",
-            reference: { startsWith: `sale#${id}` },
-          },
-          select: { productId: true, qty: true },
-        });
-
-        // 2) Sumar qty por producto
-        const qtyByProduct = new Map<number, number>();
-        for (const m of outs) {
-          const prev = qtyByProduct.get(m.productId) || 0;
-          qtyByProduct.set(m.productId, prev + Number(m.qty || 0));
+        if (!sale) {
+          // si prefieres 404:
+          const err: any = new Error("No encontrado");
+          err.code = "P2025";
+          throw err;
         }
 
-        // 3) Borrar TODOS los movimientos de esa venta (out + in de edits + lo que sea)
+        // ✅ CLAVE: borra todos los movimientos de esa venta (out/in de edits/deletes, etc.)
         await tx.stockMovement.deleteMany({
           where: { reference: { startsWith: `sale#${id}` } },
         });
 
-        // 4) Crear los IN de devolución (con costo actual)
-        for (const [productId, qty] of qtyByProduct.entries()) {
-          if (qty <= 0) continue;
-
-          const prod = await tx.product.findUnique({
-            where: { id: productId },
-            select: { cost: true },
-          });
-
-          await tx.stockMovement.create({
-            data: {
-              productId,
-              type: "in",
-              qty,
-              unitCost: Number(prod?.cost ?? 0),
-              reference: `sale#${id}:delete`,
-              userId,
-            },
-          });
-        }
-
-        // 5) Borrar pagos, items y venta
+        // borrar pagos, items y venta
         await tx.payment.deleteMany({ where: { saleId: id } });
         await tx.saleItem.deleteMany({ where: { saleId: id } });
         await tx.sale.delete({ where: { id } });
       });
 
-      res.json({ ok: true, id, restocked: true });
+      return res.json({ ok: true, id, restocked: true });
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
-      if (err?.code === "P2025")
+      if (err?.code === "P2025" || err?.message === "No encontrado") {
         return res.status(404).json({ error: "No encontrado" });
-      res.status(400).json({ error: err?.message || "No se pudo eliminar" });
+      }
+      return res
+        .status(400)
+        .json({ error: err?.message || "No se pudo eliminar" });
     }
   },
 );
