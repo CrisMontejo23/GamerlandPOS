@@ -746,15 +746,19 @@ const saleAdminUpdateSchema = z.object({
   status: z.enum(["paid", "void", "return"]).optional(),
 });
 
-app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
+app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id))
     return res.status(400).json({ error: "id inválido" });
+
   const parsed = saleAdminUpdateSchema.safeParse(req.body);
-  if (!parsed.success)
+  if (!parsed.success) {
     return res
       .status(400)
       .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+  }
+
+  const userId = req.user!.id;
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
@@ -764,59 +768,53 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
       });
       if (!prev) throw new Error("No encontrado");
 
-      let items = prev.items;
+      // =========================
+      // 1) ITEMS (si vienen)
+      // =========================
       if (parsed.data.items) {
-        // revertir stock previo
-        for (const it of prev.items) {
-          const prod = await tx.product.findUnique({
-            where: { id: it.productId },
-            select: { cost: true },
-          });
-          await tx.stockMovement.create({
-            data: {
-              productId: it.productId,
-              type: "in",
-              qty: it.qty,
-              unitCost: Number(prod?.cost ?? 0),
-              reference: `sale#${id}:edit-revert`,
-            },
-          });
-        }
-        // reemplazar items
+        // 1.1) Borrar TODOS los movimientos de stock asociados a esa venta (sale#id, sale#id:edit, sale#id:edit-revert, etc.)
+        await tx.stockMovement.deleteMany({
+          where: { reference: { startsWith: `sale#${id}` } },
+        });
+
+        // 1.2) Reemplazar items en BD
         await tx.saleItem.deleteMany({ where: { saleId: id } });
-        items = await Promise.all(
-          parsed.data.items.map(async (it) =>
-            tx.saleItem.create({
-              data: {
-                saleId: id,
-                productId: it.productId,
-                qty: it.qty,
-                unitPrice: it.unitPrice,
-                taxRate: 0,
-                discount: it.discount ?? 0,
-                total: it.unitPrice * it.qty - (it.discount ?? 0),
-              },
-            }),
-          ),
-        );
-        // crear outs nuevos
+
+        await tx.saleItem.createMany({
+          data: parsed.data.items.map((it) => ({
+            saleId: id,
+            productId: it.productId,
+            qty: it.qty,
+            unitPrice: it.unitPrice,
+            taxRate: 0,
+            discount: it.discount ?? 0,
+            total: it.unitPrice * it.qty - (it.discount ?? 0),
+          })),
+        });
+
+        // 1.3) Crear los OUT nuevos (con costo promedio ACTUAL del producto)
         for (const it of parsed.data.items) {
           const prod = await tx.product.findUnique({
             where: { id: it.productId },
             select: { cost: true },
           });
+
           await tx.stockMovement.create({
             data: {
               productId: it.productId,
               type: "out",
               qty: it.qty,
               unitCost: Number(prod?.cost ?? 0),
-              reference: `sale#${id}:edit`,
+              reference: `sale#${id}`, // 👈 dejamos la referencia base estable
+              userId,
             },
           });
         }
       }
 
+      // =========================
+      // 2) PAYMENTS (si vienen)
+      // =========================
       if (parsed.data.payments) {
         await tx.payment.deleteMany({ where: { saleId: id } });
         await tx.payment.createMany({
@@ -824,14 +822,20 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
             saleId: id,
             method: p.method,
             amount: p.amount,
-            reference: p.reference,
+            reference: p.reference ? U(p.reference) : undefined,
           })),
         });
       }
 
-      const curItems = parsed.data.items ? items : prev.items;
+      // =========================
+      // 3) Recalcular totales con items actuales
+      // =========================
+      const curItems = parsed.data.items
+        ? await tx.saleItem.findMany({ where: { saleId: id } })
+        : prev.items;
+
       const subtotal = curItems.reduce(
-        (a, it) => a + Number(it.unitPrice) * it.qty,
+        (a, it) => a + Number(it.unitPrice) * Number(it.qty),
         0,
       );
       const discount = curItems.reduce(
@@ -841,6 +845,20 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
       const tax = 0;
       const total = subtotal + tax - discount;
 
+      // (opcional pero recomendado) si llegan payments, validar suma
+      if (parsed.data.payments) {
+        const sumaPagos = parsed.data.payments.reduce(
+          (a, p) => a + Number(p.amount || 0),
+          0,
+        );
+        if (Math.abs(sumaPagos - total) > 0.01) {
+          throw new Error("La suma de pagos debe igualar el total");
+        }
+      }
+
+      // =========================
+      // 4) Update final de la venta
+      // =========================
       const sale = await tx.sale.update({
         where: { id },
         data: {
@@ -885,44 +903,55 @@ app.delete(
 
     try {
       await prisma.$transaction(async (tx) => {
-        // 1) Cargar venta + items
         const sale = await tx.sale.findUnique({
           where: { id },
-          include: { items: true },
+          select: { id: true },
         });
-        if (!sale) {
-          const err: any = new Error("No encontrado");
-          err.code = "P2025";
-          throw err;
+        if (!sale) return;
+
+        // 1) Tomar TODOS los OUT de esa venta (incluye sale#id, sale#id:edit, etc.)
+        const outs = await tx.stockMovement.findMany({
+          where: {
+            type: "out",
+            reference: { startsWith: `sale#${id}` },
+          },
+          select: { productId: true, qty: true },
+        });
+
+        // 2) Sumar qty por producto
+        const qtyByProduct = new Map<number, number>();
+        for (const m of outs) {
+          const prev = qtyByProduct.get(m.productId) || 0;
+          qtyByProduct.set(m.productId, prev + Number(m.qty || 0));
         }
 
-        // 2) Devolver inventario con COSTO ACTUAL del producto
-        for (const it of sale.items) {
+        // 3) Borrar TODOS los movimientos de esa venta (out + in de edits + lo que sea)
+        await tx.stockMovement.deleteMany({
+          where: { reference: { startsWith: `sale#${id}` } },
+        });
+
+        // 4) Crear los IN de devolución (con costo actual)
+        for (const [productId, qty] of qtyByProduct.entries()) {
+          if (qty <= 0) continue;
+
           const prod = await tx.product.findUnique({
-            where: { id: it.productId },
+            where: { id: productId },
             select: { cost: true },
           });
 
-          const currentCost = Number(prod?.cost ?? 0);
-
           await tx.stockMovement.create({
             data: {
-              productId: it.productId,
+              productId,
               type: "in",
-              qty: it.qty,
-              unitCost: currentCost, // 👈 costo actual
+              qty,
+              unitCost: Number(prod?.cost ?? 0),
               reference: `sale#${id}:delete`,
-              userId, // si tu modelo StockMovement tiene userId (en POST /sales sí lo usas)
+              userId,
             },
           });
         }
 
-        // 3) Borrar los OUT originales de esa venta para no duplicar conteo
-        await tx.stockMovement.deleteMany({
-          where: { type: "out", reference: `sale#${id}` },
-        });
-
-        // 4) Borrar pagos, items y venta
+        // 5) Borrar pagos, items y venta
         await tx.payment.deleteMany({ where: { saleId: id } });
         await tx.saleItem.deleteMany({ where: { saleId: id } });
         await tx.sale.delete({ where: { id } });
@@ -931,7 +960,7 @@ app.delete(
       res.json({ ok: true, id, restocked: true });
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
-      if (err?.code === "P2025" || err?.message === "No encontrado")
+      if (err?.code === "P2025")
         return res.status(404).json({ error: "No encontrado" });
       res.status(400).json({ error: err?.message || "No se pudo eliminar" });
     }
