@@ -659,99 +659,90 @@ export default function POSPage() {
     <div className="mx-auto text-gray-200 px-2 sm:px-4">
       <h1 className="text-xl sm:text-2xl font-bold mb-3 text-cyan-400">POS</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Columna izquierda */}
-        <section className="lg:col-span-2 space-y-3">
-          <div
-            className="rounded-xl p-3"
-            style={{
-              backgroundColor: COLORS.bgCard,
-              border: `1px solid ${COLORS.border}`,
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                ref={searchRef}
-                className="rounded px-3 py-3 w-full text-lg outline-none placeholder-gray-400 shadow-inner"
-                style={{
-                  backgroundColor: COLORS.input,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-                placeholder="F2 para enfocar. Buscar por nombre o SKU / escanear código"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={addOnEnter}
-                autoFocus
-              />
-              <button
-                onClick={addPaperItem}
-                className="px-3 py-2 rounded-lg text-sm font-medium transition shadow"
-                style={{
-                  background:
-                    "linear-gradient(180deg, rgba(0,255,255,0.15), rgba(255,0,255,0.15))",
-                  border: `1px solid ${COLORS.border}`,
-                }}
-                title="Agregar item de servicio PAPELERÍA"
-              >
-                <span className="text-cyan-300">+ PAPELERÍA</span>
-              </button>
-            </div>
+      {/* ===================== MÓVIL ===================== */}
+      <div className="lg:hidden">
+        {/* Buscador */}
+        <div
+          className="rounded-xl p-3"
+          style={{
+            backgroundColor: COLORS.bgCard,
+            border: `1px solid ${COLORS.border}`,
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              ref={searchRef}
+              className="rounded px-3 py-3 w-full text-base outline-none placeholder-gray-400 shadow-inner"
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
+              placeholder="Buscar por nombre o SKU / escanear código"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={addOnEnter}
+              autoFocus
+            />
 
-            {loading && (
-              <div className="text-sm mt-2 text-gray-400">Buscando…</div>
-            )}
-            {found.length > 0 && (
-              <div
-                className="rounded-lg p-2 mt-2 max-h-72 overflow-auto"
-                style={{
-                  backgroundColor: COLORS.input,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-              >
-                <ul className="divide-y divide-[#1E1F4B]">
-                  {found.map((p) => (
-                    <li key={p.id} className="py-2">
-                      <button
-                        className="w-full text-left rounded-lg p-2 transition"
-                        onClick={() => add(p)}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.backgroundColor = "#191B4B")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.backgroundColor =
-                            "transparent")
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-xs text-gray-400 font-mono">
-                              {p.sku}
-                            </div>
-                            <div className="font-medium">{p.name}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-cyan-300">
-                              {fmt(Number(p.price))}
-                            </div>
-                            <div className="text-[11px]">
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded-full"
-                                style={{ backgroundColor: "#1E1F4B" }}
-                              >
-                                Stock: {Number(p.stock ?? 0)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <button
+              onClick={addPaperItem}
+              className="px-3 py-2 rounded-lg text-xs font-medium transition shadow"
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(0,255,255,0.15), rgba(255,0,255,0.15))",
+                border: `1px solid ${COLORS.border}`,
+              }}
+              title="Agregar item de servicio PAPELERÍA"
+            >
+              <span className="text-cyan-300">+ PAP</span>
+            </button>
           </div>
 
-          {/* Carrito */}
+          {loading && (
+            <div className="text-sm mt-2 text-gray-400">Buscando…</div>
+          )}
+
+          {found.length > 0 && (
+            <div
+              className="rounded-lg p-2 mt-2 max-h-56 overflow-auto"
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
+            >
+              <ul className="divide-y divide-[#1E1F4B]">
+                {found.map((p) => (
+                  <li key={p.id} className="py-2">
+                    <button
+                      className="w-full text-left rounded-lg p-2 transition"
+                      onClick={() => add(p)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs text-gray-400 font-mono truncate">
+                            {p.sku}
+                          </div>
+                          <div className="font-medium truncate">{p.name}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-semibold text-cyan-300">
+                            {fmt(Number(p.price))}
+                          </div>
+                          <div className="text-[11px] text-gray-300">
+                            Stock: {Number(p.stock ?? 0)}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Carrito scroll (deja espacio para el footer fijo) */}
+        <div className="mt-3 pb-28">
           <div
             className="rounded-xl overflow-hidden"
             style={{
@@ -760,77 +751,90 @@ export default function POSPage() {
             }}
           >
             <div
-              className="flex items-center justify-between px-3 sm:px-4 py-3"
+              className="flex items-center justify-between px-3 py-3"
               style={{ borderBottom: `1px solid ${COLORS.border}` }}
             >
               <div className="font-semibold text-cyan-300">Carrito</div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={clearCart}
-                  className="text-sm px-3 py-1.5 rounded-lg transition disabled:opacity-50"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  disabled={cart.length === 0}
-                >
-                  Vaciar
-                </button>
-              </div>
+              <button
+                onClick={clearCart}
+                className="text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                disabled={cart.length === 0}
+              >
+                Vaciar
+              </button>
             </div>
 
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr
-                    style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                    className="text-left"
+            {/* Cards móvil */}
+            <div className="p-3 space-y-2">
+              {cart.length === 0 && (
+                <div
+                  className="rounded-xl border p-3 text-center text-gray-400 text-sm"
+                  style={{ borderColor: COLORS.border }}
+                >
+                  Carrito vacío. Busca productos y presiona <b>Enter</b>.
+                </div>
+              )}
+
+              {cart.map((i) => {
+                const stock = Number(i.product.stock ?? 0);
+                const isService = stock >= 9999;
+                const lineTotal = i.unitPrice * i.qty;
+
+                return (
+                  <div
+                    key={i.product.id}
+                    className="rounded-xl border p-3 space-y-2"
+                    style={{
+                      borderColor: COLORS.border,
+                      backgroundColor: "rgba(0,0,0,0.25)",
+                    }}
                   >
-                    <th className="py-2 px-4 text-gray-300">SKU</th>
-                    <th className="px-3 text-gray-300">Producto</th>
-                    <th className="px-3 text-right text-gray-300">Costo</th>
-                    <th className="px-3 text-right text-gray-300">Precio</th>
-                    <th className="px-3 text-center text-gray-300">Cant.</th>
-                    <th className="px-3 text-right text-gray-300">Total</th>
-                    <th className="px-3"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cart.length === 0 && (
-                    <tr>
-                      <td className="py-6 px-4 text-gray-400" colSpan={7}>
-                        Carrito vacío. Busca productos y presiona <b>Enter</b>{" "}
-                        para agregarlos.
-                      </td>
-                    </tr>
-                  )}
-                  {cart.map((i) => (
-                    <tr
-                      key={i.product.id}
-                      style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                      className="hover:bg-[#191B4B]"
-                    >
-                      <td className="py-2 px-4 font-mono text-sm text-gray-300">
-                        {i.product.sku}
-                      </td>
-                      <td className="px-3">
-                        <div className="font-medium">{i.product.name}</div>
-                        <div className="text-xs text-gray-400">
-                          Stock: {Number(i.product.stock ?? 0)}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[11px] text-gray-400 font-mono truncate">
+                          {i.product.sku || "—"}
                         </div>
-                      </td>
-                      <td className="px-3 text-right whitespace-nowrap">
-                        {fmt(Number(i.product.cost))}
-                      </td>
-                      <td className="px-3 text-right">
+                        <div className="font-semibold text-cyan-200 break-words">
+                          {i.product.name}
+                        </div>
+                        {!isService && (
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            Stock: {stock}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => remove(i.product.id)}
+                        className="shrink-0 inline-flex items-center justify-center rounded-md p-2 hover:bg-white/5 transition"
+                        aria-label="Eliminar"
+                      >
+                        <Image
+                          src="/borrar.png"
+                          alt="Eliminar"
+                          width={18}
+                          height={18}
+                          className="opacity-90"
+                        />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] uppercase text-gray-400 mb-1">
+                          Precio unit.
+                        </label>
                         <input
-                          className="rounded px-2 py-1 w-28 text-right outline-none"
+                          className="w-full rounded px-3 py-2 text-right outline-none"
                           style={{
                             backgroundColor: COLORS.input,
                             border: `1px solid ${COLORS.border}`,
                           }}
                           inputMode="numeric"
-                          // 👇 si el precio es 0, el campo se ve vacío
                           value={i.unitPrice === 0 ? "" : String(i.unitPrice)}
                           placeholder="0"
                           onChange={(e) =>
@@ -840,58 +844,338 @@ export default function POSPage() {
                             )
                           }
                         />
-                      </td>
-                      <td className="px-3 text-center">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => dec(i.product.id)}
-                            className="px-2 rounded"
-                            style={{
-                              backgroundColor: COLORS.input,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
-                          >
-                            -
-                          </button>
-                          <span className="min-w-[1.5rem] text-center">
-                            {i.qty}
-                          </span>
-                          <button
-                            onClick={() => inc(i.product.id)}
-                            className="px-2 rounded"
-                            style={{
-                              backgroundColor: COLORS.input,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-3 text-right whitespace-nowrap text-cyan-300">
-                        {fmt(i.unitPrice * i.qty)}
-                      </td>
-                      <td className="px-3 text-right">
-                        <button
-                          onClick={() => remove(i.product.id)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
-                          aria-label="Eliminar producto"
-                        >
-                          <Image
-                            src="/borrar.png"
-                            alt="Eliminar"
-                            width={18}
-                            height={18}
-                            className="opacity-90"
-                          />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
 
-              {/* Carrito (cards) — solo móvil */}
+                      <div className="text-right">
+                        <div className="text-[11px] uppercase text-gray-400 mb-1">
+                          Total
+                        </div>
+                        <div className="text-lg font-semibold text-pink-300">
+                          {fmt(lineTotal)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="text-xs text-gray-400">
+                        Costo:{" "}
+                        <span className="text-gray-200">
+                          {fmt(Number(i.product.cost))}
+                        </span>
+                      </div>
+
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => dec(i.product.id)}
+                          className="px-3 py-2 rounded"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                        >
+                          -
+                        </button>
+                        <span className="min-w-[2rem] text-center font-semibold">
+                          {i.qty}
+                        </span>
+                        <button
+                          onClick={() => inc(i.product.id)}
+                          className="px-3 py-2 rounded"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {!isService && stock > 0 && i.qty >= stock && (
+                      <div className="text-[11px] text-amber-300">
+                        ⚠ Límite de stock ({stock})
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer fijo (móvil): total + cobrar */}
+        <div
+          className="fixed bottom-0 left-0 right-0 z-40 p-3"
+          style={{
+            backgroundColor: "rgba(10, 10, 25, 0.92)",
+            backdropFilter: "blur(8px)",
+            borderTop: `1px solid ${COLORS.border}`,
+          }}
+        >
+          <div className="max-w-6xl mx-auto space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-300">Total</div>
+              <div className="text-xl font-extrabold text-cyan-300">
+                {fmt(uiTotal)}
+              </div>
+            </div>
+
+            <button
+              className="w-full py-3 rounded-lg text-lg font-semibold transition disabled:opacity-60"
+              style={{
+                color: "#001014",
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                boxShadow:
+                  "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)",
+              }}
+              onClick={checkout}
+              disabled={cart.length === 0}
+            >
+              Cobrar
+            </button>
+
+            {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* ===================== DESKTOP ===================== */}
+      <div className="hidden lg:block">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Columna izquierda */}
+          <section className="lg:col-span-2 space-y-3">
+            <div
+              className="rounded-xl p-3"
+              style={{
+                backgroundColor: COLORS.bgCard,
+                border: `1px solid ${COLORS.border}`,
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  ref={searchRef}
+                  className="rounded px-3 py-3 w-full text-lg outline-none placeholder-gray-400 shadow-inner"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  placeholder="F2 para enfocar. Buscar por nombre o SKU / escanear código"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={addOnEnter}
+                  autoFocus
+                />
+                <button
+                  onClick={addPaperItem}
+                  className="px-3 py-2 rounded-lg text-sm font-medium transition shadow"
+                  style={{
+                    background:
+                      "linear-gradient(180deg, rgba(0,255,255,0.15), rgba(255,0,255,0.15))",
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  title="Agregar item de servicio PAPELERÍA"
+                >
+                  <span className="text-cyan-300">+ PAPELERÍA</span>
+                </button>
+              </div>
+
+              {loading && (
+                <div className="text-sm mt-2 text-gray-400">Buscando…</div>
+              )}
+              {found.length > 0 && (
+                <div
+                  className="rounded-lg p-2 mt-2 max-h-72 overflow-auto"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                >
+                  <ul className="divide-y divide-[#1E1F4B]">
+                    {found.map((p) => (
+                      <li key={p.id} className="py-2">
+                        <button
+                          className="w-full text-left rounded-lg p-2 transition"
+                          onClick={() => add(p)}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.backgroundColor = "#191B4B")
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.backgroundColor =
+                              "transparent")
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs text-gray-400 font-mono">
+                                {p.sku}
+                              </div>
+                              <div className="font-medium">{p.name}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold text-cyan-300">
+                                {fmt(Number(p.price))}
+                              </div>
+                              <div className="text-[11px]">
+                                <span
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full"
+                                  style={{ backgroundColor: "#1E1F4B" }}
+                                >
+                                  Stock: {Number(p.stock ?? 0)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Carrito */}
+            <div
+              className="rounded-xl overflow-hidden"
+              style={{
+                backgroundColor: COLORS.bgCard,
+                border: `1px solid ${COLORS.border}`,
+              }}
+            >
+              <div
+                className="flex items-center justify-between px-3 sm:px-4 py-3"
+                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+              >
+                <div className="font-semibold text-cyan-300">Carrito</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={clearCart}
+                    className="text-sm px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    disabled={cart.length === 0}
+                  >
+                    Vaciar
+                  </button>
+                </div>
+              </div>
+
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr
+                      style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                      className="text-left"
+                    >
+                      <th className="py-2 px-4 text-gray-300">SKU</th>
+                      <th className="px-3 text-gray-300">Producto</th>
+                      <th className="px-3 text-right text-gray-300">Costo</th>
+                      <th className="px-3 text-right text-gray-300">Precio</th>
+                      <th className="px-3 text-center text-gray-300">Cant.</th>
+                      <th className="px-3 text-right text-gray-300">Total</th>
+                      <th className="px-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cart.length === 0 && (
+                      <tr>
+                        <td className="py-6 px-4 text-gray-400" colSpan={7}>
+                          Carrito vacío. Busca productos y presiona <b>Enter</b>{" "}
+                          para agregarlos.
+                        </td>
+                      </tr>
+                    )}
+                    {cart.map((i) => (
+                      <tr
+                        key={i.product.id}
+                        style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                        className="hover:bg-[#191B4B]"
+                      >
+                        <td className="py-2 px-4 font-mono text-sm text-gray-300">
+                          {i.product.sku}
+                        </td>
+                        <td className="px-3">
+                          <div className="font-medium">{i.product.name}</div>
+                          <div className="text-xs text-gray-400">
+                            Stock: {Number(i.product.stock ?? 0)}
+                          </div>
+                        </td>
+                        <td className="px-3 text-right whitespace-nowrap">
+                          {fmt(Number(i.product.cost))}
+                        </td>
+                        <td className="px-3 text-right">
+                          <input
+                            className="rounded px-2 py-1 w-28 text-right outline-none"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            inputMode="numeric"
+                            value={i.unitPrice === 0 ? "" : String(i.unitPrice)}
+                            placeholder="0"
+                            onChange={(e) =>
+                              setPrice(
+                                i.product.id,
+                                e.target.value.replace(/[^\d]/g, ""),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-3 text-center">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => dec(i.product.id)}
+                              className="px-2 rounded"
+                              style={{
+                                backgroundColor: COLORS.input,
+                                border: `1px solid ${COLORS.border}`,
+                              }}
+                            >
+                              -
+                            </button>
+                            <span className="min-w-[1.5rem] text-center">
+                              {i.qty}
+                            </span>
+                            <button
+                              onClick={() => inc(i.product.id)}
+                              className="px-2 rounded"
+                              style={{
+                                backgroundColor: COLORS.input,
+                                border: `1px solid ${COLORS.border}`,
+                              }}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-3 text-right whitespace-nowrap text-cyan-300">
+                          {fmt(i.unitPrice * i.qty)}
+                        </td>
+                        <td className="px-3 text-right">
+                          <button
+                            onClick={() => remove(i.product.id)}
+                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/5 transition transform hover:scale-110"
+                            aria-label="Eliminar producto"
+                          >
+                            <Image
+                              src="/borrar.png"
+                              alt="Eliminar"
+                              width={18}
+                              height={18}
+                              className="opacity-90"
+                            />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Si en desktop NO quieres cards, puedes borrar este bloque sm:hidden.
+                Pero lo dejo tal cual lo tenías, no afecta desktop. */}
               <div className="sm:hidden p-3 space-y-2">
                 {cart.length === 0 && (
                   <div
@@ -906,7 +1190,7 @@ export default function POSPage() {
                 {cart.map((i) => {
                   const stock = Number(i.product.stock ?? 0);
                   const lineTotal = i.unitPrice * i.qty;
-                  const isService = stock >= 9999; // PAPELERIA / SALDO VENTA
+                  const isService = stock >= 9999;
 
                   return (
                     <div
@@ -1027,128 +1311,132 @@ export default function POSPage() {
                 })}
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* Columna derecha */}
-        <aside className="lg:col-span-1">
-          <div className="lg:sticky lg:top-6">
-            <div
-              className="rounded-xl p-4 space-y-3"
-              style={{
-                backgroundColor: COLORS.bgCard,
-                border: `1px solid ${COLORS.border}`,
-              }}
-            >
-              <div>
-                <div className="text-sm mb-1 text-gray-300">Método de pago</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["EFECTIVO", "QR_LLAVE", "DATAFONO"] as PayMethod[]).map(
-                    (m) => {
-                      const active = payMethod === m;
-                      return (
-                        <button
-                          key={m}
-                          onClick={() => setPayMethod(m)}
-                          className="px-2 py-2 text-sm rounded-lg transition"
-                          style={{
-                            border: `1px solid ${COLORS.border}`,
-                            backgroundColor: active ? "#0D0F38" : COLORS.input,
-                            boxShadow: active
-                              ? `0 0 0.5rem rgba(0,255,255,.35), inset 0 0 0.5rem rgba(255,0,255,.15)`
-                              : "none",
-                            color: active ? COLORS.cyan : COLORS.text,
-                          }}
-                        >
-                          {m === "QR_LLAVE" ? "QR / LLAVE" : m}
-                        </button>
-                      );
-                    },
+          {/* Columna derecha */}
+          <aside className="lg:col-span-1">
+            <div className="lg:sticky lg:top-6">
+              <div
+                className="rounded-xl p-4 space-y-3"
+                style={{
+                  backgroundColor: COLORS.bgCard,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+              >
+                <div>
+                  <div className="text-sm mb-1 text-gray-300">
+                    Método de pago
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["EFECTIVO", "QR_LLAVE", "DATAFONO"] as PayMethod[]).map(
+                      (m) => {
+                        const active = payMethod === m;
+                        return (
+                          <button
+                            key={m}
+                            onClick={() => setPayMethod(m)}
+                            className="px-2 py-2 text-sm rounded-lg transition"
+                            style={{
+                              border: `1px solid ${COLORS.border}`,
+                              backgroundColor: active
+                                ? "#0D0F38"
+                                : COLORS.input,
+                              boxShadow: active
+                                ? `0 0 0.5rem rgba(0,255,255,.35), inset 0 0 0.5rem rgba(255,0,255,.15)`
+                                : "none",
+                              color: active ? COLORS.cyan : COLORS.text,
+                            }}
+                          >
+                            {m === "QR_LLAVE" ? "QR / LLAVE" : m}
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Row label="Subtotal" value={subtotal} />
+                  {payMethod === "DATAFONO" && (
+                    <Row label="Comisión DATAFONO (5%)" value={fee} />
+                  )}
+                  <Row label="Total" value={uiTotal} big />
+                </div>
+
+                {payMethod === "EFECTIVO" && (
+                  <div
+                    className="space-y-2 pt-2"
+                    style={{ borderTop: `1px solid ${COLORS.border}` }}
+                  >
+                    <label className="text-sm text-gray-300">Recibido</label>
+                    <input
+                      ref={receivedRef}
+                      className="rounded px-3 py-2 w-full text-right text-lg outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      inputMode="numeric"
+                      value={received ? received.toString() : ""}
+                      placeholder="0"
+                      onChange={(e) =>
+                        setReceived(parseMoneyInput(e.target.value))
+                      }
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") checkout();
+                      }}
+                    />
+                    <Row label="Cambio" value={change} big />
+                  </div>
+                )}
+
+                <button
+                  className="w-full py-3 rounded-lg text-lg font-semibold transition disabled:opacity-60"
+                  style={{
+                    color: "#001014",
+                    background:
+                      "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                    boxShadow:
+                      "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)",
+                  }}
+                  onClick={checkout}
+                  disabled={cart.length === 0}
+                  title={`Ctrl + Enter para cobrar ${uiTotal.toLocaleString("es-CO")}`}
+                >
+                  Cobrar
+                </button>
+
+                {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
+
+                <div className="text-xs text-gray-400">
+                  {role === "EMPLOYEE" ? (
+                    <>
+                      ¿Sin stock cargado?{" "}
+                      <span className="text-cyan-300">
+                        Contacta al administrador
+                      </span>{" "}
+                      para incluir stock.
+                    </>
+                  ) : (
+                    <>
+                      ¿Sin stock cargado?{" "}
+                      <Link
+                        href="/stock-in"
+                        className="underline text-cyan-300"
+                      >
+                        Ingresa stock
+                      </Link>{" "}
+                      y vuelve.
+                    </>
                   )}
                 </div>
               </div>
-
-              <div className="space-y-1">
-                <Row label="Subtotal" value={subtotal} />
-                {payMethod === "DATAFONO" && (
-                  <Row label="Comisión DATAFONO (5%)" value={fee} />
-                )}
-                <Row label="Total" value={uiTotal} big />
-              </div>
-
-              {payMethod === "EFECTIVO" && (
-                <div
-                  className="space-y-2 pt-2"
-                  style={{ borderTop: `1px solid ${COLORS.border}` }}
-                >
-                  <label className="text-sm text-gray-300">Recibido</label>
-                  <input
-                    ref={receivedRef}
-                    className="rounded px-3 py-2 w-full text-right text-lg outline-none"
-                    style={{
-                      backgroundColor: COLORS.input,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                    inputMode="numeric"
-                    value={received ? received.toString() : ""}
-                    placeholder="0"
-                    onChange={(e) =>
-                      setReceived(parseMoneyInput(e.target.value))
-                    }
-                    onFocus={(e) => e.currentTarget.select()}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") checkout();
-                    }}
-                  />
-                  <Row label="Cambio" value={change} big />
-                </div>
-              )}
-
-              <button
-                className="w-full py-3 rounded-lg text-lg font-semibold transition"
-                style={{
-                  color: "#001014",
-                  background:
-                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow:
-                    "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)",
-                }}
-                onClick={checkout}
-                disabled={cart.length === 0}
-                title={`Ctrl + Enter para cobrar ${uiTotal.toLocaleString(
-                  "es-CO",
-                )}`}
-              >
-                Cobrar
-              </button>
-
-              {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
-
-              <div className="text-xs text-gray-400">
-                {role === "EMPLOYEE" ? (
-                  <>
-                    ¿Sin stock cargado?{" "}
-                    <span className="text-cyan-300">
-                      Contacta al administrador
-                    </span>{" "}
-                    para incluir stock.
-                  </>
-                ) : (
-                  <>
-                    ¿Sin stock cargado?{" "}
-                    <Link href="/stock-in" className="underline text-cyan-300">
-                      Ingresa stock
-                    </Link>{" "}
-                    y vuelve.
-                  </>
-                )}
-              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       </div>
 
-      {/* Toast Gamer */}
       <GamerToast
         open={toast.open}
         kind={toast.kind}
