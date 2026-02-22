@@ -134,21 +134,21 @@ type ReservationItemRowApi = {
 
 function inferInitialDepositFromPayments(
   resv: Reservation,
-  payments: ReservationPayment[]
+  payments: ReservationPayment[],
 ) {
   if (resv.initialDeposit > 0) return resv.initialDeposit;
   if (!payments.length) return 0;
 
   // asumiendo que el primer pago registrado es el abono inicial
   const first = [...payments].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   )[0];
 
   return Number(first?.amount ?? 0);
 }
 
 function pickReservationFromCreate(
-  resp: CreateReservationResponse
+  resp: CreateReservationResponse,
 ): ReservationApi {
   if ("reservation" in resp) return resp.reservation;
   if ("res" in resp) return resp.res;
@@ -157,7 +157,7 @@ function pickReservationFromCreate(
 }
 
 function pickReservationFromPayment(
-  resp: CreatePaymentResponse
+  resp: CreatePaymentResponse,
 ): ReservationApi {
   if ("reservation" in resp) return resp.reservation;
   if ("layaway" in resp) return resp.layaway;
@@ -165,7 +165,7 @@ function pickReservationFromPayment(
 }
 
 function pickPaymentFromPayment(
-  resp: CreatePaymentResponse
+  resp: CreatePaymentResponse,
 ): ReservationPaymentApi {
   if ("payment" in resp) return resp.payment;
   return resp.pay;
@@ -235,7 +235,7 @@ function normalizeReservation(raw: ReservationApi): Reservation {
         unitPrice: Number(it.unitPrice ?? 0),
         qty: Number(it.qty ?? 0),
       };
-    }
+    },
   );
 
   const kindRaw = String(raw.kind ?? raw.type ?? "APARTADO").toUpperCase();
@@ -266,7 +266,7 @@ export default function LayawaysPage() {
 
   // ===== filtros =====
   const [statusFilter, setStatusFilter] = useState<ReservationStatus | "">(
-    "OPEN"
+    "OPEN",
   );
   const [q, setQ] = useState("");
 
@@ -373,7 +373,7 @@ export default function LayawaysPage() {
           if (cancelled) return;
 
           setRows((prev) =>
-            prev.map((x) => (x.id === r.id ? { ...x, items } : x))
+            prev.map((x) => (x.id === r.id ? { ...x, items } : x)),
           );
         } catch {
           // ignore
@@ -541,8 +541,8 @@ export default function LayawaysPage() {
       prev.map((x) =>
         x.productId === productId
           ? { ...x, qty: Number.isFinite(qty) && qty > 0 ? qty : x.qty }
-          : x
-      )
+          : x,
+      ),
     );
   };
 
@@ -728,7 +728,7 @@ export default function LayawaysPage() {
     openGamerConfirm({
       title: "ELIMINAR ABONO",
       message: `Vas a eliminar el abono de ${toCOP(
-        p.amount
+        p.amount,
       )}. Esta acción no se puede deshacer.`,
       confirmLabel: "SÍ, ELIMINAR",
       cancelLabel: "NO, VOLVER",
@@ -736,7 +736,7 @@ export default function LayawaysPage() {
         try {
           const r = await apiFetch(
             `${RES_API}/${paymentsOpenId}/payments/${p.id}`,
-            { method: "DELETE" }
+            { method: "DELETE" },
           );
 
           if (!r.ok) {
@@ -749,7 +749,7 @@ export default function LayawaysPage() {
           setPaymentsCache((prev) => ({
             ...prev,
             [paymentsOpenId]: (prev[paymentsOpenId] || []).filter(
-              (x) => x.id !== p.id
+              (x) => x.id !== p.id,
             ),
           }));
 
@@ -1023,7 +1023,7 @@ export default function LayawaysPage() {
     resumenBody.push(
       ["TOTAL OBJETIVO", toCOP(resv.totalPrice)],
       ["ABONO INICIAL", toCOP(resv.initialDeposit)],
-      ["TOTAL ABONADO A LA FECHA", toCOP(resv.totalPaid)]
+      ["TOTAL ABONADO A LA FECHA", toCOP(resv.totalPaid)],
     );
 
     autoTable(doc, {
@@ -1098,7 +1098,7 @@ export default function LayawaysPage() {
     // =========================
     writeParagraph(
       `Entre GAMERLAND PC (NIT 1003511062-1), en adelante "LA TIENDA", y el(la) cliente ${resv.customerName} (WhatsApp ${resv.customerPhone}), en adelante "EL CLIENTE", se celebra el presente contrato, regido por las siguientes cláusulas:`,
-      4
+      4,
     );
 
     // =========================
@@ -1111,8 +1111,8 @@ export default function LayawaysPage() {
           ? "gestión de encargo y reserva"
           : "reserva (sistema de apartado)"
       } a favor de EL CLIENTE, de los ítems descritos en este documento, por un valor objetivo total de ${toCOP(
-        resv.totalPrice
-      )}.`
+        resv.totalPrice,
+      )}.`,
     );
 
     // =========================
@@ -1123,27 +1123,27 @@ export default function LayawaysPage() {
       writeParagraph(
         `EL CLIENTE se compromete a recoger el encargo en la fecha pactada: ${
           resv.pickupDate ? onlyDateISO(resv.pickupDate) : "NO REGISTRA"
-        }.`
+        }.`,
       );
 
       tituloClausula(
-        `CLÁUSULA ${N.INCUMPLIMIENTO} – INCUMPLIMIENTO FECHA DE RETIRO`
+        `CLÁUSULA ${N.INCUMPLIMIENTO} – INCUMPLIMIENTO FECHA DE RETIRO`,
       );
       writeParagraph(
         `En caso de que EL CLIENTE no recoja el encargo en la fecha establecida, a partir de ese momento el presente ENCARGO se entenderá convertido en un SISTEMA DE APARTADO.`,
-        1
+        1,
       );
       writeParagraph(
         `Desde dicha fecha empezarán a regir las siguientes condiciones propias del SISTEMA DE APARTADO:`,
-        1
+        1,
       );
       writeParagraph(
         `1. CANCELACIÓN / DEVOLUCIÓN (Cláusula ${N.CANCELACION}).`,
-        0.5
+        0.5,
       );
       writeParagraph(
         `2. ENTREGA (Cláusula ${N.ENTREGA} – el cliente deberá avisar con mínimo una (1) semana de anticipación para reclamar los producto(s)).`,
-        2
+        2,
       );
     }
 
@@ -1153,8 +1153,8 @@ export default function LayawaysPage() {
     tituloClausula(`CLÁUSULA ${N.ABONOS} – ABONOS`);
     writeParagraph(
       `EL CLIENTE realiza un abono inicial de ${toCOP(
-        resv.initialDeposit
-      )}. Los abonos posteriores se irán registrando hasta completar el valor total.`
+        resv.initialDeposit,
+      )}. Los abonos posteriores se irán registrando hasta completar el valor total.`,
     );
 
     // =========================
@@ -1162,7 +1162,7 @@ export default function LayawaysPage() {
     // =========================
     tituloClausula(`CLÁUSULA ${N.CANCELACION} – CANCELACIÓN / DEVOLUCIÓN`);
     writeParagraph(
-      `Si EL CLIENTE decide cancelar el proceso, LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del total abonado a la fecha. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales.`
+      `Si EL CLIENTE decide cancelar el proceso, LA TIENDA devolverá únicamente el cincuenta por ciento (50%) del total abonado a la fecha. El cincuenta por ciento (50%) restante se entenderá como compensación por costos administrativos, logísticos y comerciales.`,
     );
 
     // =========================
@@ -1171,7 +1171,7 @@ export default function LayawaysPage() {
     if (resv.kind === "APARTADO") {
       tituloClausula(`CLÁUSULA ${N.ENTREGA} – ENTREGA`);
       writeParagraph(
-        `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`
+        `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`,
       );
     }
 
@@ -1181,7 +1181,7 @@ export default function LayawaysPage() {
     tituloClausula(`CLÁUSULA ${N.ACEPTACION} – ACEPTACIÓN`);
     writeParagraph(
       `EL CLIENTE declara haber leído y aceptado este contrato.`,
-      6
+      6,
     );
 
     if (y > firmaY - 15) y = firmaY - 15;
@@ -1201,7 +1201,7 @@ export default function LayawaysPage() {
   }
 
   async function fetchReservationItems(
-    reservationId: number
+    reservationId: number,
   ): Promise<ReservationItem[]> {
     const r = await apiFetch(`${RES_API}/${reservationId}/items`);
     if (!r.ok) throw new Error("No se pudieron cargar ítems");
@@ -1249,7 +1249,7 @@ export default function LayawaysPage() {
 
   function generatePaymentReceiptPdf(
     resv: Reservation,
-    payment: ReservationPayment
+    payment: ReservationPayment,
   ) {
     const doc = new jsPDF({
       orientation: "portrait",
@@ -1279,7 +1279,7 @@ export default function LayawaysPage() {
       `RECIBO DE ABONO – ${resv.kind === "ENCARGO" ? "ENCARGO" : "APARTADO"}`,
       pageWidth / 2,
       9,
-      { align: "center" }
+      { align: "center" },
     );
 
     doc.setFont("helvetica", "normal");
@@ -1328,7 +1328,7 @@ export default function LayawaysPage() {
       doc.setTextColor(80, 80, 80);
       const notaLines = doc.splitTextToSize(
         `Este comprobante acredita el abono realizado al registro indicado. La suma abonada hace parte del valor total y se rige por las condiciones establecidas en el contrato.`,
-        pageWidth - marginX * 2
+        pageWidth - marginX * 2,
       );
       doc.text(notaLines, marginX, y, {
         maxWidth: pageWidth - marginX * 2,
@@ -1353,7 +1353,7 @@ export default function LayawaysPage() {
   const sortedRows = useMemo(() => {
     return [...rows].sort(
       (a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
   }, [rows]);
 
@@ -1384,9 +1384,9 @@ export default function LayawaysPage() {
   const kinds: ReservationKind[] = ["ENCARGO", "APARTADO"];
 
   return (
-    <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
+    <div className="max-w-6xl mx-auto text-gray-200 space-y-4 px-2 sm:px-4">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold text-cyan-400">
+        <h1 className="text-xl sm:text-2xl font-bold text-cyan-400">
           ENCARGOS / SISTEMAS DE APARTADO
         </h1>
 
@@ -1480,7 +1480,7 @@ export default function LayawaysPage() {
                   return (
                     <article
                       key={resv.id}
-                      className="rounded-xl p-4 space-y-2 border"
+                      className="rounded-xl p-3 sm:p-4 space-y-2 border"
                       style={{
                         backgroundColor: COLORS.bgCard,
                         borderColor: COLORS.border,
@@ -1522,7 +1522,7 @@ export default function LayawaysPage() {
                         )}
                       </div>
 
-                      <div className="text-sm uppercase space-y-1">
+                      <div className="text-[13px] sm:text-sm uppercase space-y-1">
                         <div>
                           <b>ÍTEMS:</b> {getCardItemsLabel(resv)}
                         </div>
@@ -1549,9 +1549,9 @@ export default function LayawaysPage() {
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 pt-2">
+                      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 pt-2">
                         <button
-                          className="px-3 py-1 rounded border text-xs uppercase"
+                          className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase"
                           style={{ borderColor: COLORS.border }}
                           onClick={() => openPaymentsModal(resv)}
                         >
@@ -1561,7 +1561,7 @@ export default function LayawaysPage() {
                         {resv.status === "OPEN" && (
                           <>
                             <button
-                              className="px-3 py-1 rounded border text-xs uppercase"
+                              className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase"
                               style={{ borderColor: COLORS.border }}
                               onClick={() => printContractSafe(resv)}
                             >
@@ -1569,7 +1569,7 @@ export default function LayawaysPage() {
                             </button>
 
                             <button
-                              className="px-3 py-1 rounded border text-xs uppercase text-pink-300"
+                              className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase text-pink-300"
                               style={{ borderColor: COLORS.border }}
                               onClick={() => openRefundModal(resv)}
                             >
@@ -1580,7 +1580,7 @@ export default function LayawaysPage() {
 
                         {canFinalize && (
                           <button
-                            className="px-3 py-1 rounded border text-xs uppercase text-emerald-300"
+                            className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase text-emerald-300"
                             style={{ borderColor: COLORS.border }}
                             onClick={() => finalizeReservation(resv)}
                           >
@@ -1590,7 +1590,7 @@ export default function LayawaysPage() {
 
                         {role === "ADMIN" && (
                           <button
-                            className="px-3 py-1 rounded border text-xs uppercase text-red-300"
+                            className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase text-red-300"
                             style={{ borderColor: COLORS.border }}
                             onClick={() => deleteReservation(resv)}
                           >
@@ -1630,12 +1630,13 @@ export default function LayawaysPage() {
 
       {/* Modal nuevo */}
       {openForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-3">
           <div
-            className="w-full max-w-2xl rounded-xl p-4 space-y-3"
+            className="w-full max-w-2xl rounded-xl p-3 sm:p-4 space-y-3 overflow-y-auto"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
+              maxHeight: "92vh",
             }}
           >
             <h2 className="text-lg font-semibold text-cyan-300 uppercase">
@@ -1731,7 +1732,7 @@ export default function LayawaysPage() {
                 ÍTEMS *
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
                 <div className="md:col-span-4">
                   <label className="block text-sm mb-1 uppercase">
                     BUSCAR PRODUCTO
@@ -1805,7 +1806,7 @@ export default function LayawaysPage() {
                 <div className="md:col-span-1">
                   <button
                     type="button"
-                    className="w-full px-3 py-2 rounded-lg font-semibold uppercase"
+                    className="w-full px-3 py-2 rounded-lg font-semibold uppercase sm:col-span-1"
                     style={{
                       color: "#001014",
                       background:
@@ -1822,82 +1823,157 @@ export default function LayawaysPage() {
 
               {/* Tabla items */}
               <div
-                className="rounded-xl border overflow-hidden"
+                className="hidden sm:block rounded-xl border overflow-hidden"
                 style={{ borderColor: COLORS.border }}
               >
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-black/40">
-                    <tr>
-                      <th className="px-2 py-2 border-b border-gray-700">
-                        ÍTEM
-                      </th>
-                      <th className="px-2 py-2 border-b border-gray-700">
-                        V. UNIT
-                      </th>
-                      <th className="px-2 py-2 border-b border-gray-700">
-                        CANT
-                      </th>
-                      <th className="px-2 py-2 border-b border-gray-700">
-                        SUBTOTAL
-                      </th>
-                      <th className="px-2 py-2 border-b border-gray-700 text-right">
-                        ACC
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {draftItems.map((it) => (
-                      <tr key={it.productId}>
-                        <td className="px-2 py-2 border-b border-gray-800 uppercase">
-                          {it.sku ? `${it.sku} — ` : ""}
-                          {it.name}
-                        </td>
-                        <td className="px-2 py-2 border-b border-gray-800">
-                          {toCOP(it.unitPrice)}
-                        </td>
-                        <td className="px-2 py-2 border-b border-gray-800">
-                          <input
-                            type="number"
-                            min={1}
-                            step="1"
-                            className="w-20 rounded px-2 py-1 text-gray-100"
-                            style={{
-                              backgroundColor: COLORS.input,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
-                            value={String(it.qty)}
-                            onChange={(e) =>
-                              updateDraftQty(it.productId, e.target.value)
-                            }
-                          />
-                        </td>
-                        <td className="px-2 py-2 border-b border-gray-800">
-                          {toCOP(it.unitPrice * it.qty)}
-                        </td>
-                        <td className="px-2 py-2 border-b border-gray-800 text-right">
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded border text-red-300 uppercase"
-                            style={{ borderColor: COLORS.border }}
-                            onClick={() => removeDraftItem(it.productId)}
-                          >
-                            QUITAR
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {draftItems.length === 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[520px]">
+                    <thead className="bg-black/40">
                       <tr>
-                        <td
-                          colSpan={5}
-                          className="px-3 py-3 text-center text-gray-500"
-                        >
-                          Agrega productos para armar el registro.
-                        </td>
+                        <th className="px-2 py-2 border-b border-gray-700">
+                          ÍTEM
+                        </th>
+                        <th className="px-2 py-2 border-b border-gray-700">
+                          V. UNIT
+                        </th>
+                        <th className="px-2 py-2 border-b border-gray-700">
+                          CANT
+                        </th>
+                        <th className="px-2 py-2 border-b border-gray-700">
+                          SUBTOTAL
+                        </th>
+                        <th className="px-2 py-2 border-b border-gray-700 text-right">
+                          ACC
+                        </th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {draftItems.map((it) => (
+                        <tr key={it.productId}>
+                          <td className="px-2 py-2 border-b border-gray-800 uppercase">
+                            {it.sku ? `${it.sku} — ` : ""}
+                            {it.name}
+                          </td>
+                          <td className="px-2 py-2 border-b border-gray-800">
+                            {toCOP(it.unitPrice)}
+                          </td>
+                          <td className="px-2 py-2 border-b border-gray-800">
+                            <input
+                              type="number"
+                              min={1}
+                              step="1"
+                              className="w-20 rounded px-2 py-1 text-gray-100"
+                              style={{
+                                backgroundColor: COLORS.input,
+                                border: `1px solid ${COLORS.border}`,
+                              }}
+                              value={String(it.qty)}
+                              onChange={(e) =>
+                                updateDraftQty(it.productId, e.target.value)
+                              }
+                            />
+                          </td>
+                          <td className="px-2 py-2 border-b border-gray-800">
+                            {toCOP(it.unitPrice * it.qty)}
+                          </td>
+                          <td className="px-2 py-2 border-b border-gray-800 text-right">
+                            <button
+                              type="button"
+                              className="px-2 py-1 rounded border text-red-300 uppercase"
+                              style={{ borderColor: COLORS.border }}
+                              onClick={() => removeDraftItem(it.productId)}
+                            >
+                              QUITAR
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {draftItems.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="px-3 py-3 text-center text-gray-500"
+                          >
+                            Agrega productos para armar el registro.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Items (mobile cards) */}
+              <div className="sm:hidden space-y-2">
+                {draftItems.map((it) => (
+                  <div
+                    key={it.productId}
+                    className="rounded-xl border p-3 space-y-2"
+                    style={{
+                      borderColor: COLORS.border,
+                      backgroundColor: "rgba(0,0,0,0.25)",
+                    }}
+                  >
+                    <div className="text-xs uppercase">
+                      <div className="text-cyan-300 font-semibold">
+                        {it.sku ? `${it.sku} — ` : ""}
+                        {it.name}
+                      </div>
+                      <div className="text-gray-300 mt-1">
+                        <b>V. UNIT:</b> {toCOP(it.unitPrice)}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 items-end">
+                      <div>
+                        <label className="block text-[11px] mb-1 uppercase text-gray-400">
+                          CANTIDAD
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          step="1"
+                          className="w-full rounded px-3 py-2 text-gray-100"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={String(it.qty)}
+                          onChange={(e) =>
+                            updateDraftQty(it.productId, e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-[11px] uppercase text-gray-400 mb-1">
+                          SUBTOTAL
+                        </div>
+                        <div className="text-sm text-pink-300 font-semibold">
+                          {toCOP(it.unitPrice * it.qty)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 rounded border text-red-300 uppercase text-xs"
+                      style={{ borderColor: COLORS.border }}
+                      onClick={() => removeDraftItem(it.productId)}
+                    >
+                      QUITAR
+                    </button>
+                  </div>
+                ))}
+
+                {draftItems.length === 0 && (
+                  <div
+                    className="rounded-xl border p-3 text-center text-gray-500 text-sm"
+                    style={{ borderColor: COLORS.border }}
+                  >
+                    Agrega productos para armar el registro.
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between text-sm uppercase">
@@ -1987,82 +2063,136 @@ export default function LayawaysPage() {
       {paymentsOpenId && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-2xl rounded-xl p-4 space-y-3"
+            className="w-full max-w-2xl rounded-xl p-3 sm:p-4 space-y-3 overflow-y-auto"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
+              maxHeight: "92vh",
             }}
           >
             <h3 className="text-lg font-semibold text-cyan-300 uppercase">
               ABONOS {rows.find((r) => r.id === paymentsOpenId)?.code}
             </h3>
 
-            <div className="max-h-64 overflow-auto text-xs">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-black/40">
-                  <tr>
-                    <th className="px-2 py-1 border-b border-gray-700">
-                      FECHA
-                    </th>
-                    <th className="px-2 py-1 border-b border-gray-700">
-                      MÉTODO
-                    </th>
-                    <th className="px-2 py-1 border-b border-gray-700">
-                      MONTO
-                    </th>
-                    <th className="px-2 py-1 border-b border-gray-700">NOTA</th>
-                    {role === "ADMIN" && (
-                      <th className="px-2 py-1 border-b border-gray-700 text-right">
-                        ACCIONES
+            <div className="hidden sm:block max-h-64 overflow-auto text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[620px]">
+                  <thead className="bg-black/40">
+                    <tr>
+                      <th className="px-2 py-1 border-b border-gray-700">
+                        FECHA
                       </th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentPayments.map((p) => (
-                    <tr key={p.id}>
-                      <td className="px-2 py-1 border-b border-gray-800">
-                        {fmt(p.createdAt)}
-                      </td>
-                      <td className="px-2 py-1 border-b border-gray-800">
-                        {PaymentLabels[p.method]}
-                      </td>
-                      <td className="px-2 py-1 border-b border-gray-800">
-                        {toCOP(p.amount)}
-                      </td>
-                      <td className="px-2 py-1 border-b border-gray-800">
-                        {p.note || ""}
-                      </td>
+                      <th className="px-2 py-1 border-b border-gray-700">
+                        MÉTODO
+                      </th>
+                      <th className="px-2 py-1 border-b border-gray-700">
+                        MONTO
+                      </th>
+                      <th className="px-2 py-1 border-b border-gray-700">
+                        NOTA
+                      </th>
                       {role === "ADMIN" && (
-                        <td className="px-2 py-1 border-b border-gray-800 text-right">
-                          <button
-                            onClick={() => deletePayment(p)}
-                            className="inline-flex items-center justify-center"
-                          >
-                            <Image
-                              src="/borrar.png"
-                              alt="Eliminar"
-                              width={16}
-                              height={16}
-                              className="opacity-80 hover:opacity-100 hover:scale-110 transition"
-                            />
-                          </button>
-                        </td>
+                        <th className="px-2 py-1 border-b border-gray-700 text-right">
+                          ACCIONES
+                        </th>
                       )}
                     </tr>
-                  ))}
-                  {currentPayments.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={role === "ADMIN" ? 5 : 4}
-                        className="px-2 py-2 text-center text-gray-500"
-                      >
-                        Sin abonos registrados.
-                      </td>
-                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentPayments.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-2 py-1 border-b border-gray-800">
+                          {fmt(p.createdAt)}
+                        </td>
+                        <td className="px-2 py-1 border-b border-gray-800">
+                          {PaymentLabels[p.method]}
+                        </td>
+                        <td className="px-2 py-1 border-b border-gray-800">
+                          {toCOP(p.amount)}
+                        </td>
+                        <td className="px-2 py-1 border-b border-gray-800">
+                          {p.note || ""}
+                        </td>
+                        {role === "ADMIN" && (
+                          <td className="px-2 py-1 border-b border-gray-800 text-right">
+                            <button
+                              onClick={() => deletePayment(p)}
+                              className="inline-flex items-center justify-center"
+                            >
+                              <Image
+                                src="/borrar.png"
+                                alt="Eliminar"
+                                width={16}
+                                height={16}
+                                className="opacity-80 hover:opacity-100 hover:scale-110 transition"
+                              />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {currentPayments.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={role === "ADMIN" ? 5 : 4}
+                          className="px-2 py-2 text-center text-gray-500"
+                        >
+                          Sin abonos registrados.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="sm:hidden space-y-2">
+              {currentPayments.map((p) => (
+                <div
+                  key={p.id}
+                  className="rounded-xl border p-3 space-y-1"
+                  style={{
+                    borderColor: COLORS.border,
+                    backgroundColor: "rgba(0,0,0,0.25)",
+                  }}
+                >
+                  <div className="text-[11px] text-gray-400">
+                    {fmt(p.createdAt)}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs uppercase text-gray-200">
+                      {PaymentLabels[p.method]}
+                    </div>
+                    <div className="text-sm font-semibold text-cyan-300">
+                      {toCOP(p.amount)}
+                    </div>
+                  </div>
+
+                  {p.note && (
+                    <div className="text-xs text-gray-300">{p.note}</div>
                   )}
-                </tbody>
-              </table>
+
+                  {role === "ADMIN" && (
+                    <button
+                      onClick={() => deletePayment(p)}
+                      className="mt-2 w-full px-3 py-2 rounded border text-red-300 uppercase text-xs"
+                      style={{ borderColor: COLORS.border }}
+                    >
+                      ELIMINAR ABONO
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {currentPayments.length === 0 && (
+                <div
+                  className="rounded-xl border p-3 text-center text-gray-500 text-sm"
+                  style={{ borderColor: COLORS.border }}
+                >
+                  Sin abonos registrados.
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
