@@ -59,7 +59,7 @@ type PaymentMethod = (typeof PaymentMethods)[number];
 type StockGroupRow = { type: string; _sum: { qty: number | null } };
 async function getCurrentStock(
   tx: Prisma.TransactionClient,
-  productId: number
+  productId: number,
 ) {
   const rows = (await tx.stockMovement.groupBy({
     by: ["type"] as const,
@@ -96,7 +96,7 @@ async function getNextReservationCode(kind: ReservationKind) {
 
 async function recomputeReservationTotals(
   tx: Prisma.TransactionClient,
-  reservationId: number
+  reservationId: number,
 ) {
   const items = await tx.reservationItem.findMany({
     where: { reservationId },
@@ -385,7 +385,7 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
 
   const pageSize = Math.min(
     Math.max(Number(req.query.pageSize || 10), 1),
-    1000
+    1000,
   );
   const page = Math.max(Number(req.query.page || 1), 1);
   const skip = (page - 1) * pageSize;
@@ -430,7 +430,7 @@ app.get("/products", requireRole("EMPLOYEE"), async (req, res) => {
       const sign = r.type === "out" ? -1 : 1;
       map.set(
         r.productId,
-        (map.get(r.productId) || 0) + sign * Number(r._sum.qty || 0)
+        (map.get(r.productId) || 0) + sign * Number(r._sum.qty || 0),
       );
     }
     rowsWithStock = products.map((p) => ({ ...p, stock: map.get(p.id) ?? 0 }));
@@ -623,7 +623,7 @@ const saleSchema = z.object({
         unitPrice: z.coerce.number().nonnegative(),
         taxRate: z.coerce.number().nonnegative().default(0),
         discount: z.coerce.number().nonnegative().default(0),
-      })
+      }),
     )
     .min(1),
   payments: z
@@ -632,7 +632,7 @@ const saleSchema = z.object({
         method: z.enum(PaymentMethods),
         amount: z.coerce.number().nonnegative(),
         reference: z.string().optional(),
-      })
+      }),
     )
     .min(1),
 });
@@ -729,7 +729,7 @@ const saleAdminUpdateSchema = z.object({
         qty: z.coerce.number().int().positive(),
         unitPrice: z.coerce.number().nonnegative(),
         discount: z.coerce.number().nonnegative().default(0),
-      })
+      }),
     )
     .min(1)
     .optional(),
@@ -739,7 +739,7 @@ const saleAdminUpdateSchema = z.object({
         method: z.enum(PaymentMethods),
         amount: z.coerce.number().nonnegative(),
         reference: z.string().optional(),
-      })
+      }),
     )
     .min(1)
     .optional(),
@@ -768,12 +768,16 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
       if (parsed.data.items) {
         // revertir stock previo
         for (const it of prev.items) {
+          const prod = await tx.product.findUnique({
+            where: { id: it.productId },
+            select: { cost: true },
+          });
           await tx.stockMovement.create({
             data: {
               productId: it.productId,
               type: "in",
               qty: it.qty,
-              unitCost: it.unitPrice, // aproximación
+              unitCost: Number(prod?.cost ?? 0),
               reference: `sale#${id}:edit-revert`,
             },
           });
@@ -792,8 +796,8 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
                 discount: it.discount ?? 0,
                 total: it.unitPrice * it.qty - (it.discount ?? 0),
               },
-            })
-          )
+            }),
+          ),
         );
         // crear outs nuevos
         for (const it of parsed.data.items) {
@@ -828,11 +832,11 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
       const curItems = parsed.data.items ? items : prev.items;
       const subtotal = curItems.reduce(
         (a, it) => a + Number(it.unitPrice) * it.qty,
-        0
+        0,
       );
       const discount = curItems.reduce(
         (a, it) => a + Number(it.discount ?? 0),
-        0
+        0,
       );
       const tax = 0;
       const total = subtotal + tax - discount;
@@ -869,22 +873,70 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-app.delete("/sales/:id", requireRole("ADMIN"), async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id))
-    return res.status(400).json({ error: "id inválido" });
-  try {
-    await prisma.payment.deleteMany({ where: { saleId: id } });
-    await prisma.saleItem.deleteMany({ where: { saleId: id } });
-    await prisma.sale.delete({ where: { id } });
-    res.json({ ok: true, id });
-  } catch (e: unknown) {
-    const err = e as { code?: string; message?: string };
-    if (err?.code === "P2025")
-      return res.status(404).json({ error: "No encontrado" });
-    res.status(400).json({ error: err?.message || "No se pudo eliminar" });
-  }
-});
+app.delete(
+  "/sales/:id",
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "id inválido" });
+
+    const userId = req.user!.id;
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        // 1) Cargar venta + items
+        const sale = await tx.sale.findUnique({
+          where: { id },
+          include: { items: true },
+        });
+        if (!sale) {
+          const err: any = new Error("No encontrado");
+          err.code = "P2025";
+          throw err;
+        }
+
+        // 2) Devolver inventario con COSTO ACTUAL del producto
+        for (const it of sale.items) {
+          const prod = await tx.product.findUnique({
+            where: { id: it.productId },
+            select: { cost: true },
+          });
+
+          const currentCost = Number(prod?.cost ?? 0);
+
+          await tx.stockMovement.create({
+            data: {
+              productId: it.productId,
+              type: "in",
+              qty: it.qty,
+              unitCost: currentCost, // 👈 costo actual
+              reference: `sale#${id}:delete`,
+              userId, // si tu modelo StockMovement tiene userId (en POST /sales sí lo usas)
+            },
+          });
+        }
+
+        // 3) Borrar los OUT originales de esa venta para no duplicar conteo
+        await tx.stockMovement.deleteMany({
+          where: { type: "out", reference: `sale#${id}` },
+        });
+
+        // 4) Borrar pagos, items y venta
+        await tx.payment.deleteMany({ where: { saleId: id } });
+        await tx.saleItem.deleteMany({ where: { saleId: id } });
+        await tx.sale.delete({ where: { id } });
+      });
+
+      res.json({ ok: true, id, restocked: true });
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err?.code === "P2025" || err?.message === "No encontrado")
+        return res.status(404).json({ error: "No encontrado" });
+      res.status(400).json({ error: err?.message || "No se pudo eliminar" });
+    }
+  },
+);
 
 // ==================== STOCK IN (ADMIN) ====================
 const stockInSchema = z.object({
@@ -1017,7 +1069,7 @@ app.get("/stock/summary", requireRole("EMPLOYEE"), async (_req, res) => {
       sku: p.sku,
       name: p.name,
       stock: map.get(p.id) || 0,
-    }))
+    })),
   );
 });
 
@@ -1029,7 +1081,7 @@ app.get("/expenses/presets", requireRole("EMPLOYEE"), (_req, res) => {
     presets: EXPENSE_PRESETS,
     // map opcional para mostrar ayuda en el UI
     categoryByPreset: Object.fromEntries(
-      EXPENSE_PRESETS.map((p) => [p, "INTERNO"])
+      EXPENSE_PRESETS.map((p) => [p, "INTERNO"]),
     ),
   });
 });
@@ -1073,7 +1125,7 @@ app.post(
     });
 
     res.status(201).json(e);
-  }
+  },
 );
 
 app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
@@ -1084,7 +1136,7 @@ app.get("/expenses", requireRole("EMPLOYEE"), async (req, res) => {
   if (fromParam || toParam) {
     const { from, to } = parseLocalDateRange(
       fromParam || toParam,
-      toParam || fromParam
+      toParam || fromParam,
     );
     where.createdAt = { gte: from, lte: to };
   }
@@ -1185,7 +1237,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   });
   const costo_vendido = outs.reduce(
     (a, r) => a + Number(r.qty || 0) * Number(r.unitCost || 0),
-    0
+    0,
   );
 
   // 3) Gastos operativos (EXTERNOS) — se reportan aparte
@@ -1226,7 +1278,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
         it.product?.name ?? "",
         Number(it.unitPrice || 0),
         unitCost,
-        Number(it.qty || 0)
+        Number(it.qty || 0),
       )
     );
   }, 0);
@@ -1337,7 +1389,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
           amount: toN(p.amount),
         })),
       };
-    })
+    }),
   );
 
   res.json(rows);
@@ -1351,9 +1403,9 @@ app.get(
     (app as any)._router.handle(
       { ...req, url: "/reports/sales-lines", method: "GET" },
       res,
-      next
+      next,
     );
-  }
+  },
 );
 
 // ===== Utilidad por REGLAS (igual a tu front) =====
@@ -1361,7 +1413,7 @@ function profitByRule(
   name: string,
   unitPrice: number,
   unitCost: number,
-  qty: number
+  qty: number,
 ) {
   const N = (name || "").toUpperCase().trim();
   const total = unitPrice * qty;
@@ -1654,7 +1706,7 @@ app.get("/works", requireRole("EMPLOYEE"), async (req, res) => {
   const out = rows.map((r) => {
     const deposit = (r.payments || []).reduce(
       (a, p) => a + Number(p.amount || 0),
-      0
+      0,
     );
     return { ...r, deposit };
   });
@@ -1786,7 +1838,7 @@ app.delete(
         .status(400)
         .json({ error: err?.message || "No se pudo eliminar el abono" });
     }
-  }
+  },
 );
 
 app.get("/works/:id/items", requireRole("EMPLOYEE"), async (req, res) => {
@@ -1917,7 +1969,7 @@ app.patch(
         error: err?.message || "No se pudo actualizar el ítem",
       });
     }
-  }
+  },
 );
 
 app.post("/works", requireRole("EMPLOYEE"), async (req, res) => {
@@ -2043,7 +2095,7 @@ const reservationCreateSchema = z.object({
         qty: z.coerce.number().int().positive().default(1),
         unitPrice: z.coerce.number().nonnegative().optional(),
         discount: z.coerce.number().nonnegative().default(0),
-      })
+      }),
     )
     .min(1, "Debe haber al menos 1 ítem"),
 
@@ -2208,7 +2260,7 @@ app.post(
 
         const subtotal = normalizedItems.reduce(
           (a, it) => a + Number(it.totalLine || 0),
-          0
+          0,
         );
         const discountGeneral = 0;
         const totalPrice = subtotal - discountGeneral;
@@ -2269,7 +2321,7 @@ app.post(
         .status(400)
         .json({ error: err?.message || "No se pudo crear la reserva" });
     }
-  }
+  },
 );
 
 app.post(
@@ -2292,7 +2344,7 @@ app.post(
         return res.status(404).json({ error: "No encontrado" });
       res.status(400).json({ error: err?.message || "No se pudo cerrar" });
     }
-  }
+  },
 );
 
 app.post(
@@ -2315,7 +2367,7 @@ app.post(
         return res.status(404).json({ error: "No encontrado" });
       res.status(400).json({ error: err?.message || "No se pudo cancelar" });
     }
-  }
+  },
 );
 
 app.delete("/reservations/:id", requireRole("ADMIN"), async (req, res) => {
@@ -2356,7 +2408,7 @@ app.get(
       orderBy: { id: "asc" },
     });
     res.json(items);
-  }
+  },
 );
 
 app.post(
@@ -2424,7 +2476,7 @@ app.post(
         .status(400)
         .json({ error: err?.message || "No se pudo agregar el ítem" });
     }
-  }
+  },
 );
 
 app.patch(
@@ -2494,7 +2546,7 @@ app.patch(
 
         const updatedReservation = await recomputeReservationTotals(
           tx,
-          reservationId
+          reservationId,
         );
 
         return { item: updatedItem, reservation: updatedReservation };
@@ -2507,7 +2559,7 @@ app.patch(
         .status(400)
         .json({ error: err?.message || "No se pudo actualizar el ítem" });
     }
-  }
+  },
 );
 
 app.delete(
@@ -2548,7 +2600,7 @@ app.delete(
         .status(400)
         .json({ error: err?.message || "No se pudo eliminar el ítem" });
     }
-  }
+  },
 );
 
 app.get(
@@ -2570,7 +2622,7 @@ app.get(
       orderBy: { createdAt: "asc" },
     });
     res.json(pays);
-  }
+  },
 );
 
 app.post(
@@ -2620,7 +2672,7 @@ app.post(
         .status(400)
         .json({ error: err?.message || "No se pudo registrar el abono" });
     }
-  }
+  },
 );
 
 app.delete(
@@ -2658,7 +2710,7 @@ app.delete(
         .status(400)
         .json({ error: err?.message || "No se pudo eliminar el abono" });
     }
-  }
+  },
 );
 
 const reservationKindPatchSchema = z.object({
@@ -2707,8 +2759,8 @@ app.patch(
             pickupDate === undefined
               ? undefined
               : pickupDate
-              ? new Date(pickupDate)
-              : null,
+                ? new Date(pickupDate)
+                : null,
           ...(kind === "APARTADO"
             ? { convertedFromEncargo: true, kindChangedAt: new Date() }
             : { kindChangedAt: new Date() }),
@@ -2722,7 +2774,7 @@ app.patch(
         return res.status(404).json({ error: "No encontrado" });
       res.status(400).json({ error: err?.message || "No se pudo actualizar" });
     }
-  }
+  },
 );
 
 // ==================== ADMIN (extra dev) ====================
