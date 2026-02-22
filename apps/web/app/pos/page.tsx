@@ -185,6 +185,24 @@ export default function POSPage() {
   });
   const hideToast = () => setToast((t) => ({ ...t, open: false }));
 
+  const [resultsPos, setResultsPos] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+
+  const syncResultsPos = useCallback(() => {
+    const el = searchRef.current;
+    if (!el) return;
+
+    const r = el.getBoundingClientRect();
+    setResultsPos({
+      left: r.left,
+      top: r.bottom + 8, // 8px separación
+      width: r.width,
+    });
+  }, []);
+
   const [tabStage, setTabStage] = useState<0 | 1>(0);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -232,7 +250,7 @@ export default function POSPage() {
   }, [q]);
 
   useEffect(() => {
-    const onPointerDown = (e: PointerEvent) => {
+    const handler = (e: Event) => {
       const t = e.target as Node;
       const inSearch = !!searchRef.current && searchRef.current.contains(t);
       const inResults = !!resultsRef.current && resultsRef.current.contains(t);
@@ -243,10 +261,13 @@ export default function POSPage() {
       if (e.key === "Escape") setOpenResults(false);
     };
 
-    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("mousedown", handler);
+    window.addEventListener("touchstart", handler, { passive: true });
     window.addEventListener("keydown", onKeyDown);
+
     return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("mousedown", handler);
+      window.removeEventListener("touchstart", handler);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
@@ -258,6 +279,23 @@ export default function POSPage() {
     const el = itemRefs.current[activeIndex];
     el?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, openResults]);
+
+  useEffect(() => {
+    if (!openResults) return;
+
+    syncResultsPos();
+
+    const onScroll = () => syncResultsPos();
+    const onResize = () => syncResultsPos();
+
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [openResults, found.length, syncResultsPos]);
 
   const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!openResults || found.length === 0) {
@@ -779,6 +817,8 @@ export default function POSPage() {
             {openResults && found.length > 0 && (
               <div
                 ref={resultsRef}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
                 className="absolute left-0 right-0 z-[60] mt-2 rounded-xl overflow-hidden"
                 style={{
                   backgroundColor: COLORS.input,
@@ -787,7 +827,7 @@ export default function POSPage() {
                     "0 0 18px rgba(0,0,0,.35), 0 0 22px rgba(0,255,255,.07), 0 0 22px rgba(255,0,255,.07)",
                 }}
               >
-                <div className="max-h-56 overflow-auto">
+                <div className="max-h-56 overflow-auto overscroll-contain touch-pan-y">
                   <ul className="divide-y divide-[#1E1F4B]">
                     {found.map((p, idx) => (
                       <li key={p.id}>
@@ -1171,75 +1211,13 @@ export default function POSPage() {
                     onKeyDown={onSearchKeyDown}
                     onFocus={() => {
                       if (found.length > 0) setOpenResults(true);
+                      syncResultsPos();
                     }}
                   />
 
                   {!!q && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
                       {loading ? "Buscando..." : "Enter ↵"}
-                    </div>
-                  )}
-
-                  {openResults && found.length > 0 && (
-                    <div
-                      ref={resultsRef}
-                      className="absolute left-0 right-0 z-[60] mt-2 rounded-xl overflow-hidden"
-                      style={{
-                        backgroundColor: COLORS.input,
-                        border: `1px solid ${COLORS.border}`,
-                        boxShadow:
-                          "0 0 18px rgba(0,0,0,.35), 0 0 22px rgba(0,255,255,.07), 0 0 22px rgba(255,0,255,.07)",
-                      }}
-                    >
-                      <div className="max-h-80 overflow-auto">
-                        <ul className="divide-y divide-[#1E1F4B]">
-                          {found.map((p, idx) => (
-                            <li key={p.id}>
-                              <button
-                                ref={(el) => {
-                                  itemRefs.current[idx] = el;
-                                }}
-                                className="w-full text-left px-3 py-3 transition"
-                                style={{
-                                  backgroundColor:
-                                    idx === activeIndex
-                                      ? "#191B4B"
-                                      : "transparent",
-                                }}
-                                onClick={() => add(p)}
-                                onMouseEnter={() => setActiveIndex(idx)}
-                              >
-                                {/* tu contenido igual */}
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="text-xs text-gray-400 font-mono truncate">
-                                      {p.sku}
-                                    </div>
-                                    <div className="font-medium truncate">
-                                      {p.name}
-                                    </div>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <div className="font-semibold text-cyan-300">
-                                      {fmt(Number(p.price))}
-                                    </div>
-                                    <div className="text-[11px] text-gray-300">
-                                      Stock: {Number(p.stock ?? 0)}
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div
-                        className="px-3 py-2 text-[11px] text-gray-400"
-                        style={{ borderTop: `1px solid ${COLORS.border}` }}
-                      >
-                        ↑ ↓ para navegar • Enter agrega • Esc cierra
-                      </div>
                     </div>
                   )}
                 </div>
@@ -1592,6 +1570,74 @@ export default function POSPage() {
           </aside>
         </div>
       </div>
+
+      {/* ===== DESKTOP RESULTS PORTAL (encima de todo) ===== */}
+      {openResults && found.length > 0 && resultsPos && (
+        <div
+          ref={resultsRef}
+          className="hidden lg:block fixed z-[9999]"
+          style={{
+            left: resultsPos.left,
+            top: resultsPos.top,
+            width: resultsPos.width,
+          }}
+        >
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{
+              backgroundColor: COLORS.input,
+              border: `1px solid ${COLORS.border}`,
+              boxShadow:
+                "0 0 18px rgba(0,0,0,.45), 0 0 22px rgba(0,255,255,.12), 0 0 22px rgba(255,0,255,.12)",
+            }}
+          >
+            <div className="max-h-80 overflow-auto">
+              <ul className="divide-y divide-[#1E1F4B]">
+                {found.map((p, idx) => (
+                  <li key={p.id}>
+                    <button
+                      ref={(el) => {
+                        itemRefs.current[idx] = el;
+                      }}
+                      className="w-full text-left px-3 py-3 transition"
+                      style={{
+                        backgroundColor:
+                          idx === activeIndex ? "#191B4B" : "transparent",
+                      }}
+                      onClick={() => add(p)}
+                      onMouseEnter={() => setActiveIndex(idx)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs text-gray-400 font-mono truncate">
+                            {p.sku}
+                          </div>
+                          <div className="font-medium truncate">{p.name}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-semibold text-cyan-300">
+                            {fmt(Number(p.price))}
+                          </div>
+                          <div className="text-[11px] text-gray-300">
+                            Stock: {Number(p.stock ?? 0)}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div
+              className="px-3 py-2 text-[11px] text-gray-400"
+              style={{ borderTop: `1px solid ${COLORS.border}` }}
+            >
+              ↑ ↓ para navegar • Enter agrega • Esc cierra
+            </div>
+          </div>
+        </div>
+      )}
 
       <GamerToast
         open={toast.open}
