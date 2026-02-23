@@ -294,7 +294,7 @@ export default function ClientLayout({
           </button>
 
           <div className="flex items-center justify-between text-[11px] text-gray-400 px-1">
-            <span>© 2026</span>
+            <span>© 2026 v2.0</span>
             <span className="text-neon-2 font-semibold">GAMERLAND PC</span>
           </div>
         </footer>
