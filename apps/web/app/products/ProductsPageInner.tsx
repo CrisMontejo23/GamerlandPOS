@@ -380,6 +380,11 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
 
+  const hasSearch = q.trim().length > 0;
+  const hasCats = categoryFilters.length > 0;
+  const hasFilters = hasSearch || hasCats;
+  const hasData = rows.length > 0;
+
   const pageRows = useMemo(() => {
     const start = (safePage - 1) * PAGE_SIZE;
     return filteredRows.slice(start, start + PAGE_SIZE);
@@ -584,18 +589,63 @@ export default function ProductsPage() {
 
               {/* Acciones rápidas */}
               <div className="flex flex-wrap gap-2 justify-between lg:justify-end">
-                {(q || categoryFilters.length > 0 || rows.length > 0) && (
-                  <div
-                    className="text-xs text-gray-300 rounded-xl px-3 py-2"
-                    style={{
-                      backgroundColor: UI.input,
-                      border: `1px solid ${UI.border}`,
-                    }}
-                  >
-                    <span className="text-gray-400">Resultados:</span>{" "}
-                    <b className="text-cyan-300">{total}</b>
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-2 justify-between lg:justify-end">
+                  {/* Resultados (si hay data) */}
+                  {hasData ? (
+                    <div
+                      className="text-xs text-gray-300 rounded-xl px-3 py-2"
+                      style={{
+                        backgroundColor: UI.input,
+                        border: `1px solid ${UI.border}`,
+                      }}
+                    >
+                      <span className="text-gray-400">Resultados:</span>{" "}
+                      <b className="text-cyan-300">{total}</b>
+                    </div>
+                  ) : (
+                    <div
+                      className="text-xs text-gray-500 rounded-xl px-3 py-2"
+                      style={{
+                        backgroundColor: UI.input,
+                        border: `1px solid ${UI.border}`,
+                        opacity: 0.7,
+                      }}
+                    >
+                      Cargando…
+                    </div>
+                  )}
+
+                  {/* Limpiar todo / Sin filtros */}
+                  {hasFilters ? (
+                    <button
+                      onClick={() => {
+                        setQ("");
+                        setCategoryFilters([]);
+                        setPage(1);
+                        syncUrl("", 1, []);
+                        showToast(
+                          "info",
+                          "Filtros limpiados",
+                          "Se mostraron todos los productos.",
+                        );
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wide"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(255,99,132,.18), rgba(255,0,128,.16))",
+                        border: `1px solid rgba(255,99,132,.45)`,
+                        boxShadow: UIX.softGlow,
+                      }}
+                      title="Quita búsqueda y categorías"
+                    >
+                      Limpiar todo
+                    </button>
+                  ) : (
+                    <div className="px-4 py-2 rounded-xl text-xs text-gray-500 border border-white/10">
+                      Sin filtros activos
+                    </div>
+                  )}
+                </div>
 
                 {q || categoryFilters.length ? (
                   <button
