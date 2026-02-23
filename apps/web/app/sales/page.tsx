@@ -833,7 +833,7 @@ export default function SalesPage() {
               )}
               {pageSlice.map((r, idx) => {
                 const k = `${r.saleId}-${(safePage - 1) * PAGE_SIZE + idx}`;
-                const isEditing = editKey === k;                
+                const isEditing = editKey === k;
                 const lineRevenue = r.revenue ?? r.unitPrice * r.qty;
                 const lineCost = r.cost ?? r.unitCost * r.qty;
                 const lineProfit = profitByRule(r);
@@ -841,58 +841,26 @@ export default function SalesPage() {
                 const showGroupHeader =
                   firstIndexBySale.get(r.saleId) === absoluteIndex;
 
-                const isFirstOfSale = showGroupHeader; // ya que es lo mismo
+                const isFirstOfSale = showGroupHeader;
 
                 return (
                   <>
-                    {showGroupHeader && (
-                      <tr>
-                        <td
-                          colSpan={isAdmin ? 12 : 11}
-                          className="px-3 pt-3 pb-2"
-                        >
-                          <div
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2"
-                            style={{
-                              backgroundColor: "rgba(0,255,255,.06)",
-                              border: `1px solid ${COLORS.border}`,
-                              boxShadow: "0 0 14px rgba(0,255,255,.10)",
-                            }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-300">
-                                Venta
-                              </span>
-                              <span
-                                className="px-2 py-1 rounded-full text-xs font-bold"
-                                style={{
-                                  background:
-                                    "linear-gradient(90deg, rgba(0,255,255,.18), rgba(255,0,255,.18))",
-                                  border: `1px solid ${COLORS.border}`,
-                                }}
-                              >
-                                #{r.saleId}
-                              </span>
-
-                              <span className="text-xs text-gray-400 hidden sm:inline">
-                                {new Date(r.createdAt).toLocaleString("es-CO")}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="text-gray-400">Vendedor:</span>
-                              <span className="text-cyan-200 font-semibold">
-                                {r.user?.username || "-"}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                     <tr
                       key={k}
                       className="hover:bg-[#191B4B]"
-                      style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                      style={{
+                        borderBottom: `1px solid ${COLORS.border}`,
+
+                        // ✅ “contorno” entre ventas SIN fila extra
+                        ...(isFirstOfSale
+                          ? {
+                              borderTop: `2px solid ${COLORS.border}`,
+                              boxShadow:
+                                "inset 0 1px 0 rgba(0,255,255,.22), inset 0 2px 0 rgba(255,0,255,.16), inset 3px 0 0 rgba(0,255,255,.10)",
+                              backgroundColor: "rgba(0,255,255,.03)",
+                            }
+                          : {}),
+                      }}
                     >
                       <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
                       <Td className="font-semibold text-cyan-200">
