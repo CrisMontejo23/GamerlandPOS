@@ -1036,7 +1036,7 @@ export default function SalesPage() {
                                 </span>
                               </button>
 
-                              {/* Eliminar ítem (en TODAS las filas) */}
+                              {/* Eliminar ítem (en TODAS las filas)
                               <button
                                 onClick={() =>
                                   deleteSaleItem(
@@ -1058,7 +1058,29 @@ export default function SalesPage() {
                                     className="opacity-90 object-contain"
                                   />
                                 </span>
-                              </button>                              
+                              </button> */}
+
+                              {/* Eliminar venta (solo en la primera fila de la venta) */}
+                              {isFirstOfSale && (
+                                <button
+                                  onClick={() => deleteSale(r.saleId)}
+                                  className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
+                                  title="Eliminar venta"
+                                  aria-label="Eliminar venta"
+                                >
+                                  <span
+                                    className={`relative ${ACTION_ICON.box}`}
+                                  >
+                                    <Image
+                                      src="/borrar.png"
+                                      alt="Eliminar venta"
+                                      fill
+                                      sizes={ACTION_ICON.sizes}
+                                      className="opacity-90 object-contain"
+                                    />
+                                  </span>
+                                </button>
+                              )}
                             </>
                           ) : (
                             <>
