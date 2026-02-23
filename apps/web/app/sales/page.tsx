@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../auth/AuthProvider";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
 /* ===== UI: GamerToast / GamerConfirm ===== */
@@ -24,8 +24,8 @@ function GamerToast({
     kind === "success"
       ? "linear-gradient(90deg, rgba(0,255,255,.8), rgba(255,0,255,.8))"
       : kind === "error"
-      ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
-      : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.9))";
+        ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.8))"
+        : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.9))";
 
   return (
     <div
@@ -46,8 +46,8 @@ function GamerToast({
             kind === "success"
               ? "0 0 22px rgba(0,255,255,.25), 0 0 34px rgba(255,0,255,.25)"
               : kind === "error"
-              ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
-              : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
+                ? "0 0 22px rgba(255,99,132,.25), 0 0 34px rgba(255,0,128,.25)"
+                : "0 0 22px rgba(99,102,241,.25), 0 0 34px rgba(168,85,247,.25)",
         }}
       >
         <div
@@ -69,8 +69,8 @@ function GamerToast({
                   kind === "success"
                     ? "#7CF9FF"
                     : kind === "error"
-                    ? "#ff90b1"
-                    : "#c4b5fd",
+                      ? "#ff90b1"
+                      : "#c4b5fd",
               }}
             >
               {kind === "success" ? "✔" : kind === "error" ? "!" : "i"}
@@ -248,7 +248,7 @@ function rangeFrom(period: Period, baseISO: string) {
     const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
     const lastDay = new Date(y, m + 1, 0).getDate();
     const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(
-      lastDay
+      lastDay,
     ).padStart(2, "0")}`;
     return { from: start, to: end };
   }
@@ -298,13 +298,23 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(false);
   const [paperTotal, setPaperTotal] = useState(0);
 
+  const tableTopRef = useRef<HTMLDivElement | null>(null);
+  const [showToTop, setShowToTop] = useState(false);
+
+  // ===== filtros UI tipo Inventario =====
+  const [q, setQ] = useState(""); // búsqueda libre (sku/nombre/vendedor/método)
+  const [onlyNotTransaction, setOnlyNotTransaction] = useState(true); // oculta TRANSACCION por defecto
+
+  const filtersActive =
+    (q && q.trim().length > 0) || (!onlyNotTransaction ? true : false);
+
   // Paginación
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
 
   const { from, to } = useMemo(
     () => rangeFrom(period, baseDate),
-    [period, baseDate]
+    [period, baseDate],
   );
 
   const load = async () => {
@@ -315,7 +325,7 @@ export default function SalesPage() {
 
       data.sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
       setRows(data);
 
@@ -343,11 +353,11 @@ export default function SalesPage() {
 
     const revenue = summaryRows.reduce(
       (a, r) => a + (r.revenue ?? r.unitPrice * r.qty),
-      0
+      0,
     );
     const cost = summaryRows.reduce(
       (a, r) => a + (r.cost ?? r.unitCost * r.qty),
-      0
+      0,
     );
     const profit = summaryRows.reduce((a, r) => a + profitByRule(r), 0);
 
@@ -373,27 +383,60 @@ export default function SalesPage() {
     }));
   }, [rows]);
 
+  const filteredRows = useMemo(() => {
+    const qq = q.trim().toUpperCase();
+
+    return rows.filter((r) => {
+      if (onlyNotTransaction && isTransactionRow(r)) return false;
+
+      if (!qq) return true;
+
+      const methodStr = (r.paymentMethods || [])
+        .map((p) => String(p.method || ""))
+        .join(" ")
+        .toUpperCase();
+
+      const hay =
+        String(r.sku || "")
+          .toUpperCase()
+          .includes(qq) ||
+        String(r.name || "")
+          .toUpperCase()
+          .includes(qq) ||
+        String(r.user?.username || "")
+          .toUpperCase()
+          .includes(qq) ||
+        methodStr.includes(qq) ||
+        String(r.saleId).includes(qq);
+
+      return hay;
+    });
+  }, [rows, q, onlyNotTransaction]);
+
   /* ===== Primer índice de cada venta (para mostrar botón eliminar una vez) ===== */
   const firstIndexBySale = useMemo(() => {
     const seen = new Set<number>();
     const idx = new Map<number, number>();
-    rows.forEach((r, i) => {
+
+    filteredRows.forEach((r, i) => {
       if (!seen.has(r.saleId)) {
         seen.add(r.saleId);
         idx.set(r.saleId, i);
       }
     });
+
     return idx;
-  }, [rows]);
+  }, [filteredRows]);
 
   /* ===== Paginación: derivados ===== */
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
 
   const pageSlice = useMemo(() => {
     const start = (safePage - 1) * PAGE_SIZE;
-    return rows.slice(start, start + PAGE_SIZE);
-  }, [rows, safePage]);
+    return filteredRows.slice(start, start + PAGE_SIZE);
+  }, [filteredRows, safePage]);
 
   const pageRange = useMemo(() => {
     const maxToShow = 7;
@@ -413,14 +456,14 @@ export default function SalesPage() {
   /* ===== Acciones admin ===== */
   const patchSale = async (
     id: number,
-    body: SalePatch | Record<string, unknown>
+    body: SalePatch | Record<string, unknown>,
   ) => {
     const r = await apiFetch(`/sales/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     });
     if (!r.ok) {
-      const e = await r.json().catch(() => ({} as { error?: string }));
+      const e = await r.json().catch(() => ({}) as { error?: string });
       alert(`Error: ${e?.error || "No se pudo actualizar"}`);
       return false;
     }
@@ -480,13 +523,13 @@ export default function SalesPage() {
       setConfirmOpen(false);
       const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
       if (!r.ok) {
-        const e = await r.json().catch(() => ({} as { error?: string }));
+        const e = await r.json().catch(() => ({}) as { error?: string });
         setToast({
           open: true,
           kind: "error",
           title: "Error al eliminar",
           subtitle: String(
-            e?.error || "No se pudo eliminar. Verifica el DELETE /sales/:id"
+            e?.error || "No se pudo eliminar. Verifica el DELETE /sales/:id",
           ),
         });
         setTimeout(hideToast, 2000);
@@ -522,18 +565,21 @@ export default function SalesPage() {
     <div className="max-w-7xl mx-auto text-gray-200 space-y-5">
       <h1 className="text-2xl font-bold text-cyan-400">Ventas</h1>
 
-      {/* Filtros */}
+      {/* Filtros (estilo Inventario) */}
       <section
-        className="rounded-xl p-4"
+        className="rounded-2xl p-4 space-y-3"
         style={{
           backgroundColor: COLORS.bgCard,
           border: `1px solid ${COLORS.border}`,
+          boxShadow:
+            "0 0 18px rgba(0,255,255,.10), 0 0 26px rgba(255,0,255,.10)",
         }}
       >
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          {/* Periodo + fecha + actualizar */}
+          <div className="flex flex-col sm:flex-row gap-2">
             <select
-              className="rounded px-3 py-2 outline-none"
+              className="rounded-lg px-3 py-2 outline-none text-sm"
               style={{
                 backgroundColor: COLORS.input,
                 border: `1px solid ${COLORS.border}`,
@@ -545,9 +591,10 @@ export default function SalesPage() {
               <option value="month">Mes</option>
               <option value="year">Año</option>
             </select>
+
             <input
               type="date"
-              className="rounded px-3 py-2 outline-none"
+              className="rounded-lg px-3 py-2 outline-none text-sm"
               style={{
                 backgroundColor: COLORS.input,
                 border: `1px solid ${COLORS.border}`,
@@ -555,9 +602,10 @@ export default function SalesPage() {
               value={baseDate}
               onChange={(e) => onChangeBaseDate(e.target.value)}
             />
+
             <button
               onClick={onClickActualizar}
-              className="px-4 rounded font-medium"
+              className="px-4 py-2 rounded-lg font-semibold text-sm"
               style={{
                 color: "#001014",
                 background:
@@ -570,34 +618,157 @@ export default function SalesPage() {
             </button>
           </div>
 
-          <div className="md:ml-auto grid grid-cols-1 sm:grid-cols-4 gap-3 w-full md:w-auto">
-            <SummaryCard title="Ventas" value={totals.revenue} accent="cyan" />
-            <SummaryCard title="Costo" value={totals.cost} accent="pink" />
-            <SummaryCard title="Ganancia" value={totals.profit} accent="cyan" />
-            <SummaryCard title="Papelería" value={paperTotal} accent="pink" />
+          {/* Buscador */}
+          <div className="relative flex-1">
+            <input
+              className="w-full rounded-lg px-3 py-2 pr-9 outline-none text-sm text-gray-100 placeholder-gray-400"
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+                boxShadow: q ? "0 0 14px rgba(0,255,255,.18)" : undefined,
+              }}
+              placeholder="Buscar por SKU, producto, vendedor, método o #venta…"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+            />
+            {q.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQ("");
+                  setPage(1);
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-100"
+                title="Limpiar búsqueda"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
-          {payBreakdown.length > 0 && (
-            <div className="md:ml-auto mt-2 md:mt-0 flex flex-wrap gap-2 text-sm">
-              {payBreakdown.map((p) => (
+          {/* Switch TRANSACCION */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setOnlyNotTransaction((v) => !v);
+                setPage(1);
+              }}
+              className="px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide"
+              style={{
+                backgroundColor: onlyNotTransaction
+                  ? "rgba(0,255,255,.12)"
+                  : COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+                color: onlyNotTransaction ? "#7CF9FF" : "#D1D5DB",
+              }}
+              title="Ocultar/mostrar líneas TRANSACCION"
+            >
+              {onlyNotTransaction
+                ? "Ocultando TRANSACCION"
+                : "Mostrando TRANSACCION"}
+            </button>
+          </div>
+        </div>
+
+        {/* Chips de filtros activos + limpiar */}
+        <div className="flex flex-wrap items-center gap-2">
+          {filtersActive ? (
+            <>
+              <span className="text-xs text-gray-300">Filtros activos:</span>
+
+              {q.trim() && (
                 <span
-                  key={p.method}
-                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs"
                   style={{
-                    backgroundColor: COLORS.input,
+                    backgroundColor: "rgba(0,255,255,.10)",
                     border: `1px solid ${COLORS.border}`,
                   }}
-                  title={p.method}
                 >
-                  <b className="text-cyan-300">
-                    {p.method === "QR_LLAVE" ? "QR / LLAVE" : p.method}:
-                  </b>{" "}
-                  {fmtCOP(p.amount)}
+                  <b className="text-cyan-300">Búsqueda:</b>{" "}
+                  <span className="text-gray-200">{q.trim()}</span>
+                  <button
+                    className="text-gray-400 hover:text-gray-100"
+                    onClick={() => setQ("")}
+                    title="Quitar búsqueda"
+                  >
+                    ✕
+                  </button>
                 </span>
-              ))}
-            </div>
+              )}
+
+              {!onlyNotTransaction && (
+                <span
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs"
+                  style={{
+                    backgroundColor: "rgba(255,0,255,.10)",
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                >
+                  <b className="text-pink-300">Incluye:</b> TRANSACCION
+                  <button
+                    className="text-gray-400 hover:text-gray-100"
+                    onClick={() => setOnlyNotTransaction(true)}
+                    title="Ocultar TRANSACCION"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
+              <button
+                onClick={() => {
+                  setQ("");
+                  setOnlyNotTransaction(true);
+                  setPage(1);
+                }}
+                className="ml-1 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+              >
+                Limpiar todo
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-gray-400">
+              Tip: usa búsqueda o activa/desactiva TRANSACCION para filtrar.
+            </span>
           )}
         </div>
+
+        {/* Resumen (igual pero más pro) */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <SummaryCard title="Ventas" value={totals.revenue} accent="cyan" />
+          <SummaryCard title="Costo" value={totals.cost} accent="pink" />
+          <SummaryCard title="Ganancia" value={totals.profit} accent="cyan" />
+          <SummaryCard title="Papelería" value={paperTotal} accent="pink" />
+        </div>
+
+        {/* Breakdown métodos */}
+        {payBreakdown.length > 0 && (
+          <div className="flex flex-wrap gap-2 text-sm">
+            {payBreakdown.map((p) => (
+              <span
+                key={p.method}
+                className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+                title={p.method}
+              >
+                <b className="text-cyan-300">
+                  {p.method === "QR_LLAVE" ? "QR / LLAVE" : p.method}:
+                </b>{" "}
+                {fmtCOP(p.amount)}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Tabla */}
@@ -608,12 +779,22 @@ export default function SalesPage() {
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        <div className="overflow-x-auto">
+        <div
+          className="overflow-x-auto max-h-[70vh]"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setShowToTop(el.scrollTop > 240);
+          }}
+        >
+          <div ref={tableTopRef} />
           <table className="w-full border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr
                 className="text-left"
-                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                style={{
+                  backgroundColor: "#101233",
+                  borderBottom: `1px solid ${COLORS.border}`,
+                }}
               >
                 <Th>Fecha</Th>
                 <Th>Vendedor</Th>
@@ -652,180 +833,242 @@ export default function SalesPage() {
               )}
               {pageSlice.map((r, idx) => {
                 const k = `${r.saleId}-${(safePage - 1) * PAGE_SIZE + idx}`;
-                const isEditing = editKey === k;
-                const isFirstOfSale =
-                  firstIndexBySale.get(r.saleId) ===
-                  (safePage - 1) * PAGE_SIZE + idx;
-
+                const isEditing = editKey === k;                
                 const lineRevenue = r.revenue ?? r.unitPrice * r.qty;
                 const lineCost = r.cost ?? r.unitCost * r.qty;
                 const lineProfit = profitByRule(r);
+                const absoluteIndex = (safePage - 1) * PAGE_SIZE + idx;
+                const showGroupHeader =
+                  firstIndexBySale.get(r.saleId) === absoluteIndex;
+
+                const isFirstOfSale = showGroupHeader; // ya que es lo mismo
 
                 return (
-                  <tr
-                    key={k}
-                    className="hover:bg-[#191B4B]"
-                    style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                  >
-                    <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
-                    <Td className="font-semibold text-cyan-200">
-                      {r.user?.username || "-"}
-                    </Td>
-                    <Td className="font-mono">{r.sku}</Td>
-                    <Td>{r.name}</Td>
+                  <>
+                    {showGroupHeader && (
+                      <tr>
+                        <td
+                          colSpan={isAdmin ? 12 : 11}
+                          className="px-3 pt-3 pb-2"
+                        >
+                          <div
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2"
+                            style={{
+                              backgroundColor: "rgba(0,255,255,.06)",
+                              border: `1px solid ${COLORS.border}`,
+                              boxShadow: "0 0 14px rgba(0,255,255,.10)",
+                            }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-300">
+                                Venta
+                              </span>
+                              <span
+                                className="px-2 py-1 rounded-full text-xs font-bold"
+                                style={{
+                                  background:
+                                    "linear-gradient(90deg, rgba(0,255,255,.18), rgba(255,0,255,.18))",
+                                  border: `1px solid ${COLORS.border}`,
+                                }}
+                              >
+                                #{r.saleId}
+                              </span>
 
-                    {/* Precio (editable) */}
-                    <Td className="text-right">
-                      {isEditing ? (
-                        <input
-                          className="rounded px-2 py-1 w-28 text-right outline-none"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          type="number"
-                          min={0}
-                          value={editPrice}
-                          onChange={(e) =>
-                            setEditPrice(
-                              e.target.value === ""
-                                ? ""
-                                : Math.max(0, Number(e.target.value))
-                            )
-                          }
-                        />
-                      ) : (
-                        fmtCOP(r.unitPrice)
-                      )}
-                    </Td>
+                              <span className="text-xs text-gray-400 hidden sm:inline">
+                                {new Date(r.createdAt).toLocaleString("es-CO")}
+                              </span>
+                            </div>
 
-                    {/* Costo (solo lectura; el back lo maneja) */}
-                    <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-gray-400">Vendedor:</span>
+                              <span className="text-cyan-200 font-semibold">
+                                {r.user?.username || "-"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    <tr
+                      key={k}
+                      className="hover:bg-[#191B4B]"
+                      style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                    >
+                      <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
+                      <Td className="font-semibold text-cyan-200">
+                        {r.user?.username || "-"}
+                      </Td>
+                      <Td className="font-mono">{r.sku}</Td>
+                      <Td>{r.name}</Td>
 
-                    {/* Cantidad (editable) */}
-                    <Td className="text-center">
-                      {isEditing ? (
-                        <input
-                          className="rounded px-2 py-1 w-20 text-center outline-none"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          type="number"
-                          min={1}
-                          value={editQty}
-                          onChange={(e) =>
-                            setEditQty(
-                              e.target.value === ""
-                                ? ""
-                                : Math.max(1, Number(e.target.value))
-                            )
-                          }
-                        />
-                      ) : (
-                        r.qty
-                      )}
-                    </Td>
-
-                    <Td className="text-right text-cyan-300">
-                      {fmtCOP(lineRevenue)}
-                    </Td>
-                    <Td className="text-right">{fmtCOP(lineCost)}</Td>
-                    <Td className="text-right text-pink-300">
-                      {fmtCOP(lineProfit)}
-                    </Td>
-
-                    <Td>
-                      <div className="flex flex-wrap gap-1">
-                        {r.paymentMethods.map((p, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 rounded text-xs"
+                      {/* Precio (editable) */}
+                      <Td className="text-right">
+                        {isEditing ? (
+                          <input
+                            className="rounded px-2 py-1 w-28 text-right outline-none"
                             style={{
                               backgroundColor: COLORS.input,
                               border: `1px solid ${COLORS.border}`,
                             }}
-                            title={p.method}
-                          >
-                            {p.method === "QR_LLAVE" ? "QR / LLAVE" : p.method}
-                          </span>
-                        ))}
-                      </div>
-                    </Td>
+                            type="number"
+                            min={0}
+                            value={editPrice}
+                            onChange={(e) =>
+                              setEditPrice(
+                                e.target.value === ""
+                                  ? ""
+                                  : Math.max(0, Number(e.target.value)),
+                              )
+                            }
+                          />
+                        ) : (
+                          fmtCOP(r.unitPrice)
+                        )}
+                      </Td>
 
-                    {isAdmin && (
+                      {/* Costo (solo lectura; el back lo maneja) */}
+                      <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
+
+                      {/* Cantidad (editable) */}
+                      <Td className="text-center">
+                        {isEditing ? (
+                          <input
+                            className="rounded px-2 py-1 w-20 text-center outline-none"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            type="number"
+                            min={1}
+                            value={editQty}
+                            onChange={(e) =>
+                              setEditQty(
+                                e.target.value === ""
+                                  ? ""
+                                  : Math.max(1, Number(e.target.value)),
+                              )
+                            }
+                          />
+                        ) : (
+                          r.qty
+                        )}
+                      </Td>
+
+                      <Td className="text-right text-cyan-300">
+                        {fmtCOP(lineRevenue)}
+                      </Td>
+                      <Td className="text-right">{fmtCOP(lineCost)}</Td>
+                      <Td className="text-right text-pink-300">
+                        {fmtCOP(lineProfit)}
+                      </Td>
+
                       <Td>
-                        <div className="flex flex-wrap gap-2">
-                          {!isEditing ? (
-                            <>
-                              {/* Editar (icono) */}
+                        <div className="flex flex-wrap gap-1">
+                          {r.paymentMethods.map((p, i) => {
+                            const m = String(p.method || "").toUpperCase();
+                            const tone = m.includes("EFECT")
+                              ? "rgba(0,255,255,.10)"
+                              : m.includes("DATA")
+                                ? "rgba(255,0,255,.10)"
+                                : m.includes("QR")
+                                  ? "rgba(99,102,241,.12)"
+                                  : "rgba(255,255,255,.06)";
 
-                              <button
-                                onClick={() => startEditLine(k, r)}
-                                className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
-                                title="Editar (precio / cantidad)"
-                                aria-label="Editar venta"
+                            return (
+                              <span
+                                key={i}
+                                className="px-2 py-0.5 rounded-full text-xs"
+                                style={{
+                                  backgroundColor: tone,
+                                  border: `1px solid ${COLORS.border}`,
+                                }}
+                                title={p.method}
                               >
-                                <span className={`relative ${ACTION_ICON.box}`}>
-                                  <Image
-                                    src="/edit.png"
-                                    alt="Editar"
-                                    fill
-                                    sizes={ACTION_ICON.sizes}
-                                    className="opacity-90 object-contain"
-                                  />
-                                </span>
-                              </button>
+                                {p.method === "QR_LLAVE"
+                                  ? "QR / LLAVE"
+                                  : p.method}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </Td>
 
-                              {/* Eliminar sólo en la primera fila visible de la venta */}
-                              {isFirstOfSale && (
+                      {isAdmin && (
+                        <Td>
+                          <div className="flex flex-wrap gap-2">
+                            {!isEditing ? (
+                              <>
+                                {/* Editar (icono) */}
+
                                 <button
-                                  onClick={() => deleteSale(r.saleId)}
+                                  onClick={() => startEditLine(k, r)}
                                   className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
-                                  title="Eliminar venta"
-                                  aria-label="Eliminar venta"
+                                  title="Editar (precio / cantidad)"
+                                  aria-label="Editar venta"
                                 >
                                   <span
                                     className={`relative ${ACTION_ICON.box}`}
                                   >
                                     <Image
-                                      src="/borrar.png"
-                                      alt="Eliminar"
+                                      src="/edit.png"
+                                      alt="Editar"
                                       fill
                                       sizes={ACTION_ICON.sizes}
                                       className="opacity-90 object-contain"
                                     />
                                   </span>
                                 </button>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              {/* Mientras está en edición, dejamos Guardar / Cancelar como texto */}
-                              <button
-                                onClick={() => saveEditLine(r)}
-                                className="px-3 py-1 rounded text-sm font-semibold"
-                                style={{
-                                  backgroundColor: "#0bd977",
-                                  color: "#001014",
-                                }}
-                                disabled={editQty === "" || editPrice === ""}
-                              >
-                                Guardar
-                              </button>
-                              <button
-                                onClick={cancelEditLine}
-                                className="px-3 py-1 rounded text-sm font-medium"
-                                style={{ backgroundColor: "#374151" }}
-                              >
-                                Cancelar
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </Td>
-                    )}
-                  </tr>
+
+                                {/* Eliminar sólo en la primera fila visible de la venta */}
+                                {isFirstOfSale && (
+                                  <button
+                                    onClick={() => deleteSale(r.saleId)}
+                                    className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
+                                    title="Eliminar venta"
+                                    aria-label="Eliminar venta"
+                                  >
+                                    <span
+                                      className={`relative ${ACTION_ICON.box}`}
+                                    >
+                                      <Image
+                                        src="/borrar.png"
+                                        alt="Eliminar"
+                                        fill
+                                        sizes={ACTION_ICON.sizes}
+                                        className="opacity-90 object-contain"
+                                      />
+                                    </span>
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {/* Mientras está en edición, dejamos Guardar / Cancelar como texto */}
+                                <button
+                                  onClick={() => saveEditLine(r)}
+                                  className="px-3 py-1 rounded text-sm font-semibold"
+                                  style={{
+                                    backgroundColor: "#0bd977",
+                                    color: "#001014",
+                                  }}
+                                  disabled={editQty === "" || editPrice === ""}
+                                >
+                                  Guardar
+                                </button>
+                                <button
+                                  onClick={cancelEditLine}
+                                  className="px-3 py-1 rounded text-sm font-medium"
+                                  style={{ backgroundColor: "#374151" }}
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </Td>
+                      )}
+                    </tr>
+                  </>
                 );
               })}
             </tbody>
@@ -871,7 +1114,7 @@ export default function SalesPage() {
                   active={p === safePage}
                   onClick={() => setPage(p)}
                 />
-              )
+              ),
             )}
 
             <PagerButton
@@ -886,6 +1129,34 @@ export default function SalesPage() {
             />
           </div>
         </div>
+        {showToTop && (
+          <button
+            onClick={() => {
+              const container = document.querySelector(
+                ".overflow-x-auto.max-h-\\[70vh\\]",
+              ) as HTMLDivElement | null;
+
+              if (container) container.scrollTo({ top: 0, behavior: "smooth" });
+
+              // opcional: también enfoca el inicio
+              tableTopRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }}
+            className="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-full font-semibold text-sm"
+            style={{
+              color: "#001014",
+              background:
+                "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+              boxShadow:
+                "0 0 18px rgba(0,255,255,.25), 0 0 26px rgba(255,0,255,.2)",
+            }}
+            title="Ir al inicio"
+          >
+            ↑ Top
+          </button>
+        )}
       </section>
 
       <GamerConfirm
@@ -926,8 +1197,8 @@ function SummaryCard({
     accent === "cyan"
       ? "0 0 18px rgba(0,255,255,.25), inset 0 0 18px rgba(0,255,255,.08)"
       : accent === "pink"
-      ? "0 0 18px rgba(255,0,255,.25), inset 0 0 18px rgba(255,0,255,.08)"
-      : "inset 0 0 12px rgba(255,255,255,.04)";
+        ? "0 0 18px rgba(255,0,255,.25), inset 0 0 18px rgba(255,0,255,.08)"
+        : "inset 0 0 12px rgba(255,255,255,.04)";
   const titleColor =
     accent === "cyan" ? "#7CF9FF" : accent === "pink" ? "#FF7CFF" : COLORS.text;
   const border = `1px solid ${COLORS.border}`;
