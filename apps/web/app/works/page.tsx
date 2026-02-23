@@ -1141,33 +1141,32 @@ export default function WorksPage() {
     price: number,
     pendingNames: string[],
   ) {
-    const depAll = Number(w.deposit || 0); // suma de abonos ya calculada en el back
+    const depAll = Number(w.deposit || 0);
 
     const lineas: string[] = [
-      `Hola ${UU(w.customerName)} 🎮`,
-      `El producto "${UU(item.label)}" de tu trabajo ${UU(
-        w.code,
-      )} ya está LISTO. ✅`,
+      `Hola ${UU(w.customerName)}.`,
+      `Te confirmamos que el producto "${UU(item.label)}" del trabajo ${UU(w.code)} ya está listo.`,
     ];
 
     if (item.detail) {
-      lineas.push(`Se le hizo: ${UU(item.detail)}.`);
+      lineas.push(`Se realizó: ${UU(item.detail)}.`);
     }
 
     lineas.push(
-      `Precio del arreglo de este producto: ${toCOP(price)}.`,
-      `Abonos registrados a tu trabajo: ${toCOP(depAll)}.`,
+      `Valor de este producto: ${toCOP(price)}.`,
+      `Abonos registrados del trabajo: ${toCOP(depAll)}.`,
     );
 
     if (pendingNames.length > 0) {
       lineas.push(
-        `Aún falta por terminar: ${pendingNames
-          .map((n) => `"${UU(n)}"`)
-          .join(", ")}.`,
+        `Aún quedan pendientes: ${pendingNames.map((n) => UU(n)).join(", ")}.`,
+        `Te avisamos apenas estén listos.`,
       );
     } else {
       lineas.push(
-        `Este era el último producto de tu trabajo. ¡Gracias por confiar en Gamerland!`,
+        `Este era el último producto del trabajo.`,
+        `Puedes pasar a recoger cuando gustes en el horario de atención.`,
+        `Gracias por confiar en Gamerland.`,
       );
     }
 
@@ -1182,19 +1181,17 @@ export default function WorksPage() {
     saldo: number,
   ) {
     const lineas: string[] = [
-      `Hola ${UU(w.customerName)} 🎮`,
-      `¡Todos los productos de tu trabajo ${UU(w.code)} están LISTOS! ✅`,
-      `Se trabajó sobre:`,
+      `Hola ${UU(w.customerName)}.`,
+      `Te confirmamos que todos los productos del trabajo ${UU(w.code)} ya están listos.`,
+      `Resumen del trabajo:`,
     ];
 
     items.forEach((it, idx) => {
       const partes: string[] = [`${idx + 1}. ${UU(it.label)}`];
       if (it.detail) partes.push(`Trabajo: ${UU(it.detail)}`);
       const priceNum = toNum(it.price);
-      if (priceNum != null) {
-        partes.push(`Valor: ${toCOP(priceNum)}`);
-      }
-      lineas.push(partes.join(" — "));
+      if (priceNum != null) partes.push(`Valor: ${toCOP(priceNum)}`);
+      lineas.push(partes.join(" | "));
     });
 
     lineas.push(
@@ -1202,7 +1199,8 @@ export default function WorksPage() {
       `Total arreglos: ${toCOP(totalProducts)}.`,
       `Abonos registrados: ${toCOP(depAll)}.`,
       `Saldo a pagar: ${toCOP(saldo)}.`,
-      `Puedes pasar por tus productos en horario de atención. ¡Gracias por elegir Gamerland!`,
+      `Puedes pasar a recoger en horario de atención.`,
+      `Gracias por elegir Gamerland.`,
     );
 
     return lineas.join("\n");
@@ -1221,59 +1219,60 @@ export default function WorksPage() {
 
     const productos = items && items.length > 0 ? items : undefined;
 
-    // Mensaje especial si es garantía
+    // Garantía
     if (w.isWarranty) {
-      const lineasGarantia: string[] = [
-        `Hola ${UU(w.customerName)} 🎮`,
-        `Tu equipo ${UU(w.code)} fue recibido POR GARANTÍA. 🛠️`,
+      const lineas: string[] = [
+        `Hola ${UU(w.customerName)}.`,
+        `Confirmamos recepción del equipo por garantía. Trabajo: ${UU(w.code)}.`,
       ];
 
       if (productos) {
-        lineasGarantia.push(`Se recibió:`);
-        productos.forEach((it, idx) => {
-          lineasGarantia.push(`${idx + 1}. ${UU(it.label)}`);
-        });
+        lineas.push(`Productos recibidos:`);
+        productos.forEach((it, idx) =>
+          lineas.push(`${idx + 1}. ${UU(it.label)}`),
+        );
       } else {
-        lineasGarantia.push(
-          `Equipo: ${UU(w.item)} 🕹️`,
+        lineas.push(
+          `Equipo: ${UU(w.item)}`,
           `Descripción: ${UU(w.description)}`,
         );
       }
 
-      lineasGarantia.push(
-        `Este servicio NO genera cobro adicional por el mismo daño reportado.`,
-        `Si se detecta un daño diferente te informaremos antes de hacer cualquier cobro.`,
+      lineas.push(
+        `Este servicio no genera cobro adicional por el mismo daño reportado.`,
+        `Si se detecta una falla diferente, te informaremos antes de realizar cualquier cobro.`,
         `Gracias por confiar en Gamerland.`,
       );
-      return lineasGarantia.join("\n");
+
+      return lineas.join("\n");
     }
 
+    // Normal
     const partes: string[] = [
-      `Hola ${UU(w.customerName)} 🎮`,
-      `Tu trabajo ${UU(w.code)} fue RECIBIDO.`,
+      `Hola ${UU(w.customerName)}.`,
+      `Confirmamos recepción del trabajo ${UU(w.code)}.`,
     ];
 
     if (productos) {
-      partes.push(`Se recibió:`);
-      productos.forEach((it, idx) => {
-        partes.push(`${idx + 1}. ${UU(it.label)}`);
-      });
-    } else {
-      partes.push(
-        `Equipo: ${UU(w.item)} 🕹️`,
-        `Descripción: ${UU(w.description)}`,
+      partes.push(`Productos recibidos:`);
+      productos.forEach((it, idx) =>
+        partes.push(`${idx + 1}. ${UU(it.label)}`),
       );
+    } else {
+      partes.push(`Equipo: ${UU(w.item)}`, `Descripción: ${UU(w.description)}`);
     }
 
     if (w.quote != null) {
       partes.push(
-        `Cotización: ${toCOP(quote)}`,
-        `Abonos: ${toCOP(dep)}`,
-        `Saldo: ${toCOP(saldo)}`,
+        `Cotización: ${toCOP(quote)}.`,
+        `Abonos: ${toCOP(dep)}.`,
+        `Saldo: ${toCOP(saldo)}.`,
       );
+    } else if (dep > 0) {
+      partes.push(`Abonos: ${toCOP(dep)}.`);
     }
 
-    partes.push(`Gracias por elegirnos.`);
+    partes.push(`Te iremos informando el estado. Gracias por elegirnos.`);
     return partes.join("\n");
   }
 
@@ -1285,56 +1284,66 @@ export default function WorksPage() {
 
     if (newStatus === "IN_PROGRESS") {
       return [
-        `Hola ${UU(w.customerName)} 🎮`,
-        `Tu trabajo ${base} ha entrado EN PROCESO. 👨‍🔧`,
-        `Cuando esté FINALIZADO te enviaremos otro mensaje para que puedas pasar a recoger tu equipo.`,
+        `Hola ${UU(w.customerName)}.`,
+        `Tu trabajo ${base} ha iniciado proceso.`,
+        `Te avisaremos cuando esté finalizado.`,
       ].join("\n");
     }
 
     if (newStatus === "FINISHED") {
-      const lineas: string[] = [];
-      lineas.push(
-        `Hola ${UU(w.customerName)} 🎮`,
+      const lineas: string[] = [
+        `Hola ${UU(w.customerName)}.`,
         w.isWarranty
-          ? `Tu trabajo ${base} (GARANTÍA) está FINALIZADO. ✅`
-          : `Tu trabajo ${base} está FINALIZADO. ✅`,
-      );
-
-      lineas.push(`Descripción del trabajo: ${UU(w.description)}`);
+          ? `Tu trabajo ${base} (garantía) está finalizado.`
+          : `Tu trabajo ${base} está finalizado.`,
+        `Descripción del trabajo: ${UU(w.description)}`,
+      ];
 
       if (!w.isWarranty && quoteNum != null) {
         lineas.push(
-          `Cotización: ${toCOP(quoteNum)}`,
-          `Abono: ${toCOP(dep)}`,
-          `Saldo: ${toCOP(saldo ?? 0)}`,
+          `Cotización: ${toCOP(quoteNum)}.`,
+          `Abono: ${toCOP(dep)}.`,
+          `Saldo: ${toCOP(saldo ?? 0)}.`,
         );
       }
 
       if (w.isWarranty) {
         lineas.push(
-          `Servicio en garantía SIN costo adicional por el mismo daño reportado.`,
+          `Servicio por garantía sin costo adicional por el mismo daño reportado.`,
         );
       }
 
       lineas.push(
-        `Puedes pasar por tu equipo en horario de atención. ¡Gracias por elegir Gamerland!`,
+        `Puedes pasar a recoger en horario de atención.`,
+        `Gracias por elegir Gamerland.`,
       );
+
       return lineas.join("\n");
     }
 
     if (newStatus === "DELIVERED") {
       if (w.isWarranty) {
         return [
-          `Hola ${UU(w.customerName)} 🎮`,
-          `Tu equipo ${base} fue ENTREGADO por garantía. ✅`,
-          `Recuerda: este servicio NO tuvo costo adicional.`,
+          `Hola ${UU(w.customerName)}.`,
+          `Tu equipo del trabajo ${base} fue entregado (garantía).`,
+          `Recuerda: este servicio no tuvo costo adicional.`,
           `Si vuelve a presentar fallas, contáctanos para ayudarte.`,
         ].join("\n");
       }
-      return `${base} ENTREGADO. ✅ Recuerda: para cualquier garantía avísanos con tiempo para gestionarla.`;
+
+      // Mejor que el “solo una línea”
+      return [
+        `Hola ${UU(w.customerName)}.`,
+        `Tu equipo del trabajo ${base} fue entregado.`,
+        `Si necesitas soporte o garantía, escríbenos para ayudarte.`,
+        `Gracias por elegir Gamerland.`,
+      ].join("\n");
     }
 
-    return `${base} ahora está ${niceStatus[newStatus]}`;
+    return [
+      `Hola ${UU(w.customerName)}.`,
+      `Tu trabajo ${base} ahora está: ${niceStatus[newStatus]}.`,
+    ].join("\n");
   }
 
   // ====== Ordenar trabajos por fecha (NUEVO: recientes primero) ======
