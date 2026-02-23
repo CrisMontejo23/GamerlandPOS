@@ -7,8 +7,10 @@ import { apiFetch } from "../lib/api";
 type WorksStatus = {
   received: number;
   inProgress: number;
-  finished: number;
-  totalOpen: number;
+  finished: number; // OK (listos), pero aún NO entregados
+  delivered: number; // entregados (histórico)
+  totalOpen: number; // si tu backend lo maneja, lo mostramos, si no, lo calculamos
+  totalAll?: number; // opcional si backend lo trae
   lastUpdated?: string;
 };
 
@@ -147,6 +149,44 @@ export default function ReportsPage() {
     };
   }, [cashbox]);
 
+  /** ===== Métrica de salud de trabajos =====
+   * - "Pendientes" = Recibidos + En proceso (esto define el semáforo)
+   * - "Total local" = Recibidos + En proceso + Finalizados + Entregados (100%)
+   * - Finalizados = OK (listo), pero hasta que pasen por él se vuelve ENTREGADO
+   */
+  const worksStats = useMemo(() => {
+    const r = works?.received ?? 0;
+    const p = works?.inProgress ?? 0;
+    const f = works?.finished ?? 0;
+    const d = works?.delivered ?? 0;
+
+    const totalAll =
+      typeof works?.totalAll === "number" ? works.totalAll : r + p + f + d;
+
+    const pendientes = r + p; // SOLO esto pinta el semáforo
+    const okListos = f; // listos (OK)
+    const entregados = d;
+
+    const pct = (x: number) =>
+      totalAll > 0 ? Math.round((x / totalAll) * 100) : 0;
+
+    return {
+      r,
+      p,
+      f,
+      d,
+      pendientes,
+      totalAll,
+      okListos,
+      entregados,
+      pPend: pct(pendientes),
+      pRec: pct(r),
+      pProc: pct(p),
+      pFin: pct(f),
+      pDel: pct(d),
+    };
+  }, [works]);
+
   return (
     <div
       className="min-h-[calc(100vh-64px)] px-3 sm:px-6 py-5 text-gray-200"
@@ -174,8 +214,8 @@ export default function ReportsPage() {
               <span className="text-pink-300">BALANCES</span>
             </h1>
             <div className="text-xs sm:text-sm" style={{ color: COLORS.muted }}>
-              Caja actual por método de pago + estado de trabajos de servicio
-              técnico
+              Caja actual por método de pago + estado de trabajos (recibidos,
+              proceso, finalizados y entregados)
             </div>
           </div>
 
@@ -282,24 +322,35 @@ export default function ReportsPage() {
             rightTag={works ? "OK" : "OFF"}
             tagTone={works ? "pink" : "muted"}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* KPIs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <MiniStat
                 label="Recibidos"
-                value={String(works?.received ?? 0)}
+                value={String(worksStats.r)}
+                hint={`${worksStats.pRec}%`}
                 accent="cyan"
               />
               <MiniStat
                 label="En proceso"
-                value={String(works?.inProgress ?? 0)}
+                value={String(worksStats.p)}
+                hint={`${worksStats.pProc}%`}
                 accent="pink"
               />
               <MiniStat
-                label="Finalizados"
-                value={String(works?.finished ?? 0)}
+                label="Finalizados (OK)"
+                value={String(worksStats.f)}
+                hint={`${worksStats.pFin}%`}
+                accent="cyan"
+              />
+              <MiniStat
+                label="Entregados"
+                value={String(worksStats.d)}
+                hint={`${worksStats.pDel}%`}
                 accent="cyan"
               />
             </div>
 
+            {/* Resumen + semáforo (solo pendientes) */}
             <div
               className="rounded-xl p-3 mt-4 flex items-center justify-between"
               style={{
@@ -309,24 +360,45 @@ export default function ReportsPage() {
             >
               <div>
                 <div className="text-xs" style={{ color: COLORS.muted }}>
-                  Abiertos (pendientes por entregar)
+                  Pendientes (Recibidos + En proceso)
                 </div>
-                <div className="text-lg font-bold text-cyan-300">
-                  {String(works?.totalOpen ?? 0)}
+                <div className="text-lg font-extrabold text-pink-300">
+                  {String(worksStats.pendientes)}
+                </div>
+                <div className="text-xs mt-1" style={{ color: COLORS.muted }}>
+                  Total local (100%):{" "}
+                  <b className="text-cyan-300">{worksStats.totalAll}</b>
                 </div>
               </div>
 
               <div className="text-right">
                 <div className="text-xs" style={{ color: COLORS.muted }}>
-                  Semáforo
+                  Semáforo (pendientes)
                 </div>
-                <WorkHealthPill totalOpen={works?.totalOpen ?? 0} />
+                <WorkHealthPill
+                  pending={worksStats.pendientes}
+                  totalAll={worksStats.totalAll}
+                />
+              </div>
+            </div>
+
+            {/* Barra de composición (100% del local) */}
+            <div className="mt-4">
+              <WorkCompositionBar
+                received={worksStats.r}
+                inProgress={worksStats.p}
+                finished={worksStats.f}
+                delivered={worksStats.d}
+              />
+              <div className="text-xs mt-2" style={{ color: COLORS.muted }}>
+                La barra representa el 100% de trabajos del local (recibidos +
+                proceso + finalizados + entregados).
               </div>
             </div>
 
             <div className="text-xs mt-3" style={{ color: COLORS.muted }}>
-              Tip: si quieres, puedo agregar “Entregados” como cuarto indicador,
-              pero lo dejé fuera como pediste.
+              * “Finalizados (OK)” son listos pero siguen contando hasta que
+              pasen a “Entregados”.
             </div>
           </Card>
         </div>
@@ -466,17 +538,27 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function WorkHealthPill({ totalOpen }: { totalOpen: number }) {
-  // Ajusta umbrales a tu gusto
+/** Semáforo basado SOLO en pendientes = (recibidos + en proceso) relativo al totalAll (100%) */
+function WorkHealthPill({
+  pending,
+  totalAll,
+}: {
+  pending: number;
+  totalAll: number;
+}) {
+  const ratio = totalAll > 0 ? pending / totalAll : 0;
+
+  // Umbrales (ajústalos si quieres)
+  // 0-10%: Bien | 10-25%: Alerta | >25%: Crítico
   const tone =
-    totalOpen <= 5
+    ratio <= 0.1
       ? {
           bg: "rgba(0,255,255,.10)",
           bd: "rgba(0,255,255,.22)",
           tx: "#7CF9FF",
           t: "Bien",
         }
-      : totalOpen <= 12
+      : ratio <= 0.25
         ? {
             bg: "rgba(255,0,255,.10)",
             bd: "rgba(255,0,255,.22)",
@@ -490,16 +572,29 @@ function WorkHealthPill({ totalOpen }: { totalOpen: number }) {
             t: "Crítico",
           };
 
+  const pct = totalAll > 0 ? Math.round(ratio * 100) : 0;
+
   return (
     <span
-      className="px-3 py-1 rounded-full text-xs font-bold"
+      className="px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-2"
       style={{
         backgroundColor: tone.bg,
         border: `1px solid ${tone.bd}`,
         color: tone.tx,
       }}
+      title={`Pendientes: ${pending} / ${totalAll} (${pct}%)`}
     >
       {tone.t}
+      <span
+        className="px-2 py-0.5 rounded-full text-[10px]"
+        style={{
+          backgroundColor: "rgba(0,0,0,.18)",
+          border: "1px solid rgba(255,255,255,.10)",
+          color: "#E5E7EB",
+        }}
+      >
+        {pct}%
+      </span>
     </span>
   );
 }
@@ -543,6 +638,137 @@ function BarSplit({ a, b, c }: { a: number; b: number; c: number }) {
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/** Barra 100% del local (Recibidos + Proceso + Finalizados + Entregados) */
+function WorkCompositionBar({
+  received,
+  inProgress,
+  finished,
+  delivered,
+}: {
+  received: number;
+  inProgress: number;
+  finished: number;
+  delivered: number;
+}) {
+  const total = received + inProgress + finished + delivered;
+
+  const pct = (x: number) => (total > 0 ? (x / total) * 100 : 0);
+
+  const pr = pct(received);
+  const pp = pct(inProgress);
+  const pf = pct(finished);
+  const pd = pct(delivered);
+
+  return (
+    <div>
+      <div
+        className="rounded-full overflow-hidden h-3"
+        style={{
+          backgroundColor: "rgba(255,255,255,.06)",
+          border: `1px solid ${COLORS.border}`,
+        }}
+        title={`Recibidos ${Math.round(pr)}% | Proceso ${Math.round(pp)}% | Finalizados ${Math.round(pf)}% | Entregados ${Math.round(pd)}%`}
+      >
+        <div className="h-full flex">
+          {/* Recibidos */}
+          <div
+            style={{
+              width: `${pr}%`,
+              background:
+                "linear-gradient(90deg, rgba(0,255,255,.75), rgba(0,255,255,.30))",
+            }}
+          />
+          {/* Proceso */}
+          <div
+            style={{
+              width: `${pp}%`,
+              background:
+                "linear-gradient(90deg, rgba(255,0,255,.75), rgba(255,0,255,.30))",
+            }}
+          />
+          {/* Finalizados (OK) */}
+          <div
+            style={{
+              width: `${pf}%`,
+              background:
+                "linear-gradient(90deg, rgba(124,249,255,.55), rgba(124,249,255,.22))",
+            }}
+          />
+          {/* Entregados */}
+          <div
+            style={{
+              width: `${pd}%`,
+              background:
+                "linear-gradient(90deg, rgba(255,124,255,.55), rgba(255,124,255,.22))",
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+        <LegendItem
+          label="Recibidos"
+          value={`${received} (${Math.round(pr)}%)`}
+          tone="cyan"
+        />
+        <LegendItem
+          label="En proceso"
+          value={`${inProgress} (${Math.round(pp)}%)`}
+          tone="pink"
+        />
+        <LegendItem
+          label="Finalizados (OK)"
+          value={`${finished} (${Math.round(pf)}%)`}
+          tone="muted"
+        />
+        <LegendItem
+          label="Entregados"
+          value={`${delivered} (${Math.round(pd)}%)`}
+          tone="muted"
+        />
+      </div>
+    </div>
+  );
+}
+
+function LegendItem({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "cyan" | "pink" | "muted";
+}) {
+  const t =
+    tone === "cyan"
+      ? { c: "#7CF9FF", b: "rgba(0,255,255,.18)" }
+      : tone === "pink"
+        ? { c: "#FF7CFF", b: "rgba(255,0,255,.18)" }
+        : { c: "#D1D5DB", b: "rgba(255,255,255,.08)" };
+
+  return (
+    <div
+      className="rounded-xl p-2"
+      style={{
+        backgroundColor: "rgba(15,16,48,.55)",
+        border: `1px solid ${COLORS.border}`,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block w-2.5 h-2.5 rounded-full"
+          style={{ backgroundColor: t.b, boxShadow: `0 0 10px ${t.b}` }}
+        />
+        <div className="text-xs font-semibold" style={{ color: t.c }}>
+          {label}
+        </div>
+      </div>
+      <div className="text-sm font-bold mt-1">{value}</div>
     </div>
   );
 }
