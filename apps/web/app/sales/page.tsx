@@ -187,6 +187,7 @@ type Payment = {
 
 type Row = {
   saleId: number;
+  saleItemId: number;
   user?: { id: number; username: string } | null;
   createdAt: string;
   sku: string;
@@ -300,6 +301,57 @@ export default function SalesPage() {
 
   const tableTopRef = useRef<HTMLDivElement | null>(null);
   const [showToTop, setShowToTop] = useState(false);
+
+  const [confirmItemOpen, setConfirmItemOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<{
+    saleId: number;
+    saleItemId: number;
+    label: string;
+  } | null>(null);
+
+  const deleteSaleItem = (
+    saleId: number,
+    saleItemId: number,
+    label: string,
+  ) => {
+    setItemToDelete({ saleId, saleItemId, label });
+    setConfirmItemOpen(true);
+  };
+
+  const doDeleteSaleItem = async () => {
+    if (!itemToDelete) return;
+
+    setConfirmItemOpen(false);
+
+    const r = await apiFetch(
+      `/sales/${itemToDelete.saleId}/items/${itemToDelete.saleItemId}`,
+      { method: "DELETE" },
+    );
+
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}) as { error?: string });
+      setToast({
+        open: true,
+        kind: "error",
+        title: "No se pudo eliminar el ítem",
+        subtitle: String(e?.error || "Error eliminando item"),
+      });
+      setTimeout(hideToast, 2000);
+      setItemToDelete(null);
+      return;
+    }
+
+    setToast({
+      open: true,
+      kind: "success",
+      title: "Ítem eliminado",
+      subtitle: "Se eliminó solo esa línea de la venta.",
+    });
+    setTimeout(hideToast, 2000);
+
+    setItemToDelete(null);
+    load();
+  };
 
   // ===== filtros UI tipo Inventario =====
   const [q, setQ] = useState(""); // búsqueda libre (sku/nombre/vendedor/método)
@@ -532,7 +584,7 @@ export default function SalesPage() {
             e?.error || "No se pudo eliminar. Verifica el DELETE /sales/:id",
           ),
         });
-        setTimeout(hideToast, 2000);
+        setTimeout(hideToast, 2000);        
         return;
       }
       setToast({
@@ -844,199 +896,219 @@ export default function SalesPage() {
                 const isFirstOfSale = showGroupHeader;
 
                 return (
-                  <>
-                    <tr
-                      key={k}
-                      className="hover:bg-[#191B4B]"
-                      style={{
-                        borderBottom: `1px solid ${COLORS.border}`,
+                  <tr
+                    key={k}
+                    className="hover:bg-[#191B4B]"
+                    style={{
+                      borderBottom: `1px solid ${COLORS.border}`,
 
-                        // ✅ “contorno” entre ventas SIN fila extra
-                        ...(isFirstOfSale
-                          ? {
-                              borderTop: `2px solid ${COLORS.border}`,
-                              boxShadow:
-                                "inset 0 1px 0 rgba(0,255,255,.22), inset 0 2px 0 rgba(255,0,255,.16), inset 3px 0 0 rgba(0,255,255,.10)",
-                              backgroundColor: "rgba(0,255,255,.03)",
-                            }
-                          : {}),
-                      }}
-                    >
-                      <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
-                      <Td className="font-semibold text-cyan-200">
-                        {r.user?.username || "-"}
-                      </Td>
-                      <Td className="font-mono">{r.sku}</Td>
-                      <Td>{r.name}</Td>
+                      // ✅ “contorno” entre ventas SIN fila extra
+                      ...(isFirstOfSale
+                        ? {
+                            borderTop: `2px solid ${COLORS.border}`,
+                            boxShadow:
+                              "inset 0 1px 0 rgba(0,255,255,.22), inset 0 2px 0 rgba(255,0,255,.16), inset 3px 0 0 rgba(0,255,255,.10)",
+                            backgroundColor: "rgba(0,255,255,.03)",
+                          }
+                        : {}),
+                    }}
+                  >
+                    <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
+                    <Td className="font-semibold text-cyan-200">
+                      {r.user?.username || "-"}
+                    </Td>
+                    <Td className="font-mono">{r.sku}</Td>
+                    <Td>{r.name}</Td>
 
-                      {/* Precio (editable) */}
-                      <Td className="text-right">
-                        {isEditing ? (
-                          <input
-                            className="rounded px-2 py-1 w-28 text-right outline-none"
-                            style={{
-                              backgroundColor: COLORS.input,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
-                            type="number"
-                            min={0}
-                            value={editPrice}
-                            onChange={(e) =>
-                              setEditPrice(
-                                e.target.value === ""
-                                  ? ""
-                                  : Math.max(0, Number(e.target.value)),
-                              )
-                            }
-                          />
-                        ) : (
-                          fmtCOP(r.unitPrice)
-                        )}
-                      </Td>
+                    {/* Precio (editable) */}
+                    <Td className="text-right">
+                      {isEditing ? (
+                        <input
+                          className="rounded px-2 py-1 w-28 text-right outline-none"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          type="number"
+                          min={0}
+                          value={editPrice}
+                          onChange={(e) =>
+                            setEditPrice(
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(0, Number(e.target.value)),
+                            )
+                          }
+                        />
+                      ) : (
+                        fmtCOP(r.unitPrice)
+                      )}
+                    </Td>
 
-                      {/* Costo (solo lectura; el back lo maneja) */}
-                      <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
+                    {/* Costo (solo lectura; el back lo maneja) */}
+                    <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
 
-                      {/* Cantidad (editable) */}
-                      <Td className="text-center">
-                        {isEditing ? (
-                          <input
-                            className="rounded px-2 py-1 w-20 text-center outline-none"
-                            style={{
-                              backgroundColor: COLORS.input,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
-                            type="number"
-                            min={1}
-                            value={editQty}
-                            onChange={(e) =>
-                              setEditQty(
-                                e.target.value === ""
-                                  ? ""
-                                  : Math.max(1, Number(e.target.value)),
-                              )
-                            }
-                          />
-                        ) : (
-                          r.qty
-                        )}
-                      </Td>
+                    {/* Cantidad (editable) */}
+                    <Td className="text-center">
+                      {isEditing ? (
+                        <input
+                          className="rounded px-2 py-1 w-20 text-center outline-none"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          type="number"
+                          min={1}
+                          value={editQty}
+                          onChange={(e) =>
+                            setEditQty(
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(1, Number(e.target.value)),
+                            )
+                          }
+                        />
+                      ) : (
+                        r.qty
+                      )}
+                    </Td>
 
-                      <Td className="text-right text-cyan-300">
-                        {fmtCOP(lineRevenue)}
-                      </Td>
-                      <Td className="text-right">{fmtCOP(lineCost)}</Td>
-                      <Td className="text-right text-pink-300">
-                        {fmtCOP(lineProfit)}
-                      </Td>
+                    <Td className="text-right text-cyan-300">
+                      {fmtCOP(lineRevenue)}
+                    </Td>
+                    <Td className="text-right">{fmtCOP(lineCost)}</Td>
+                    <Td className="text-right text-pink-300">
+                      {fmtCOP(lineProfit)}
+                    </Td>
 
+                    <Td>
+                      <div className="flex flex-wrap gap-1">
+                        {r.paymentMethods.map((p, i) => {
+                          const m = String(p.method || "").toUpperCase();
+                          const tone = m.includes("EFECT")
+                            ? "rgba(0,255,255,.10)"
+                            : m.includes("DATA")
+                              ? "rgba(255,0,255,.10)"
+                              : m.includes("QR")
+                                ? "rgba(99,102,241,.12)"
+                                : "rgba(255,255,255,.06)";
+
+                          return (
+                            <span
+                              key={i}
+                              className="px-2 py-0.5 rounded-full text-xs"
+                              style={{
+                                backgroundColor: tone,
+                                border: `1px solid ${COLORS.border}`,
+                              }}
+                              title={p.method}
+                            >
+                              {p.method === "QR_LLAVE"
+                                ? "QR / LLAVE"
+                                : p.method}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </Td>
+
+                    {isAdmin && (
                       <Td>
-                        <div className="flex flex-wrap gap-1">
-                          {r.paymentMethods.map((p, i) => {
-                            const m = String(p.method || "").toUpperCase();
-                            const tone = m.includes("EFECT")
-                              ? "rgba(0,255,255,.10)"
-                              : m.includes("DATA")
-                                ? "rgba(255,0,255,.10)"
-                                : m.includes("QR")
-                                  ? "rgba(99,102,241,.12)"
-                                  : "rgba(255,255,255,.06)";
+                        <div className="flex flex-wrap gap-2">
+                          {!isEditing ? (
+                            <>
+                              {/* Editar (icono) */}
 
-                            return (
-                              <span
-                                key={i}
-                                className="px-2 py-0.5 rounded-full text-xs"
-                                style={{
-                                  backgroundColor: tone,
-                                  border: `1px solid ${COLORS.border}`,
-                                }}
-                                title={p.method}
+                              <button
+                                onClick={() => startEditLine(k, r)}
+                                className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
+                                title="Editar (precio / cantidad)"
+                                aria-label="Editar venta"
                               >
-                                {p.method === "QR_LLAVE"
-                                  ? "QR / LLAVE"
-                                  : p.method}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </Td>
+                                <span className={`relative ${ACTION_ICON.box}`}>
+                                  <Image
+                                    src="/edit.png"
+                                    alt="Editar"
+                                    fill
+                                    sizes={ACTION_ICON.sizes}
+                                    className="opacity-90 object-contain"
+                                  />
+                                </span>
+                              </button>
 
-                      {isAdmin && (
-                        <Td>
-                          <div className="flex flex-wrap gap-2">
-                            {!isEditing ? (
-                              <>
-                                {/* Editar (icono) */}
+                              {/* Eliminar ítem (en TODAS las filas) */}
+                              <button
+                                onClick={() =>
+                                  deleteSaleItem(
+                                    r.saleId,
+                                    r.saleItemId,
+                                    `${r.sku} - ${r.name}`,
+                                  )
+                                }
+                                className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
+                                title="Eliminar este ítem"
+                                aria-label="Eliminar ítem"
+                              >
+                                <span className={`relative ${ACTION_ICON.box}`}>
+                                  <Image
+                                    src="/borrar.png"
+                                    alt="Eliminar item"
+                                    fill
+                                    sizes={ACTION_ICON.sizes}
+                                    className="opacity-90 object-contain"
+                                  />
+                                </span>
+                              </button>
 
+                              {/* Eliminar venta (solo en la primera fila de la venta) */}
+                              {isFirstOfSale && (
                                 <button
-                                  onClick={() => startEditLine(k, r)}
+                                  onClick={() => deleteSale(r.saleId)}
                                   className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
-                                  title="Editar (precio / cantidad)"
-                                  aria-label="Editar venta"
+                                  title="Eliminar venta"
+                                  aria-label="Eliminar venta"
                                 >
                                   <span
                                     className={`relative ${ACTION_ICON.box}`}
                                   >
                                     <Image
-                                      src="/edit.png"
-                                      alt="Editar"
+                                      src="/borrar.png"
+                                      alt="Eliminar venta"
                                       fill
                                       sizes={ACTION_ICON.sizes}
                                       className="opacity-90 object-contain"
                                     />
                                   </span>
                                 </button>
-
-                                {/* Eliminar sólo en la primera fila visible de la venta */}
-                                {isFirstOfSale && (
-                                  <button
-                                    onClick={() => deleteSale(r.saleId)}
-                                    className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
-                                    title="Eliminar venta"
-                                    aria-label="Eliminar venta"
-                                  >
-                                    <span
-                                      className={`relative ${ACTION_ICON.box}`}
-                                    >
-                                      <Image
-                                        src="/borrar.png"
-                                        alt="Eliminar"
-                                        fill
-                                        sizes={ACTION_ICON.sizes}
-                                        className="opacity-90 object-contain"
-                                      />
-                                    </span>
-                                  </button>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                {/* Mientras está en edición, dejamos Guardar / Cancelar como texto */}
-                                <button
-                                  onClick={() => saveEditLine(r)}
-                                  className="px-3 py-1 rounded text-sm font-semibold"
-                                  style={{
-                                    backgroundColor: "#0bd977",
-                                    color: "#001014",
-                                  }}
-                                  disabled={editQty === "" || editPrice === ""}
-                                >
-                                  Guardar
-                                </button>
-                                <button
-                                  onClick={cancelEditLine}
-                                  className="px-3 py-1 rounded text-sm font-medium"
-                                  style={{ backgroundColor: "#374151" }}
-                                >
-                                  Cancelar
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </Td>
-                      )}
-                    </tr>
-                  </>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {/* Mientras está en edición, dejamos Guardar / Cancelar como texto */}
+                              <button
+                                onClick={() => saveEditLine(r)}
+                                className="px-3 py-1 rounded text-sm font-semibold"
+                                style={{
+                                  backgroundColor: "#0bd977",
+                                  color: "#001014",
+                                }}
+                                disabled={editQty === "" || editPrice === ""}
+                              >
+                                Guardar
+                              </button>
+                              <button
+                                onClick={cancelEditLine}
+                                className="px-3 py-1 rounded text-sm font-medium"
+                                style={{ backgroundColor: "#374151" }}
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </Td>
+                    )}
+                  </tr>
                 );
               })}
             </tbody>
@@ -1137,6 +1209,23 @@ export default function SalesPage() {
         onCancel={() => {
           setConfirmOpen(false);
           setConfirmAction(null);
+        }}
+      />
+
+      <GamerConfirm
+        open={confirmItemOpen}
+        title="¿Eliminar este ítem?"
+        message={
+          itemToDelete
+            ? `Se eliminará solo: ${itemToDelete.label}. La venta seguirá existiendo.`
+            : "Esta acción no se puede deshacer."
+        }
+        confirmText="Sí, eliminar ítem"
+        cancelText="Cancelar"
+        onConfirm={doDeleteSaleItem}
+        onCancel={() => {
+          setConfirmItemOpen(false);
+          setItemToDelete(null);
         }}
       />
 

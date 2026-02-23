@@ -691,19 +691,19 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req: AuthRequest, res) => {
       });
 
       // Movimientos de stock por cada ítem (salida con costo promedio actual)
-      for (const it of items) {
+      for (const it of s.items) {
         const prod = await tx.product.findUnique({
           where: { id: it.productId },
           select: { cost: true },
         });
-        const avgCost = Number(prod?.cost ?? 0);
+
         await tx.stockMovement.create({
           data: {
             productId: it.productId,
             type: "out",
             qty: it.qty,
-            unitCost: avgCost,
-            reference: `sale#${s.id}`,
+            unitCost: Number(prod?.cost ?? 0),
+            reference: `sale#${s.id}:item#${it.id}`, // ✅ por item
             userId,
           },
         });
@@ -780,20 +780,19 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
         // 1.2) Reemplazar items en BD
         await tx.saleItem.deleteMany({ where: { saleId: id } });
 
-        await tx.saleItem.createMany({
-          data: parsed.data.items.map((it) => ({
-            saleId: id,
-            productId: it.productId,
-            qty: it.qty,
-            unitPrice: it.unitPrice,
-            taxRate: 0,
-            discount: it.discount ?? 0,
-            total: it.unitPrice * it.qty - (it.discount ?? 0),
-          })),
-        });
-
-        // 1.3) Crear los OUT nuevos (con costo promedio ACTUAL del producto)
         for (const it of parsed.data.items) {
+          const created = await tx.saleItem.create({
+            data: {
+              saleId: id,
+              productId: it.productId,
+              qty: it.qty,
+              unitPrice: it.unitPrice,
+              taxRate: 0,
+              discount: it.discount ?? 0,
+              total: it.unitPrice * it.qty - (it.discount ?? 0),
+            },
+          });
+
           const prod = await tx.product.findUnique({
             where: { id: it.productId },
             select: { cost: true },
@@ -805,7 +804,7 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
               type: "out",
               qty: it.qty,
               unitCost: Number(prod?.cost ?? 0),
-              reference: `sale#${id}`, // 👈 dejamos la referencia base estable
+              reference: `sale#${id}:item#${created.id}`, // ✅
               userId,
             },
           });
@@ -892,48 +891,89 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
 });
 
 app.delete(
-  "/sales/:id",
+  "/sales/:saleId/items/:itemId",
   requireRole("ADMIN"),
   async (req: AuthRequest, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
+    const saleId = Number(req.params.saleId);
+    const itemId = Number(req.params.itemId);
+
+    if (!Number.isInteger(saleId) || !Number.isInteger(itemId)) {
       return res.status(400).json({ error: "id inválido" });
     }
 
-    try {
-      await prisma.$transaction(async (tx) => {
-        const sale = await tx.sale.findUnique({
-          where: { id },
-          select: { id: true },
-        });
+    const userId = req.user!.id;
 
-        if (!sale) {
-          // si prefieres 404:
-          const err: any = new Error("No encontrado");
-          err.code = "P2025";
-          throw err;
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const sale = await tx.sale.findUnique({
+          where: { id: saleId },
+          include: { items: true, payments: true },
+        });
+        if (!sale) throw new Error("No encontrado");
+
+        const item = sale.items.find((it) => it.id === itemId);
+        if (!item) throw new Error("Item no encontrado");
+
+        // Si es el último item, decide regla de negocio:
+        // 1) prohibir, o 2) borrar toda la venta.
+        if (sale.items.length === 1) {
+          throw new Error("No puedes dejar una venta sin items");
         }
 
-        // ✅ CLAVE: borra todos los movimientos de esa venta (out/in de edits/deletes, etc.)
+        // 1) borrar movimientos solo de ese item
         await tx.stockMovement.deleteMany({
-          where: { reference: { startsWith: `sale#${id}` } },
+          where: { reference: `sale#${saleId}:item#${itemId}` },
         });
 
-        // borrar pagos, items y venta
-        await tx.payment.deleteMany({ where: { saleId: id } });
-        await tx.saleItem.deleteMany({ where: { saleId: id } });
-        await tx.sale.delete({ where: { id } });
+        // 2) borrar el item
+        await tx.saleItem.delete({
+          where: { id: itemId },
+        });
+
+        // 3) recalcular totales con items restantes
+        const curItems = await tx.saleItem.findMany({ where: { saleId } });
+
+        const subtotal = curItems.reduce(
+          (a, it) => a + Number(it.unitPrice) * Number(it.qty),
+          0,
+        );
+        const discount = curItems.reduce(
+          (a, it) => a + Number(it.discount ?? 0),
+          0,
+        );
+        const tax = 0;
+        const total = subtotal + tax - discount;
+
+        // 4) validar pagos (tu sistema exige que sumen exacto)
+        const sumaPagos = sale.payments.reduce(
+          (a, p) => a + Number(p.amount),
+          0,
+        );
+
+        // Opción A (recomendada): NO permitir borrar item si pagos quedarían descuadrados
+        if (Math.abs(sumaPagos - total) > 0.01) {
+          throw new Error(
+            "Pagos descuadrados: ajusta pagos y vuelve a intentar",
+          );
+        }
+
+        // 5) actualizar venta
+        const updatedSale = await tx.sale.update({
+          where: { id: saleId },
+          data: { subtotal, discount, tax, total },
+          include: { items: true, payments: true },
+        });
+
+        return updatedSale;
       });
 
-      return res.json({ ok: true, id, restocked: true });
+      return res.json(result);
     } catch (e: unknown) {
-      const err = e as { code?: string; message?: string };
-      if (err?.code === "P2025" || err?.message === "No encontrado") {
-        return res.status(404).json({ error: "No encontrado" });
-      }
-      return res
-        .status(400)
-        .json({ error: err?.message || "No se pudo eliminar" });
+      const err = e as { message?: string };
+      const msg = err?.message || "No se pudo eliminar el item";
+      const status =
+        msg === "No encontrado" || msg === "Item no encontrado" ? 404 : 400;
+      return res.status(status).json({ error: msg });
     }
   },
 );
@@ -1254,7 +1294,8 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   //    Necesitamos items y el unitCost por venta/producto
   const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
   for (const m of outs) {
-    const saleId = Number((m.reference || "").split("#")[1] || 0);
+    const match = /sale#(\d+)/.exec(m.reference || "");
+    const saleId = match ? Number(match[1]) : 0;
     if (!saleId) continue;
     costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
   }
@@ -1262,6 +1303,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   const items = await prisma.saleItem.findMany({
     where: { sale: { createdAt: { gte: from, lte: to }, status: "paid" } },
     select: {
+      id: true, // ✅
       saleId: true,
       productId: true,
       qty: true,
@@ -1270,8 +1312,14 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
     },
   });
 
+  const costByRef = new Map<string, number>();
+  for (const m of outs) {
+    if (m.reference) costByRef.set(m.reference, Number(m.unitCost) || 0);
+  }
+
   const utilidadReglas = items.reduce((acc, it) => {
-    const unitCost = toN(costMap.get(`${it.saleId}:${it.productId}`));
+    const ref = `sale#${it.saleId}:item#${it.id}`;
+    const unitCost = toN(costByRef.get(ref));
     return (
       acc +
       profitByRule(
@@ -1324,6 +1372,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
     createdAt: Date;
     user: { id: number; username: string } | null;
     items: Array<{
+      id: number;
       productId: number;
       unitPrice: unknown;
       qty: unknown;
@@ -1339,25 +1388,19 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
   }>;
 
   // Costos unitarios por venta/producto (desde movimientos out)
-  const outs = (await prisma.stockMovement.findMany({
+  const outs = await prisma.stockMovement.findMany({
     where: {
       type: "out",
       createdAt: { gte: from, lte: to },
       reference: { startsWith: "sale#" },
     },
-    select: { productId: true, qty: true, unitCost: true, reference: true },
-  })) as Array<{
-    productId: number;
-    qty: unknown;
-    unitCost: unknown;
-    reference: string | null;
-  }>;
+    select: { unitCost: true, reference: true },
+  });
 
-  const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
+  const costByRef = new Map<string, number>(); // ref -> unitCost
   for (const m of outs) {
-    const saleId = Number((m.reference || "").split("#")[1] || 0);
-    if (!saleId) continue;
-    costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
+    if (!m.reference) continue;
+    costByRef.set(m.reference, Number(m.unitCost) || 0);
   }
 
   const rows = sales.flatMap((s) =>
@@ -1365,12 +1408,14 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       const unitPrice = toN(it.unitPrice);
       const qty = toN(it.qty);
       const discount = toN(it.discount);
-      const unitCost = toN(costMap.get(`${s.id}:${it.productId}`));
+      const ref = `sale#${s.id}:item#${it.id}`;
+      const unitCost = toN(costByRef.get(ref));
       const revenue = unitPrice * qty;
       const cost = unitCost * qty;
 
       return {
         saleId: s.id,
+        saleItemId: it.id,
         createdAt: s.createdAt,
         user: s.user ? { id: s.user.id, username: s.user.username } : null,
         sku: it.product?.sku ?? "",
