@@ -27,6 +27,18 @@ const UI = {
   glow: "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
 };
 
+const UIX = {
+  chipOn: "linear-gradient(90deg, rgba(0,255,255,.20), rgba(255,0,255,.18))",
+  chipOff: "rgba(255,255,255,.04)",
+  chipBorderOn: "rgba(0,255,255,.55)",
+  chipBorderOff: "rgba(255,255,255,.12)",
+  softGlow: "0 0 10px rgba(0,255,255,.18), 0 0 14px rgba(255,0,255,.16)",
+};
+
+const Badge = {
+  base: "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold tracking-wide",
+};
+
 const ACTION_ICON = {
   btn: "p-2 sm:p-1", // área táctil grande en móvil
   box: "h-9 w-9 sm:h-5 sm:w-5", // icono grande móvil / normal desktop
@@ -60,8 +72,8 @@ function GamerToast({
     kind === "success"
       ? "linear-gradient(90deg, rgba(0,255,255,.8), rgba(0,255,127,.8))"
       : kind === "error"
-      ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.9))"
-      : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.9))";
+        ? "linear-gradient(90deg, rgba(255,99,132,.9), rgba(255,0,128,.9))"
+        : "linear-gradient(90deg, rgba(99,102,241,.9), rgba(168,85,247,.9))";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pointer-events-none">
@@ -265,7 +277,7 @@ export default function ProductsPage() {
           showToast(
             "error",
             "No se pudo registrar el ingreso",
-            e?.error || "Verifica los datos e intenta de nuevo."
+            e?.error || "Verifica los datos e intenta de nuevo.",
           );
           return;
         }
@@ -273,7 +285,7 @@ export default function ProductsPage() {
         showToast(
           "success",
           "Ingreso de stock registrado",
-          `Producto ${stockProduct.sku} – +${stockQty} uds.`
+          `Producto ${stockProduct.sku} – +${stockQty} uds.`,
         );
       } else {
         const payload = {
@@ -292,7 +304,7 @@ export default function ProductsPage() {
           showToast(
             "error",
             "No se pudo registrar la salida",
-            e?.error || "Verifica los datos e intenta de nuevo."
+            e?.error || "Verifica los datos e intenta de nuevo.",
           );
           return;
         }
@@ -300,7 +312,7 @@ export default function ProductsPage() {
         showToast(
           "success",
           "Salida de stock registrada",
-          `Producto ${stockProduct.sku} – -${stockQty} uds.`
+          `Producto ${stockProduct.sku} – -${stockQty} uds.`,
         );
       }
 
@@ -310,7 +322,7 @@ export default function ProductsPage() {
       showToast(
         "error",
         "Error de comunicación",
-        "No se pudo contactar el servidor."
+        "No se pudo contactar el servidor.",
       );
     }
   };
@@ -340,9 +352,9 @@ export default function ProductsPage() {
       [...rows].sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", "es", {
           sensitivity: "base",
-        })
+        }),
       ),
-    [rows]
+    [rows],
   );
 
   // ====== Lista de categorías únicas ======
@@ -359,7 +371,7 @@ export default function ProductsPage() {
   const filteredRows = useMemo(() => {
     if (!categoryFilters.length) return sortedRows;
     return sortedRows.filter((p) =>
-      categoryFilters.includes(normCat(p.category))
+      categoryFilters.includes(normCat(p.category)),
     );
   }, [sortedRows, categoryFilters]);
 
@@ -399,7 +411,7 @@ export default function ProductsPage() {
   const syncUrl = (
     nextQ: string,
     nextPage: number,
-    nextCatFilters: string[]
+    nextCatFilters: string[],
   ) => {
     const params = new URLSearchParams(searchParams.toString());
     if (nextQ) params.set("q", nextQ);
@@ -430,7 +442,7 @@ export default function ProductsPage() {
         showToast(
           "error",
           "No se pudo eliminar",
-          e?.error || "El producto tiene ventas o movimientos registrados."
+          e?.error || "El producto tiene ventas o movimientos registrados.",
         );
         return;
       }
@@ -441,7 +453,7 @@ export default function ProductsPage() {
       showToast(
         "error",
         "Error al eliminar",
-        "Ocurrió un error inesperado eliminando el producto."
+        "Ocurrió un error inesperado eliminando el producto.",
       );
     } finally {
       setConfirmDeleteId(null);
@@ -487,13 +499,13 @@ export default function ProductsPage() {
       showToast(
         "success",
         "Producto creado",
-        "El producto se guardó correctamente."
+        "El producto se guardó correctamente.",
       );
     } else if (status === "updated") {
       showToast(
         "success",
         "Producto actualizado",
-        "Los cambios fueron guardados."
+        "Los cambios fueron guardados.",
       );
     }
 
@@ -532,63 +544,151 @@ export default function ProductsPage() {
           )}
         </div>
 
-        {/* Buscador + filtros categoría */}
-        <div className="flex flex-col gap-3 mb-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <input
-                className="rounded px-3 py-2 w-full text-gray-100 placeholder-gray-400 outline-none pr-8"
-                style={{
-                  backgroundColor: UI.input,
-                  border: `1px solid ${UI.border}`,
-                }}
-                placeholder="Buscar por nombre, SKU o categoría"
-                value={q}
-                onChange={(e) => onSearchChange(e.target.value)}
-              />
-              {q && (
-                <button
-                  type="button"
-                  onClick={clearSearch}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-100"
-                  title="Limpiar búsqueda"
+        {/* ===== Barra de filtros (mejor UX) ===== */}
+        <div className="mb-4 space-y-3">
+          {/* Buscador */}
+          <div
+            className="rounded-2xl p-3 sm:p-4"
+            style={{
+              backgroundColor: UI.bgCard,
+              border: `1px solid ${UI.border}`,
+            }}
+          >
+            <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+              <div className="relative flex-1">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 select-none">
+                  🔎
+                </div>
+                <input
+                  className="rounded-xl pl-10 pr-10 py-2.5 w-full text-gray-100 placeholder-gray-400 outline-none"
+                  style={{
+                    backgroundColor: UI.input,
+                    border: `1px solid ${UI.border}`,
+                    boxShadow: q ? UIX.softGlow : "none",
+                  }}
+                  placeholder="Buscar por nombre, SKU o categoría…"
+                  value={q}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                />
+                {q && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-300 hover:text-white rounded-md px-2 py-1 hover:bg-white/10"
+                    title="Limpiar búsqueda"
+                  >
+                    Limpiar ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Acciones rápidas */}
+              <div className="flex flex-wrap gap-2 justify-between lg:justify-end">
+                <div
+                  className="text-xs text-gray-300 rounded-xl px-3 py-2"
+                  style={{
+                    backgroundColor: UI.input,
+                    border: `1px solid ${UI.border}`,
+                  }}
                 >
-                  ✕
-                </button>
-              )}
+                  <span className="text-gray-400">Resultados:</span>{" "}
+                  <b className="text-cyan-300">{total}</b>
+                </div>
+
+                {q || categoryFilters.length ? (
+                  <button
+                    onClick={() => {
+                      setQ("");
+                      setCategoryFilters([]);
+                      setPage(1);
+                      syncUrl("", 1, []);
+                      showToast(
+                        "info",
+                        "Filtros limpiados",
+                        "Se mostraron todos los productos.",
+                      );
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wide"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, rgba(255,99,132,.18), rgba(255,0,128,.16))",
+                      border: `1px solid rgba(255,99,132,.45)`,
+                      boxShadow: UIX.softGlow,
+                    }}
+                    title="Quita búsqueda y categorías"
+                  >
+                    Limpiar todo
+                  </button>
+                ) : (
+                  <div className="px-4 py-2 rounded-xl text-xs text-gray-500 border border-white/10">
+                    Sin filtros activos
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Filtros activos (recordatorio visual) */}
+            {(q || categoryFilters.length) && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-gray-400">
+                  Filtros activos:
+                </span>
+
+                {q && (
+                  <span
+                    className={Badge.base}
+                    style={{
+                      backgroundImage: UIX.chipOn,
+                      border: `1px solid ${UIX.chipBorderOn}`,
+                      boxShadow: UIX.softGlow,
+                    }}
+                  >
+                    <span className="text-cyan-300">Búsqueda</span>
+                    <span className="text-gray-100 font-mono">{q}</span>
+                    <button
+                      onClick={clearSearch}
+                      className="ml-1 text-gray-200 hover:text-white rounded-full px-1 hover:bg-white/10"
+                      title="Quitar búsqueda"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )}
+
+                {categoryFilters.map((c) => (
+                  <span
+                    key={`active-${c}`}
+                    className={Badge.base}
+                    style={{
+                      backgroundImage: UIX.chipOn,
+                      border: `1px solid ${UIX.chipBorderOn}`,
+                      boxShadow: UIX.softGlow,
+                    }}
+                  >
+                    <span className="text-pink-300">CAT</span>
+                    <span className="text-gray-100">{c}</span>
+                    <button
+                      onClick={() => toggleCategoryFilter(c)}
+                      className="ml-1 text-gray-200 hover:text-white rounded-full px-1 hover:bg-white/10"
+                      title="Quitar categoría"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Categorías */}
           {allCategories.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-gray-300">Filtrar por categoría:</span>
-              {allCategories.map((cat) => {
-                const active = categoryFilters.includes(cat);
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => toggleCategoryFilter(cat)}
-                    className={`px-2 py-1 rounded border transition transform hover:scale-105 ${
-                      active
-                        ? "bg-cyan-500/20 text-cyan-300"
-                        : "text-gray-300 hover:bg-white/5"
-                    }`}
-                    style={{ borderColor: UI.border }}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
-              {categoryFilters.length > 0 && (
-                <button
-                  onClick={clearCategoryFilters}
-                  className="ml-2 px-2 py-1 rounded border text-[11px] uppercase tracking-wide text-gray-300 hover:bg-white/5"
-                  style={{ borderColor: UI.border }}
-                >
-                  Limpiar filtros
-                </button>
-              )}
-            </div>
+            <CategoryChips
+              all={allCategories}
+              selected={categoryFilters}
+              onToggle={toggleCategoryFilter}
+              onClear={clearCategoryFilters}
+              border={UI.border}
+            />
           )}
         </div>
 
@@ -616,13 +716,54 @@ export default function ProductsPage() {
               {pageRows.map((p) => (
                 <tr
                   key={p.id}
-                  className="border-b border-[#1E1F4B] hover:bg-[#191B4B]"
+                  className={[
+                    "border-b border-[#1E1F4B] transition",
+                    "hover:bg-[#191B4B]",
+                    p.active === false ? "opacity-60" : "",
+                  ].join(" ")}
                 >
                   <td className="py-2 px-3">{p.id}</td>
                   <td className="px-3 font-mono">{p.sku?.toUpperCase()}</td>
                   <td className="px-3">{p.name?.toUpperCase()}</td>
-                  <td className="px-3">{normCat(p.category) || "-"}</td>
-                  <td className="px-3 text-right">{Number(p.stock ?? 0)}</td>
+                  <td className="px-3">
+                    {normCat(p.category) ? (
+                      <span
+                        className={Badge.base}
+                        style={{
+                          backgroundColor: "rgba(99,102,241,.12)",
+                          border: `1px solid rgba(99,102,241,.35)`,
+                        }}
+                      >
+                        {normCat(p.category)}
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </td>
+                  <td className="px-3 text-right">
+                    <span
+                      className="inline-flex items-center justify-end rounded-lg px-2 py-1 text-xs font-bold"
+                      style={{
+                        backgroundColor: "#0F1030",
+                        border: `1px solid ${UI.border}`,
+                        boxShadow:
+                          Number(p.stock ?? 0) <= 0
+                            ? "0 0 10px rgba(255,0,128,.18)"
+                            : Number(p.stock ?? 0) <= 2
+                              ? "0 0 10px rgba(255,206,86,.18)"
+                              : "0 0 10px rgba(0,255,255,.15)",
+                        color:
+                          Number(p.stock ?? 0) <= 0
+                            ? "#ff4d8d"
+                            : Number(p.stock ?? 0) <= 2
+                              ? "#facc15"
+                              : "#67e8f9",
+                      }}
+                      title="Stock actual"
+                    >
+                      {Number(p.stock ?? 0)}
+                    </span>
+                  </td>
                   <td className="px-3 text-right text-cyan-300">
                     {fmtCOP(p.price)}
                   </td>
@@ -760,7 +901,7 @@ export default function ProductsPage() {
                       syncUrl(q, p, categoryFilters);
                     }}
                   />
-                )
+                ),
               )}
 
               <PagerButton
@@ -915,7 +1056,7 @@ export default function ProductsPage() {
                     value={stockQty}
                     onChange={(e) =>
                       setStockQty(
-                        e.target.value === "" ? "" : Number(e.target.value)
+                        e.target.value === "" ? "" : Number(e.target.value),
                       )
                     }
                   />
@@ -938,7 +1079,7 @@ export default function ProductsPage() {
                         value={stockUnitCost}
                         onChange={(e) =>
                           setStockUnitCost(
-                            e.target.value === "" ? "" : Number(e.target.value)
+                            e.target.value === "" ? "" : Number(e.target.value),
                           )
                         }
                       />
@@ -989,6 +1130,104 @@ export default function ProductsPage() {
         </div>
       )}
     </>
+  );
+}
+
+function CategoryChips({
+  all,
+  selected,
+  onToggle,
+  onClear,
+  border,
+}: {
+  all: string[];
+  selected: string[];
+  onToggle: (cat: string) => void;
+  onClear: () => void;
+  border: string;
+}) {
+  const [openAll, setOpenAll] = useState(false);
+
+  const MAX = 14;
+  const show = openAll ? all : all.slice(0, MAX);
+  const hidden = Math.max(0, all.length - MAX);
+
+  return (
+    <div
+      className="rounded-2xl p-3 sm:p-4"
+      style={{ backgroundColor: UI.bgCard, border: `1px solid ${border}` }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-200 font-semibold">
+            Categorías
+          </span>
+          <span
+            className="text-[11px] text-gray-300 rounded-full px-2 py-1"
+            style={{ backgroundColor: UI.input, border: `1px solid ${border}` }}
+          >
+            Seleccionadas: <b className="text-cyan-300">{selected.length}</b>
+          </span>
+        </div>
+
+        {selected.length > 0 ? (
+          <button
+            onClick={onClear}
+            className="text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-xl"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(255,99,132,.16), rgba(255,0,128,.14))",
+              border: `1px solid rgba(255,99,132,.45)`,
+              boxShadow: UIX.softGlow,
+            }}
+            title="Quitar todas las categorías"
+          >
+            Limpiar categorías
+          </button>
+        ) : (
+          <span className="text-xs text-gray-500">
+            Tip: toca una categoría para filtrar
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {show.map((cat) => {
+          const active = selected.includes(cat);
+          return (
+            <button
+              key={cat}
+              onClick={() => onToggle(cat)}
+              className={[
+                "px-3 py-2 rounded-xl text-xs font-semibold transition transform hover:scale-[1.02]",
+                "border",
+                active ? "text-gray-100" : "text-gray-300 hover:text-gray-100",
+              ].join(" ")}
+              style={{
+                backgroundImage: active ? UIX.chipOn : "none",
+                backgroundColor: active ? "transparent" : UIX.chipOff,
+                borderColor: active ? UIX.chipBorderOn : UIX.chipBorderOff,
+                boxShadow: active ? UIX.softGlow : "none",
+              }}
+              title={active ? "Quitar filtro" : "Aplicar filtro"}
+            >
+              {active ? "✓ " : ""}
+              {cat}
+            </button>
+          );
+        })}
+
+        {all.length > MAX && (
+          <button
+            onClick={() => setOpenAll((v) => !v)}
+            className="px-3 py-2 rounded-xl text-xs font-semibold border text-gray-200 hover:bg-white/5"
+            style={{ borderColor: border, backgroundColor: UI.input }}
+          >
+            {openAll ? "Ver menos" : `Ver más (+${hidden})`}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
