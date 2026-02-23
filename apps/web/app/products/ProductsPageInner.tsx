@@ -584,16 +584,18 @@ export default function ProductsPage() {
 
               {/* Acciones rápidas */}
               <div className="flex flex-wrap gap-2 justify-between lg:justify-end">
-                <div
-                  className="text-xs text-gray-300 rounded-xl px-3 py-2"
-                  style={{
-                    backgroundColor: UI.input,
-                    border: `1px solid ${UI.border}`,
-                  }}
-                >
-                  <span className="text-gray-400">Resultados:</span>{" "}
-                  <b className="text-cyan-300">{total}</b>
-                </div>
+                {(q || categoryFilters.length > 0 || rows.length > 0) && (
+                  <div
+                    className="text-xs text-gray-300 rounded-xl px-3 py-2"
+                    style={{
+                      backgroundColor: UI.input,
+                      border: `1px solid ${UI.border}`,
+                    }}
+                  >
+                    <span className="text-gray-400">Resultados:</span>{" "}
+                    <b className="text-cyan-300">{total}</b>
+                  </div>
+                )}
 
                 {q || categoryFilters.length ? (
                   <button
