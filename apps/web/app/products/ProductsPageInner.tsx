@@ -523,7 +523,7 @@ export default function ProductsPage() {
     <>
       <div className="max-w-7xl mx-auto text-gray-200">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-5 gap-3">
-          <h1 className="text-2xl font-bold text-cyan-400">PRODUCTOS</h1>
+          <h1 className="text-2xl font-bold text-cyan-400">INVENTARIO</h1>
           {role === "ADMIN" && (
             <Link
               href={{
