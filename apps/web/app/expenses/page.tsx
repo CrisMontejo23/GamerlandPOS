@@ -412,7 +412,7 @@ export default function ExpensesPage() {
       description: desc,
       paymentMethod,
       amount: Number(amount),
-      // category: (NO enviar si no se usa ahora)
+      category: "INTERNO"
     };
 
     const r = await apiFetch(`/expenses`, {
@@ -641,14 +641,14 @@ export default function ExpensesPage() {
                 border: `1px solid ${COLORS.border}`,
               }}
               type="number"
-              min={0}
+              min={1}
               placeholder="0"
               value={amount}
               onChange={(e) =>
                 setAmount(
                   e.target.value === ""
                     ? ""
-                    : Math.max(0, Number(e.target.value)),
+                    : Math.max(1, Number(e.target.value)),
                 )
               }
             />
