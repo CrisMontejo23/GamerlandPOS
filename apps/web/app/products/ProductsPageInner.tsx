@@ -1164,12 +1164,17 @@ function CategoryChips({
           <span className="text-sm text-gray-200 font-semibold">
             Categorías
           </span>
-          <span
-            className="text-[11px] text-gray-300 rounded-full px-2 py-1"
-            style={{ backgroundColor: UI.input, border: `1px solid ${border}` }}
-          >
-            Seleccionadas: <b className="text-cyan-300">{selected.length}</b>
-          </span>
+          {selected.length > 0 && (
+            <span
+              className="text-[11px] text-gray-300 rounded-full px-2 py-1"
+              style={{
+                backgroundColor: UI.input,
+                border: `1px solid ${border}`,
+              }}
+            >
+              Seleccionadas: <b className="text-cyan-300">{selected.length}</b>
+            </span>
+          )}
         </div>
 
         {selected.length > 0 ? (
