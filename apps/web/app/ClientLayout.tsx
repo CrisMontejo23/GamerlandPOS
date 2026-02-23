@@ -88,8 +88,9 @@ export default function ClientLayout({
         </button>
 
         <div className="flex items-center gap-2">
+          {/* ✅ CAMBIO: el contorno ahora es CUADRADO (no redondo), para que cuadre con tu logo */}
           <div
-            className="rounded-2xl p-[2px]"
+            className="rounded-xl p-[2px]"
             style={{
               background:
                 "linear-gradient(90deg, rgba(0,255,255,.7), rgba(255,0,255,.7))",
@@ -102,9 +103,10 @@ export default function ClientLayout({
               alt="Gamerland"
               width={28}
               height={28}
-              className="rounded-xl bg-panel"
+              className="rounded-lg bg-panel"
             />
           </div>
+
           <span className="font-extrabold text-neon tracking-wide">
             GAMERLAND
           </span>
@@ -161,8 +163,9 @@ export default function ClientLayout({
           )}
         >
           <div className="flex items-center gap-3">
+            {/* ✅ CAMBIO: marco cuadrado con esquinas suaves, perfecto para logo cuadrado */}
             <div
-              className="rounded-3xl p-[2px]"
+              className="rounded-2xl p-[2px]"
               style={{
                 background:
                   "linear-gradient(90deg, rgba(0,255,255,.70), rgba(255,0,255,.70))",
@@ -176,7 +179,7 @@ export default function ClientLayout({
                 width={56}
                 height={56}
                 className={cx(
-                  "rounded-2xl bg-panel",
+                  "rounded-xl bg-panel",
                   "[@media(max-height:750px)]:w-[50px] [@media(max-height:750px)]:h-[50px]",
                   "[@media(max-height:650px)]:w-[44px] [@media(max-height:650px)]:h-[44px]",
                 )}

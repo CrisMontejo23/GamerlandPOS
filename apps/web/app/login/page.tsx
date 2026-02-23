@@ -28,33 +28,14 @@ export default function LoginPage() {
             "0 0 22px rgba(0,255,255,.10), inset 0 0 18px rgba(255,0,255,.06)",
         }}
       >
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="p-[3px] rounded-2xl"
-            style={{
-              background:
-                "linear-gradient(90deg, rgba(0,255,255,.6), rgba(255,0,255,.6))",
-              boxShadow:
-                "0 0 18px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.18)",
-            }}
-          >
-            <div
-              className="rounded-xl p-2"
-              style={{
-                backgroundColor: "#14163A",
-                border: "1px solid #1E1F4B",
-              }}
-            >
-              <Image
-                src={logo}
-                alt="Gamerland"
-                width={120}
-                height={120}
-                className="rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.25)]"
-              />
-            </div>
-          </div>
-
+        <div className="flex flex-col items-center gap-2">
+          <Image
+            src={logo}
+            alt="Gamerland"
+            width={140}
+            height={140}
+            className="rounded-full shadow-[0_0_25px_rgba(0,255,255,0.4)]"
+          />
           <h1 className="text-neon font-extrabold text-3xl tracking-wide">
             GAMERLAND POS
           </h1>
