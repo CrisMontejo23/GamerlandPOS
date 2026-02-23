@@ -1,8 +1,9 @@
 "use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import logo from "../assets/logo.png";
 import { useAuth } from "./auth/AuthProvider";
 
@@ -28,6 +29,10 @@ const NAV_ALL: Array<{
   { href: "/users", label: "👥 Usuarios", allow: ["ADMIN"] },
 ];
 
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
 export default function ClientLayout({
   children,
 }: {
@@ -48,7 +53,7 @@ export default function ClientLayout({
   const nav = useMemo(
     () =>
       NAV_ALL.filter((i) => (role ? i.allow.includes(role as Role) : false)),
-    [role]
+    [role],
   );
 
   if (isLogin) {
@@ -57,130 +62,245 @@ export default function ClientLayout({
 
   return (
     <>
-      {/* Topbar móvil */}
-      <div className="md:hidden fixed top-0 inset-x-0 z-40 bg-panel border-b border-eon h-14 flex items-center px-4">
+      {/* Topbar móvil (mejor visual) */}
+      <div
+        className={cx(
+          "md:hidden fixed top-0 inset-x-0 z-40 h-14 px-3",
+          "flex items-center justify-between",
+          "border-b border-eon bg-panel/90",
+          "backdrop-blur-md",
+        )}
+        style={{
+          boxShadow:
+            "0 0 18px rgba(0,255,255,.08), 0 0 18px rgba(255,0,255,.06)",
+        }}
+      >
         <button
-          className="mr-3 rounded-lg px-2 py-1 border border-eon text-gray-200"
+          className={cx(
+            "rounded-xl px-3 py-2 text-gray-200",
+            "border border-eon",
+            "hover:bg-[#1E1F4B] active:scale-[.99] transition",
+          )}
           onClick={() => setOpen((v) => !v)}
           aria-label="Abrir menú"
         >
           ☰
         </button>
+
         <div className="flex items-center gap-2">
-          <Image
-            src={logo}
-            alt="Gamerland"
-            width={28}
-            height={28}
-            className="rounded-full"
-          />
-          <span className="font-bold text-neon">GAMERLAND POS</span>
+          <div
+            className="rounded-2xl p-[2px]"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(0,255,255,.7), rgba(255,0,255,.7))",
+              boxShadow:
+                "0 0 14px rgba(0,255,255,.20), 0 0 18px rgba(255,0,255,.16)",
+            }}
+          >
+            <Image
+              src={logo}
+              alt="Gamerland"
+              width={28}
+              height={28}
+              className="rounded-xl bg-panel"
+            />
+          </div>
+          <span className="font-extrabold text-neon tracking-wide">
+            GAMERLAND
+          </span>
+        </div>
+
+        {/* Chip de usuario (móvil) */}
+        <div className="text-[11px] text-gray-300">
+          {ready && username ? (
+            <span className="px-2 py-1 rounded-full border border-eon bg-[#0F1030]/60">
+              👤 <b className="text-neon">{username}</b>
+            </span>
+          ) : (
+            <span className="px-2 py-1 rounded-full border border-eon bg-[#0F1030]/60">
+              ⚪ Offline
+            </span>
+          )}
         </div>
       </div>
 
       {/* Sidebar */}
       <aside
-        className={[
-          "bg-panel border-r border-eon w-64 z-50",
+        className={cx(
+          "w-64 z-50 flex flex-col overflow-y-auto",
+          "border-r border-eon",
+          // fondo + blur
+          "bg-panel/85 backdrop-blur-md",
           // desktop fijo
           "md:fixed md:top-0 md:left-0 md:h-[100dvh] md:translate-x-0 md:block",
           // mobile drawer
           "fixed inset-y-0 left-0 transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
-          // layout
-          "flex flex-col",
-          // ✅ en vez de overflow-hidden: deja que el sidebar scrollee si hace falta
-          "overflow-y-auto",
-        ].join(" ")}
+        )}
+        style={{
+          boxShadow:
+            "0 0 22px rgba(0,255,255,.10), 0 0 26px rgba(255,0,255,.08)",
+        }}
       >
-        {/* Header (shrink + se adapta en pantallas bajitas) */}
+        {/* Glow decorativo superior */}
         <div
-          className={[
-            "border-b border-eon flex flex-col items-center",
-            "p-6",
-            // ✅ cuando la pantalla es bajita: menos padding
-            "[@media(max-height:750px)]:p-4",
-            "[@media(max-height:650px)]:p-3",
-          ].join(" ")}
+          className="h-24 -mb-10"
+          style={{
+            background:
+              "radial-gradient(220px 90px at 30% 40%, rgba(0,255,255,.25), transparent 70%), radial-gradient(240px 100px at 70% 10%, rgba(255,0,255,.18), transparent 70%)",
+          }}
+        />
+
+        {/* Header */}
+        <div
+          className={cx(
+            "border-b border-eon",
+            "px-5 pt-4 pb-4",
+            "[@media(max-height:750px)]:px-4 [@media(max-height:750px)]:pt-3 [@media(max-height:750px)]:pb-3",
+            "[@media(max-height:650px)]:px-3 [@media(max-height:650px)]:pt-2 [@media(max-height:650px)]:pb-2",
+          )}
         >
-          <Image
-            src={logo}
-            alt="Gamerland Logo"
-            width={140}
-            height={140}
-            className={[
-              "rounded-full",
-              // ✅ reduce el logo si la altura es baja
-              "[@media(max-height:750px)]:w-[110px] [@media(max-height:750px)]:h-[110px]",
-              "[@media(max-height:650px)]:w-[90px] [@media(max-height:650px)]:h-[90px]",
-            ].join(" ")}
-          />
+          <div className="flex items-center gap-3">
+            <div
+              className="rounded-3xl p-[2px]"
+              style={{
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,.70), rgba(255,0,255,.70))",
+                boxShadow:
+                  "0 0 16px rgba(0,255,255,.18), 0 0 18px rgba(255,0,255,.14)",
+              }}
+            >
+              <Image
+                src={logo}
+                alt="Gamerland Logo"
+                width={56}
+                height={56}
+                className={cx(
+                  "rounded-2xl bg-panel",
+                  "[@media(max-height:750px)]:w-[50px] [@media(max-height:750px)]:h-[50px]",
+                  "[@media(max-height:650px)]:w-[44px] [@media(max-height:650px)]:h-[44px]",
+                )}
+              />
+            </div>
 
-          <h1 className="mt-3 text-neon font-bold text-lg text-center">
-            GAMERLAND POS
-          </h1>
+            <div className="min-w-0">
+              <h1 className="text-neon font-extrabold text-base tracking-wide leading-tight">
+                GAMERLAND POS
+              </h1>
+              <p className="text-[11px] text-neon-2 tracking-wider">
+                Tierra soñada de jugadores
+              </p>
+            </div>
+          </div>
 
-          <p className="text-[11px] text-neon-2 tracking-wider mt-1 text-center">
-            Tierra soñada de jugadores
-          </p>
-
+          {/* Usuario */}
           {ready && (
-            <div className="mt-3 text-xs text-gray-400">
+            <div className="mt-3 flex items-center justify-between gap-2">
               {username ? (
                 <>
-                  👤 {username} • <b className="text-neon">{role}</b>
+                  <div className="text-xs text-gray-300 truncate">
+                    👤 <b className="text-neon">{username}</b>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full border border-eon bg-[#0F1030]/60">
+                    {role}
+                  </span>
                 </>
               ) : (
-                "No autenticado"
+                <div className="text-xs text-gray-400">No autenticado</div>
               )}
             </div>
           )}
         </div>
 
-        {/* Nav (puede crecer, pero el sidebar completo ya scrollea si toca) */}
-        <nav className="p-4 space-y-2">
+        {/* Nav */}
+        <nav className="p-3 space-y-2">
+          <div className="px-2 pt-1 pb-2">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-gray-400">
+              Menú
+            </div>
+          </div>
+
           {nav.map((item) => {
             const active = pathname === item.href;
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={[
-                  "block py-2 px-3 rounded-lg transition",
+                className={cx(
+                  "group relative block rounded-xl px-3 py-2",
+                  "transition",
                   active
                     ? "bg-[#1E1F4B] text-neon"
                     : "text-gray-300 hover:bg-[#1E1F4B] hover:text-neon",
-                ].join(" ")}
+                )}
+                style={{
+                  boxShadow: active
+                    ? "inset 0 0 0 1px rgba(0,255,255,.18), 0 0 16px rgba(0,255,255,.08)"
+                    : undefined,
+                }}
               >
-                {item.label}
+                {/* Barrita lateral cuando está activo */}
+                <span
+                  className={cx(
+                    "absolute left-1 top-1 bottom-1 w-[3px] rounded-full",
+                    active ? "opacity-100" : "opacity-0 group-hover:opacity-70",
+                  )}
+                  style={{
+                    background:
+                      "linear-gradient(180deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
+                    boxShadow:
+                      "0 0 10px rgba(0,255,255,.18), 0 0 10px rgba(255,0,255,.14)",
+                  }}
+                />
+
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{item.label}</span>
+                  <span
+                    className={cx(
+                      "text-xs opacity-0 group-hover:opacity-100 transition",
+                      active && "opacity-100",
+                    )}
+                    style={{ color: "rgba(0,255,255,.9)" }}
+                  >
+                    ›
+                  </span>
+                </div>
               </Link>
             );
           })}
         </nav>
 
-        {/* Footer sticky para que SIEMPRE esté visible al final del sidebar */}
-        <footer className="mt-auto sticky bottom-0 p-3 text-center text-xs text-gray-500 border-t border-eon bg-panel">
+        {/* Footer sticky */}
+        <footer className="mt-auto sticky bottom-0 p-3 border-t border-eon bg-panel/90 backdrop-blur-md">
           <button
             onClick={logout}
-            className="w-full mb-2 py-2 rounded-lg font-semibold"
+            className={cx(
+              "w-full mb-2 py-2 rounded-xl font-extrabold",
+              "active:scale-[.99] transition",
+            )}
             style={{
               color: "#001014",
               background:
-                "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                "linear-gradient(90deg, rgba(0,255,255,0.90), rgba(255,0,255,0.90))",
               boxShadow:
                 "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
             }}
           >
             Cerrar sesión
           </button>
-          © 2026 GAMERLAND PC
+
+          <div className="flex items-center justify-between text-[11px] text-gray-400 px-1">
+            <span>© 2026</span>
+            <span className="text-neon-2 font-semibold">GAMERLAND PC</span>
+          </div>
         </footer>
       </aside>
 
       {/* Overlay móvil */}
       {open && (
         <button
-          className="md:hidden fixed inset-0 z-40 bg-black/40"
+          className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px]"
           onClick={() => setOpen(false)}
           aria-label="Cerrar menú"
         />
