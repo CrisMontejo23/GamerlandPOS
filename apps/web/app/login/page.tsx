@@ -1,110 +1,311 @@
 "use client";
-import { useState } from "react";
-import { useAuth } from "../auth/AuthProvider";
+
+import Link from "next/link";
 import Image from "next/image";
-import logo from "../../assets/logo.png";
+import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import logo from "../assets/logo.png";
+import { useAuth } from "./auth/AuthProvider";
 
-export default function LoginPage() {
-  const { login } = useAuth();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPwd, setShowPwd] = useState(false);
-  const [msg, setMsg] = useState("");
+type Role = "ADMIN" | "EMPLOYEE";
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const r = await login(username.trim(), password);
-    if (!r.ok) setMsg(r.error || "Usuario o contraseña incorrectos");
-  };
+const NAV_ALL: Array<{
+  href: string;
+  label: string;
+  allow: ReadonlyArray<Role>;
+}> = [
+  { href: "/pos", label: "💰 POS", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/products", label: "📦 Inventario", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/sales", label: "📈 Ventas", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/expenses", label: "💸 Gastos", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/works", label: "🛠️ Trabajos", allow: ["ADMIN", "EMPLOYEE"] },
+  {
+    href: "/layaways",
+    label: "📜 Encargos / Apartados",
+    allow: ["ADMIN", "EMPLOYEE"],
+  },
+  { href: "/reports", label: "📄 Balances", allow: ["ADMIN", "EMPLOYEE"] },
+  { href: "/users", label: "👥 Usuarios", allow: ["ADMIN"] },
+];
+
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
+export default function ClientLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const isLogin = pathname === "/login";
+
+  const [open, setOpen] = useState(false);
+  const { role, username, logout, ready } = useAuth();
+
+  useEffect(() => {
+    const t = setTimeout(() => setOpen(false), 0);
+    return () => clearTimeout(t);
+  }, [pathname]);
+
+  const nav = useMemo(
+    () =>
+      NAV_ALL.filter((i) => (role ? i.allow.includes(role as Role) : false)),
+    [role],
+  );
+
+  if (isLogin) {
+    return <main className="flex-1 overflow-y-auto w-full">{children}</main>;
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0A0B24] text-gray-200 p-4">
+    <>
+      {/* Topbar móvil */}
       <div
-        className="w-full max-w-md rounded-2xl p-6 shadow-lg"
+        className={cx(
+          "md:hidden fixed top-0 inset-x-0 z-40 h-14 px-3",
+          "flex items-center justify-between",
+          "border-b border-eon bg-panel/90",
+          "backdrop-blur-md",
+        )}
         style={{
-          backgroundColor: "#14163A",
-          border: "1px solid #1E1F4B",
           boxShadow:
-            "0 0 22px rgba(0,255,255,.10), inset 0 0 18px rgba(255,0,255,.06)",
+            "0 0 18px rgba(0,255,255,.08), 0 0 18px rgba(255,0,255,.06)",
         }}
       >
-        <div className="flex flex-col items-center gap-2">
-          <Image
-            src={logo}
-            alt="Gamerland"
-            width={140}
-            height={140}
-            className="rounded-full shadow-[0_0_25px_rgba(0,255,255,0.4)]"
-          />
-          <h1 className="text-neon font-extrabold text-3xl tracking-wide">
-            GAMERLAND POS
-          </h1>
-          <p className="text-[13px] text-neon-2 tracking-widest opacity-80">
-            TIERRA SOÑADA DE JUGADORES
-          </p>
-        </div>
+        <button
+          className={cx(
+            "rounded-xl px-3 py-2 text-gray-200",
+            "border border-eon",
+            "hover:bg-[#1E1F4B] active:scale-[.99] transition",
+          )}
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Abrir menú"
+        >
+          ☰
+        </button>
 
-        <form className="mt-6 space-y-4" onSubmit={submit}>
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">Usuario</label>
-            <input
-              className="w-full rounded px-3 py-2 outline-none text-gray-100"
-              style={{
-                backgroundColor: "#0F1030",
-                border: "1px solid #1E1F4B",
-              }}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Contraseña
-            </label>
-            <div className="relative">
-              <input
-                className="w-full rounded px-3 py-2 pr-10 outline-none text-gray-100"
-                style={{
-                  backgroundColor: "#0F1030",
-                  border: "1px solid #1E1F4B",
-                }}
-                type={showPwd ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+        <div className="flex items-center gap-2">
+          {/* ✅ CONTORNO CUADRADO (coincide con imagen cuadrada) */}
+          <div
+            className="rounded-xl p-[2px]"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(0,255,255,.65), rgba(255,0,255,.65))",
+              boxShadow:
+                "0 0 14px rgba(0,255,255,.18), 0 0 18px rgba(255,0,255,.14)",
+            }}
+          >
+            <div className="rounded-[10px] bg-panel p-1">
+              <Image
+                src={logo}
+                alt="Gamerland"
+                width={28}
+                height={28}
+                className="rounded-[8px]"
               />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-200"
-                onClick={() => setShowPwd((v) => !v)}
-                title={showPwd ? "Ocultar" : "Mostrar"}
-              >
-                {showPwd ? "Ocultar" : "Mostrar"}
-              </button>
             </div>
           </div>
 
+          <span className="font-extrabold text-neon tracking-wide">
+            GAMERLAND
+          </span>
+        </div>
+
+        <div className="text-[11px] text-gray-300">
+          {ready && username ? (
+            <span className="px-2 py-1 rounded-full border border-eon bg-[#0F1030]/60">
+              👤 <b className="text-neon">{username}</b>
+            </span>
+          ) : (
+            <span className="px-2 py-1 rounded-full border border-eon bg-[#0F1030]/60">
+              ⚪ Offline
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar */}
+      <aside
+        className={cx(
+          "w-64 z-50 flex flex-col overflow-y-auto",
+          "border-r border-eon",
+          "bg-panel/85 backdrop-blur-md",
+          "md:fixed md:top-0 md:left-0 md:h-[100dvh] md:translate-x-0 md:block",
+          "fixed inset-y-0 left-0 transition-transform duration-200",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+        style={{
+          boxShadow:
+            "0 0 22px rgba(0,255,255,.10), 0 0 26px rgba(255,0,255,.08)",
+        }}
+      >
+        <div
+          className="h-24 -mb-10"
+          style={{
+            background:
+              "radial-gradient(220px 90px at 30% 40%, rgba(0,255,255,.25), transparent 70%), radial-gradient(240px 100px at 70% 10%, rgba(255,0,255,.18), transparent 70%)",
+          }}
+        />
+
+        {/* Header */}
+        <div
+          className={cx(
+            "border-b border-eon",
+            "px-5 pt-4 pb-4",
+            "[@media(max-height:750px)]:px-4 [@media(max-height:750px)]:pt-3 [@media(max-height:750px)]:pb-3",
+            "[@media(max-height:650px)]:px-3 [@media(max-height:650px)]:pt-2 [@media(max-height:650px)]:pb-2",
+          )}
+        >
+          <div className="flex items-center gap-3">
+            {/* ✅ CONTORNO CUADRADO (coincide con imagen cuadrada) */}
+            <div
+              className="rounded-2xl p-[2px]"
+              style={{
+                background:
+                  "linear-gradient(90deg, rgba(0,255,255,.65), rgba(255,0,255,.65))",
+                boxShadow:
+                  "0 0 16px rgba(0,255,255,.16), 0 0 18px rgba(255,0,255,.12)",
+              }}
+            >
+              <div className="rounded-[14px] bg-panel p-1.5">
+                <Image
+                  src={logo}
+                  alt="Gamerland Logo"
+                  width={56}
+                  height={56}
+                  className={cx(
+                    "rounded-[12px]",
+                    "[@media(max-height:750px)]:w-[50px] [@media(max-height:750px)]:h-[50px]",
+                    "[@media(max-height:650px)]:w-[44px] [@media(max-height:650px)]:h-[44px]",
+                  )}
+                />
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <h1 className="text-neon font-extrabold text-base tracking-wide leading-tight">
+                GAMERLAND POS
+              </h1>
+              <p className="text-[11px] text-neon-2 tracking-wider">
+                Tierra soñada de jugadores
+              </p>
+            </div>
+          </div>
+
+          {ready && (
+            <div className="mt-3 flex items-center justify-between gap-2">
+              {username ? (
+                <>
+                  <div className="text-xs text-gray-300 truncate">
+                    👤 <b className="text-neon">{username}</b>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full border border-eon bg-[#0F1030]/60">
+                    {role}
+                  </span>
+                </>
+              ) : (
+                <div className="text-xs text-gray-400">No autenticado</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Nav */}
+        <nav className="p-3 space-y-2">
+          <div className="px-2 pt-1 pb-2">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-gray-400">
+              Menú
+            </div>
+          </div>
+
+          {nav.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cx(
+                  "group relative block rounded-xl px-3 py-2",
+                  "transition",
+                  active
+                    ? "bg-[#1E1F4B] text-neon"
+                    : "text-gray-300 hover:bg-[#1E1F4B] hover:text-neon",
+                )}
+                style={{
+                  boxShadow: active
+                    ? "inset 0 0 0 1px rgba(0,255,255,.18), 0 0 16px rgba(0,255,255,.08)"
+                    : undefined,
+                }}
+              >
+                <span
+                  className={cx(
+                    "absolute left-1 top-1 bottom-1 w-[3px] rounded-full",
+                    active ? "opacity-100" : "opacity-0 group-hover:opacity-70",
+                  )}
+                  style={{
+                    background:
+                      "linear-gradient(180deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
+                    boxShadow:
+                      "0 0 10px rgba(0,255,255,.18), 0 0 10px rgba(255,0,255,.14)",
+                  }}
+                />
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{item.label}</span>
+                  <span
+                    className={cx(
+                      "text-xs opacity-0 group-hover:opacity-100 transition",
+                      active && "opacity-100",
+                    )}
+                    style={{ color: "rgba(0,255,255,.9)" }}
+                  >
+                    ›
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        <footer className="mt-auto sticky bottom-0 p-3 border-t border-eon bg-panel/90 backdrop-blur-md">
           <button
-            type="submit"
-            className="w-full py-2.5 rounded-lg font-semibold"
+            onClick={logout}
+            className={cx(
+              "w-full mb-2 py-2 rounded-xl font-extrabold",
+              "active:scale-[.99] transition",
+            )}
             style={{
               color: "#001014",
               background:
-                "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                "linear-gradient(90deg, rgba(0,255,255,0.90), rgba(255,0,255,0.90))",
               boxShadow:
-                "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)",
+                "0 0 14px rgba(0,255,255,.25), 0 0 22px rgba(255,0,255,.2)",
             }}
           >
-            Ingresar
+            Cerrar sesión
           </button>
 
-          {!!msg && <div className="text-sm text-pink-300">{msg}</div>}
-        </form>
+          <div className="flex items-center justify-between text-[11px] text-gray-400 px-1">
+            <span>© 2026</span>
+            <span className="text-neon-2 font-semibold">GAMERLAND PC</span>
+          </div>
+        </footer>
+      </aside>
 
-        <div className="mt-6 text-center text-xs text-gray-500">
-          © 2025 GAMERLAND PC
-        </div>
-      </div>
-    </div>
+      {/* Overlay móvil */}
+      {open && (
+        <button
+          className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px]"
+          onClick={() => setOpen(false)}
+          aria-label="Cerrar menú"
+        />
+      )}
+
+      {/* Contenido */}
+      <main className="flex-1 min-h-0 overflow-y-auto w-full px-4 md:px-6 pt-14 md:pt-6 md:ml-64">
+        {children}
+      </main>
+    </>
   );
 }
