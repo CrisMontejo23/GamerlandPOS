@@ -680,7 +680,7 @@ export default function ProductsPage() {
             </div>
 
             {/* Filtros activos (recordatorio visual) */}
-            {(q || categoryFilters.length) && (
+            {hasFilters && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-[11px] uppercase tracking-wide text-gray-400">
                   Filtros activos:
