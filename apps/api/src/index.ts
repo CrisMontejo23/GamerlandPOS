@@ -1613,6 +1613,28 @@ app.get("/reports/cashbox", requireRole("EMPLOYEE"), async (_req, res) => {
   });
 });
 
+// ==================== REPORTES: TRABAJOS ====================
+app.get("/reports/works-status", requireRole("EMPLOYEE"), async (_req, res) => {
+  const [received, inProgress, finished] = await Promise.all([
+    prisma.workOrder.count({ where: { status: "RECEIVED" } }),
+    prisma.workOrder.count({ where: { status: "IN_PROGRESS" } }),
+    prisma.workOrder.count({ where: { status: "FINISHED" } }),
+  ]);
+
+  // Si quieres ver entregados también:
+  const delivered = await prisma.workOrder.count({ where: { status: "DELIVERED" } });
+
+  res.json({
+    received,
+    inProgress,
+    finished,
+    delivered,
+    totalOpen: received + inProgress + finished, // sin entregados
+    totalAll: received + inProgress + finished + delivered,
+    lastUpdated: new Date().toISOString(),
+  });
+});
+
 // =================== WORK ORDERS ==================
 const workCreateSchema = z.object({
   code: z.string().optional(), // 👈 NUEVO (para garantía)
