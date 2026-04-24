@@ -172,6 +172,17 @@ function GamerConfirm({
 
 /* ===== helpers categoría ===== */
 const normCat = (c?: string | null) => (c ?? "").trim().toUpperCase();
+const normText = (v: unknown) =>
+  String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+const searchTokens = (value: string) =>
+  normText(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
 
 /* ===== Página ===== */
 export default function ProductsPage() {
@@ -331,7 +342,6 @@ export default function ProductsPage() {
   useEffect(() => {
     const load = async () => {
       const sp = new URLSearchParams();
-      if (q) sp.set("q", q);
       sp.set("withStock", "true");
       sp.set("includeInactive", "true");
       sp.set("page", "1");
@@ -343,8 +353,7 @@ export default function ProductsPage() {
       setRows(Array.isArray(rows) ? rows : []);
     };
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, reload]);
+  }, [reload]);
 
   // ====== ORDEN ALFABÉTICO por nombre ======
   const sortedRows = useMemo(
@@ -367,13 +376,24 @@ export default function ProductsPage() {
     return Array.from(set).sort();
   }, [rows]);
 
-  // ====== Filtro por categoría ======
+  // ====== Filtro por búsqueda y categoría ======
   const filteredRows = useMemo(() => {
-    if (!categoryFilters.length) return sortedRows;
-    return sortedRows.filter((p) =>
-      categoryFilters.includes(normCat(p.category)),
-    );
-  }, [sortedRows, categoryFilters]);
+    const tokens = searchTokens(q);
+
+    return sortedRows.filter((p) => {
+      const matchesCategory =
+        !categoryFilters.length || categoryFilters.includes(normCat(p.category));
+
+      if (!matchesCategory) return false;
+      if (!tokens.length) return true;
+
+      const haystack = normText(
+        [p.id, p.sku, p.name, p.category, p.price, p.cost, p.stock].join(" "),
+      );
+
+      return tokens.every((token) => haystack.includes(token));
+    });
+  }, [sortedRows, categoryFilters, q]);
 
   // Paginación client-side
   const total = filteredRows.length;
@@ -751,17 +771,169 @@ export default function ProductsPage() {
             border: `1px solid ${UI.border}`,
           }}
         >
-          <table className="w-full border-collapse">
+          <div className="md:hidden space-y-3 p-3">
+            {pageRows.map((p) => (
+              <div
+                key={`card-${p.id}`}
+                className={[
+                  "rounded-xl border p-3 transition",
+                  "bg-[#101235] border-[#262862] hover:bg-[#191B4B]",
+                  p.active === false ? "opacity-60" : "",
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 font-mono text-[11px] text-cyan-200">
+                        {p.sku?.toUpperCase() || `ID ${p.id}`}
+                      </span>
+                      {normCat(p.category) ? (
+                        <span
+                          className={Badge.base}
+                          style={{
+                            backgroundColor: "rgba(99,102,241,.12)",
+                            border: `1px solid rgba(99,102,241,.35)`,
+                          }}
+                        >
+                          {normCat(p.category)}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-2 break-words text-sm font-semibold leading-snug text-gray-100">
+                      {p.name?.toUpperCase()}
+                    </div>
+                  </div>
+
+                  <span
+                    className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold"
+                    style={{
+                      backgroundColor: "#0F1030",
+                      border: `1px solid ${UI.border}`,
+                      boxShadow:
+                        Number(p.stock ?? 0) <= 0
+                          ? "0 0 10px rgba(255,0,128,.18)"
+                          : Number(p.stock ?? 0) <= 2
+                            ? "0 0 10px rgba(255,206,86,.18)"
+                            : "0 0 10px rgba(0,255,255,.15)",
+                      color:
+                        Number(p.stock ?? 0) <= 0
+                          ? "#ff4d8d"
+                          : Number(p.stock ?? 0) <= 2
+                            ? "#facc15"
+                            : "#67e8f9",
+                    }}
+                    title="Stock actual"
+                  >
+                    Stock {Number(p.stock ?? 0)}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
+                    <div className="text-gray-400">Precio</div>
+                    <div className="mt-1 font-semibold text-cyan-300">
+                      {fmtCOP(p.price)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
+                    <div className="text-gray-400">Costo</div>
+                    <div className="mt-1 font-semibold text-pink-300">
+                      {fmtCOP(p.cost)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#262862] pt-3">
+                  <span className="text-[11px] text-gray-500">ID {p.id}</span>
+                  {role === "ADMIN" ? (
+                    <div className="flex shrink-0 justify-end gap-2">
+                      <button
+                        onClick={() => openStockModal(p)}
+                        className={`inline-flex items-center justify-center rounded-lg bg-white/5 ${ACTION_ICON.btn} transition hover:bg-white/10 active:scale-95`}
+                        aria-label="Ajustar stock"
+                        title="Ajustar stock"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/añadir.png"
+                            alt="Ajustar stock"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="object-contain opacity-90"
+                          />
+                        </span>
+                      </button>
+
+                      <Link
+                        href={{
+                          pathname: `/products/${p.id}/edit`,
+                          query: {
+                            from: "products",
+                            q: q || undefined,
+                            page: String(safePage),
+                            cat: categoryFilters.length
+                              ? categoryFilters.join(",")
+                              : undefined,
+                          },
+                        }}
+                        className={`inline-flex items-center justify-center rounded-lg bg-white/5 ${ACTION_ICON.btn} transition hover:bg-white/10 active:scale-95`}
+                        aria-label="Editar producto"
+                        title="Editar producto"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/edit.png"
+                            alt="Editar"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="object-contain opacity-90"
+                          />
+                        </span>
+                      </Link>
+
+                      <button
+                        onClick={() => setConfirmDeleteId(p.id)}
+                        className={`inline-flex items-center justify-center rounded-lg bg-white/5 ${ACTION_ICON.btn} transition hover:bg-white/10 active:scale-95`}
+                        aria-label="Eliminar producto"
+                        title="Eliminar producto"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/borrar.png"
+                            alt="Eliminar"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="object-contain opacity-90"
+                          />
+                        </span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-500">Solo lectura</span>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {pageRows.length === 0 && (
+              <div className="rounded-xl border border-[#262862] bg-[#101235] px-3 py-5 text-center text-sm text-gray-400">
+                Sin resultados
+              </div>
+            )}
+          </div>
+
+          <table className="hidden w-full border-separate border-spacing-y-2 md:table">
             <thead>
-              <tr className="border-b text-sm text-cyan-300 bg-[#1E1F4B] uppercase">
-                <th className="py-2 px-3 text-left">ID</th>
+              <tr className="text-sm text-cyan-300 bg-[#1E1F4B] uppercase">
+                <th className="py-3 px-3 text-left first:rounded-l-lg">ID</th>
                 <th className="px-3 text-left">SKU</th>
                 <th className="px-3 text-left">NOMBRE</th>
                 <th className="px-3 text-left">CATEGORÍA</th>
                 <th className="px-3 text-right">STOCK</th>
                 <th className="px-3 text-right">PRECIO</th>
                 <th className="px-3 text-right">COSTO</th>
-                <th className="px-3 text-right">ACCIONES</th>
+                <th className="px-3 text-right last:rounded-r-lg">ACCIONES</th>
               </tr>
             </thead>
             <tbody>
@@ -769,15 +941,20 @@ export default function ProductsPage() {
                 <tr
                   key={p.id}
                   className={[
-                    "border-b border-[#1E1F4B] transition",
-                    "hover:bg-[#191B4B]",
+                    "group transition",
                     p.active === false ? "opacity-60" : "",
                   ].join(" ")}
                 >
-                  <td className="py-2 px-3">{p.id}</td>
-                  <td className="px-3 font-mono">{p.sku?.toUpperCase()}</td>
-                  <td className="px-3">{p.name?.toUpperCase()}</td>
-                  <td className="px-3">
+                  <td className="py-3 px-3 bg-[#101235] border-y border-l border-[#262862] first:rounded-l-lg group-hover:bg-[#191B4B] transition-colors">
+                    {p.id}
+                  </td>
+                  <td className="px-3 bg-[#101235] border-y border-[#262862] font-mono group-hover:bg-[#191B4B] transition-colors">
+                    {p.sku?.toUpperCase()}
+                  </td>
+                  <td className="px-3 bg-[#101235] border-y border-[#262862] group-hover:bg-[#191B4B] transition-colors">
+                    {p.name?.toUpperCase()}
+                  </td>
+                  <td className="px-3 bg-[#101235] border-y border-[#262862] group-hover:bg-[#191B4B] transition-colors">
                     {normCat(p.category) ? (
                       <span
                         className={Badge.base}
@@ -792,7 +969,7 @@ export default function ProductsPage() {
                       <span className="text-gray-500">-</span>
                     )}
                   </td>
-                  <td className="px-3 text-right">
+                  <td className="px-3 bg-[#101235] border-y border-[#262862] text-right group-hover:bg-[#191B4B] transition-colors">
                     <span
                       className="inline-flex items-center justify-end rounded-lg px-2 py-1 text-xs font-bold"
                       style={{
@@ -816,13 +993,13 @@ export default function ProductsPage() {
                       {Number(p.stock ?? 0)}
                     </span>
                   </td>
-                  <td className="px-3 text-right text-cyan-300">
+                  <td className="px-3 bg-[#101235] border-y border-[#262862] text-right text-cyan-300 group-hover:bg-[#191B4B] transition-colors">
                     {fmtCOP(p.price)}
                   </td>
-                  <td className="px-3 text-right text-pink-300">
+                  <td className="px-3 bg-[#101235] border-y border-[#262862] text-right text-pink-300 group-hover:bg-[#191B4B] transition-colors">
                     {fmtCOP(p.cost)}
                   </td>
-                  <td className="px-3 text-right">
+                  <td className="px-3 bg-[#101235] border-y border-r border-[#262862] text-right last:rounded-r-lg group-hover:bg-[#191B4B] transition-colors">
                     {role === "ADMIN" ? (
                       <div className="flex justify-end gap-2">
                         <button
@@ -916,7 +1093,7 @@ export default function ProductsPage() {
               Mostrando <b>{startItem}</b> – <b>{endItem}</b> de <b>{total}</b>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center justify-center gap-1 sm:justify-end">
               <PagerButton
                 label="«"
                 disabled={safePage === 1}
