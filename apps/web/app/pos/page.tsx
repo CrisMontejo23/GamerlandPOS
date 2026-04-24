@@ -182,6 +182,10 @@ export default function POSPage() {
   const [msg, setMsg] = useState<string>("");
   const [payMethod, setPayMethod] = useState<PayMethod>("EFECTIVO");
   const [received, setReceived] = useState<number>(0);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [stockPromptProduct, setStockPromptProduct] = useState<Product | null>(
+    null,
+  );
   const { role } = useAuth(); // "ADMIN" | "EMPLOYEE" | null
   const resultsRef = useRef<HTMLDivElement>(null);
   const [openResults, setOpenResults] = useState(false);
@@ -218,6 +222,49 @@ export default function POSPage() {
 
   const searchRef = useRef<HTMLInputElement>(null);
   const receivedRef = useRef<HTMLInputElement>(null);
+
+  function onlyDigits(s: string) {
+    return (s || "").replace(/\D+/g, "");
+  }
+
+  function normalizeCOPhone(raw: string) {
+    const d = onlyDigits(raw);
+    if (d.startsWith("57")) return d;
+    if (d.length === 10) return "57" + d;
+    return d.length >= 10 ? "57" + d.slice(-10) : d;
+  }
+
+  function openWhatsApp(phone: string, text: string) {
+    const num = normalizeCOPhone(phone);
+    const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function buildStockRequestMsg(p: Product) {
+    return [
+      "Solicitud de ingreso de stock",
+      "",
+      `Producto: ${p.name}`,
+      `SKU: ${p.sku || "SIN SKU"}`,
+      `Stock actual: ${Number(p.stock ?? 0)}`,
+      "",
+      "Por favor ingresar stock para poder vender este articulo en POS.",
+    ].join("\n");
+  }
+
+  function handleStockPromptAction() {
+    if (!stockPromptProduct) return;
+    const p = stockPromptProduct;
+    setStockPromptProduct(null);
+
+    if (role === "ADMIN") {
+      const query = p.sku || p.name;
+      window.location.href = `/products?q=${encodeURIComponent(query)}`;
+      return;
+    }
+
+    openWhatsApp("3238034473", buildStockRequestMsg(p));
+  }
 
   useEffect(() => {
     let abort = false;
@@ -356,13 +403,8 @@ export default function POSPage() {
   const add = (p: Product) => {
     const currentStock = Number(p.stock ?? 0);
     if (currentStock <= 0) {
-      if (
-        confirm(
-          "Este producto no tiene stock. ¿Ir a la página de PRODUCTOS para ajustar el inventario?",
-        )
-      ) {
-        window.location.href = "/products";
-      }
+      setStockPromptProduct(p);
+      setOpenResults(false);
       return;
     }
     setCart((prev) => {
@@ -464,6 +506,7 @@ export default function POSPage() {
       setCart([]);
       setMsg("Venta creada ✅");
       setReceived(0);
+      setPaymentModalOpen(false);
 
       // === MOSTRAR TOAST ÉXITO 2s ===
       setToast({
@@ -1070,7 +1113,7 @@ export default function POSPage() {
           <div className="max-w-6xl mx-auto space-y-2">
             {/* Método de pago (móvil) */}
             <div
-              className="rounded-xl p-2"
+              className="hidden"
               style={{
                 backgroundColor: COLORS.bgCard,
                 border: `1px solid ${COLORS.border}`,
@@ -1165,7 +1208,7 @@ export default function POSPage() {
                 boxShadow:
                   "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)",
               }}
-              onClick={checkout}
+              onClick={() => setPaymentModalOpen(true)}
               disabled={cart.length === 0}
             >
               Cobrar
@@ -1653,6 +1696,196 @@ export default function POSPage() {
               style={{ borderTop: `1px solid ${COLORS.border}` }}
             >
               ↑ ↓ para navegar • Enter agrega • Esc cierra
+            </div>
+          </div>
+        </div>
+      )}
+
+      {paymentModalOpen && (
+        <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/70 p-3 lg:hidden">
+          <div
+            className="w-full max-w-md rounded-2xl p-[1px] shadow-2xl"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(0,255,255,.75), rgba(255,0,255,.75))",
+            }}
+          >
+            <div
+              className="rounded-2xl p-4 space-y-4"
+              style={{ backgroundColor: COLORS.bgCard }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-bold uppercase text-cyan-300">
+                    Cobrar venta
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    {cart.length} items en carrito
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPaymentModalOpen(false)}
+                  className="rounded-lg px-3 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div
+                className="rounded-xl p-4"
+                style={{
+                  backgroundColor: COLORS.input,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+              >
+                <div className="text-xs uppercase text-gray-400">
+                  Total a cobrar
+                </div>
+                <div className="text-3xl font-extrabold text-cyan-300">
+                  {fmt(uiTotal)}
+                </div>
+                {payMethod === "DATAFONO" && (
+                  <div className="mt-1 text-xs text-gray-400">
+                    Incluye comision: {fmt(fee)}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-2 text-xs uppercase text-gray-400">
+                  Metodo de pago
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["EFECTIVO", "QR_LLAVE", "DATAFONO"] as PayMethod[]).map(
+                    (m) => {
+                      const active = payMethod === m;
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => setPayMethod(m)}
+                          className="rounded-lg px-2 py-3 text-xs font-semibold transition"
+                          style={{
+                            border: `1px solid ${COLORS.border}`,
+                            backgroundColor: active ? "#0D0F38" : COLORS.input,
+                            boxShadow: active
+                              ? "0 0 12px rgba(0,255,255,.28), inset 0 0 10px rgba(255,0,255,.12)"
+                              : "none",
+                            color: active ? COLORS.cyan : COLORS.text,
+                          }}
+                        >
+                          {m === "QR_LLAVE" ? "QR / LLAVE" : m}
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+
+              {payMethod === "EFECTIVO" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs uppercase text-gray-400">
+                      Recibido
+                    </label>
+                    <input
+                      ref={receivedRef}
+                      className="w-full rounded-xl px-3 py-3 text-right text-lg outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      inputMode="numeric"
+                      value={received ? received.toString() : ""}
+                      placeholder="0"
+                      onChange={(e) =>
+                        setReceived(parseMoneyInput(e.target.value))
+                      }
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") checkout();
+                      }}
+                    />
+                  </div>
+                  <div className="text-right">
+                    <div className="mb-1 text-xs uppercase text-gray-400">
+                      Cambio
+                    </div>
+                    <div className="rounded-xl px-3 py-3 text-lg font-semibold text-cyan-300">
+                      {fmt(change)}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                className="w-full rounded-xl py-3 text-lg font-semibold transition disabled:opacity-60"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.35), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={checkout}
+                disabled={cart.length === 0}
+              >
+                Guardar venta
+              </button>
+
+              {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {stockPromptProduct && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl p-[1px] shadow-2xl"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(255,0,128,.8), rgba(0,255,255,.75))",
+            }}
+          >
+            <div
+              className="rounded-2xl p-5 text-center"
+              style={{ backgroundColor: COLORS.bgCard }}
+            >
+              <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-[#0F1030] text-2xl text-pink-300">
+                !
+              </div>
+              <h3 className="text-xl font-extrabold uppercase text-pink-300">
+                Producto sin stock
+              </h3>
+              <p className="mt-2 text-sm text-gray-300">
+                {stockPromptProduct.name}
+              </p>
+              <p className="mt-1 font-mono text-xs text-gray-500">
+                {stockPromptProduct.sku || "SIN SKU"}
+              </p>
+
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  onClick={() => setStockPromptProduct(null)}
+                  className="rounded-lg border px-4 py-2 text-sm"
+                  style={{ borderColor: COLORS.border }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleStockPromptAction}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold"
+                  style={{
+                    color: "#001014",
+                    background:
+                      "linear-gradient(90deg, rgba(0,255,255,.9), rgba(255,0,255,.9))",
+                  }}
+                >
+                  {role === "ADMIN"
+                    ? "Ir a inventario"
+                    : "Solicitar stock por WhatsApp"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
