@@ -129,9 +129,10 @@ const toNum = (v: unknown): number | null => {
 const fmt = (d: string | Date) => new Date(d).toLocaleString();
 const fmtIngreso = (d: string | Date) => {
   const date = new Date(d);
-  const day = new Intl.DateTimeFormat("es-CO", { weekday: "long" }).format(
+  const dayRaw = new Intl.DateTimeFormat("es-CO", { weekday: "long" }).format(
     date,
   );
+  const day = dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1);
   const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(
     date,
   );
