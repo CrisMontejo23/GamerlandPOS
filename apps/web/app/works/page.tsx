@@ -1527,7 +1527,7 @@ export default function WorksPage() {
               </span>
             )}
             </div>
-            <div className="mt-1 text-sm font-semibold text-gray-200 sm:text-[15px]">
+            <div className="mt-1 text-[13px] font-semibold text-gray-200 sm:text-sm">
               {fmtIngreso(w.createdAt)}
             </div>
             <div className="mt-1 text-sm font-semibold uppercase text-gray-100">
