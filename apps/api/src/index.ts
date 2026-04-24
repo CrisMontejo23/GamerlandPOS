@@ -42,6 +42,11 @@ app.use(express.json());
 const toN = (v: unknown) => Number(v ?? 0);
 const U = (s: unknown) =>
   (typeof s === "string" ? s.trim().toUpperCase() : s) as string;
+const normText = (v: unknown) =>
+  String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
 
 function parseLocalDateRange(fromStr: string, toStr: string) {
   // America/Bogota (sin DST)
@@ -928,9 +933,9 @@ app.patch(
         if (!item) throw new Error("No encontrado");
 
         const nextQty = parsed.data.qty ?? Number(item.qty);
-        const isService =
-          String(item.product?.category || "").toUpperCase() === "SERVICIOS" ||
-          String(item.product?.name || "").toUpperCase().includes("PAPELERIA");
+        const category = normText(item.product?.category);
+        const name = normText(item.product?.name);
+        const isService = category === "SERVICIOS" || name.includes("PAPELERIA");
         const nextUnitPrice = isService
           ? (parsed.data.unitPrice ?? Number(item.unitPrice))
           : Number(item.unitPrice);
@@ -1791,7 +1796,7 @@ app.get("/reports/papeleria", requireRole("EMPLOYEE"), async (req, res) => {
     .filter((it) => {
       const cat = String(it.product?.category ?? "").toUpperCase();
       const sku = String(it.product?.sku ?? "").toUpperCase();
-      const name = String(it.product?.name ?? "").toUpperCase();
+      const name = normText(it.product?.name);
       // Regla principal: categoría PAPELERIA
       if (name.includes("PAPELERIA")) return true;
       return false;

@@ -478,8 +478,8 @@ export default function SalesPage() {
   const [editPayMethod, setEditPayMethod] = useState<PayMethod>("EFECTIVO");
 
   const isServiceRow = (r: Row) => {
-    const category = String(r.category || "").toUpperCase();
-    const name = String(r.name || "").toUpperCase();
+    const category = normText(r.category);
+    const name = normText(r.name);
     return category === "SERVICIOS" || name.includes("PAPELERIA");
   };
 
