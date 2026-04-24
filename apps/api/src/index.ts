@@ -691,7 +691,7 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req: AuthRequest, res) => {
       });
 
       // Movimientos de stock por cada ítem (salida con costo promedio actual)
-      for (const it of items) {
+      for (const it of s.items) {
         const prod = await tx.product.findUnique({
           where: { id: it.productId },
           select: { cost: true },
@@ -701,9 +701,9 @@ app.post("/sales", requireRole("EMPLOYEE"), async (req: AuthRequest, res) => {
           data: {
             productId: it.productId,
             type: "out",
-            qty: it.qty,
+            qty: Number(it.qty),
             unitCost: avgCost,
-            reference: `sale#${s.id}`,
+            reference: `sale#${s.id}:item#${it.id}`,
             userId,
           },
         });
@@ -934,6 +934,97 @@ app.delete(
       return res
         .status(400)
         .json({ error: err?.message || "No se pudo eliminar" });
+    }
+  },
+);
+
+app.delete(
+  "/sales/:saleId/items/:itemId",
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res) => {
+    const saleId = Number(req.params.saleId);
+    const itemId = Number(req.params.itemId);
+    if (!Number.isInteger(saleId) || !Number.isInteger(itemId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    const userId = req.user!.id;
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const item = await tx.saleItem.findFirst({
+          where: { id: itemId, saleId },
+          include: {
+            sale: { include: { items: true, payments: true } },
+            product: { select: { cost: true } },
+          },
+        });
+
+        if (!item) throw new Error("No encontrado");
+
+        const remainingItems = item.sale.items.filter((it) => it.id !== itemId);
+        if (remainingItems.length === 0) {
+          throw new Error(
+            "No se puede eliminar el último artículo. Elimina la venta completa.",
+          );
+        }
+
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            type: "in",
+            qty: Number(item.qty),
+            unitCost: Number(item.product?.cost ?? 0),
+            reference: `sale#${saleId}:item#${itemId}:delete`,
+            userId,
+          },
+        });
+
+        await tx.saleItem.delete({ where: { id: itemId } });
+
+        const subtotal = remainingItems.reduce(
+          (a, it) => a + Number(it.unitPrice) * Number(it.qty),
+          0,
+        );
+        const discount = remainingItems.reduce(
+          (a, it) => a + Number(it.discount ?? 0),
+          0,
+        );
+        const tax = 0;
+        const total = subtotal + tax - discount;
+
+        if (item.sale.payments.length > 0) {
+          const previousTotal = Number(item.sale.total || 0);
+          const ratio = previousTotal > 0 ? total / previousTotal : 1;
+          await tx.payment.deleteMany({ where: { saleId } });
+          await tx.payment.createMany({
+            data: item.sale.payments.map((p) => ({
+              saleId,
+              method: p.method,
+              amount: Math.round(Number(p.amount) * ratio),
+              reference: p.reference ?? undefined,
+            })),
+          });
+        }
+
+        const sale = await tx.sale.update({
+          where: { id: saleId },
+          data: { subtotal, discount, tax, total },
+          include: { items: true, payments: true },
+        });
+
+        return { ok: true, sale, deletedItemId: itemId };
+      });
+
+      return res.json(result);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      if (err?.message === "No encontrado") {
+        return res.status(404).json({ error: "No encontrado" });
+      }
+      return res
+        .status(400)
+        .json({ error: err?.message || "No se pudo eliminar el artículo" });
     }
   },
 );
@@ -1254,7 +1345,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   //    Necesitamos items y el unitCost por venta/producto
   const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
   for (const m of outs) {
-    const saleId = Number((m.reference || "").split("#")[1] || 0);
+    const saleId = Number((m.reference || "").match(/sale#(\d+)/)?.[1] || 0);
     if (!saleId) continue;
     costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
   }
@@ -1324,6 +1415,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
     createdAt: Date;
     user: { id: number; username: string } | null;
     items: Array<{
+      id: number;
       productId: number;
       unitPrice: unknown;
       qty: unknown;
@@ -1355,7 +1447,7 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
 
   const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
   for (const m of outs) {
-    const saleId = Number((m.reference || "").split("#")[1] || 0);
+    const saleId = Number((m.reference || "").match(/sale#(\d+)/)?.[1] || 0);
     if (!saleId) continue;
     costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
   }
@@ -1371,6 +1463,8 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
 
       return {
         saleId: s.id,
+        saleItemId: it.id,
+        productId: it.productId,
         createdAt: s.createdAt,
         user: s.user ? { id: s.user.id, username: s.user.username } : null,
         sku: it.product?.sku ?? "",

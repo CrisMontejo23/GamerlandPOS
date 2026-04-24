@@ -187,10 +187,13 @@ type Payment = {
 
 type Row = {
   saleId: number;
+  saleItemId?: number;
+  productId?: number;
   user?: { id: number; username: string } | null;
   createdAt: string;
   sku: string;
   name: string;
+  category?: string | null;
   qty: number;
   unitPrice: number;
   unitCost: number;
@@ -203,7 +206,12 @@ type Row = {
 type SalePatch = {
   customer?: string | null;
   status?: "paid" | "void" | "return";
-  items?: { sku: string; unitPrice: number; qty: number; discount?: number }[];
+  items?: {
+    productId: number;
+    unitPrice: number;
+    qty: number;
+    discount?: number;
+  }[];
 };
 
 type Period = "day" | "month" | "year";
@@ -238,6 +246,18 @@ function todayISO() {
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
 }
+
+const normText = (v: unknown) =>
+  String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+const searchTokens = (value: string) =>
+  normText(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
 
 function rangeFrom(period: Period, baseISO: string) {
   const d = new Date(baseISO + "T00:00:00");
@@ -343,6 +363,13 @@ export default function SalesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
+  useEffect(() => {
+    const onScroll = () => setShowToTop(window.scrollY > 420);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   /* ======= TOTALES EXACTOS (sin excluir nada) =======
      VENTAS = suma de TOTAL VENTA de cada registro
      GANANCIA = suma de GANANCIA de cada registro (misma regla que por fila)
@@ -384,32 +411,31 @@ export default function SalesPage() {
   }, [rows]);
 
   const filteredRows = useMemo(() => {
-    const qq = q.trim().toUpperCase();
+    const tokens = searchTokens(q);
 
     return rows.filter((r) => {
       if (onlyNotTransaction && isTransactionRow(r)) return false;
 
-      if (!qq) return true;
+      if (!tokens.length) return true;
 
       const methodStr = (r.paymentMethods || [])
         .map((p) => String(p.method || ""))
-        .join(" ")
-        .toUpperCase();
+        .join(" ");
 
-      const hay =
-        String(r.sku || "")
-          .toUpperCase()
-          .includes(qq) ||
-        String(r.name || "")
-          .toUpperCase()
-          .includes(qq) ||
-        String(r.user?.username || "")
-          .toUpperCase()
-          .includes(qq) ||
-        methodStr.includes(qq) ||
-        String(r.saleId).includes(qq);
+      const haystack = normText([
+        r.saleId,
+        r.saleItemId,
+        r.sku,
+        r.name,
+        r.category,
+        r.user?.username,
+        methodStr,
+        r.qty,
+        r.unitPrice,
+        r.revenue,
+      ].join(" "));
 
-      return hay;
+      return tokens.every((token) => haystack.includes(token));
     });
   }, [rows, q, onlyNotTransaction]);
 
@@ -492,7 +518,7 @@ export default function SalesPage() {
     const body: SalePatch = {
       items: [
         {
-          sku: r.sku,
+          productId: Number(r.productId),
           unitPrice: editPrice === "" ? r.unitPrice : Number(editPrice),
           qty: editQty === "" ? r.qty : Number(editQty),
           discount: 0,
@@ -517,31 +543,42 @@ export default function SalesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | (() => void)>(null);
 
-  const deleteSale = async (saleId: number) => {
+  const deleteSaleItem = async (r: Row) => {
+    if (!r.saleItemId) {
+      setToast({
+        open: true,
+        kind: "error",
+        title: "No se puede eliminar la línea",
+        subtitle: "Esta venta no trae identificador de artículo. Recarga datos.",
+      });
+      setTimeout(hideToast, 2200);
+      return;
+    }
+
     setConfirmOpen(true);
     setConfirmAction(() => async () => {
       setConfirmOpen(false);
-      const r = await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}) as { error?: string });
+      const resp = await apiFetch(`/sales/${r.saleId}/items/${r.saleItemId}`, {
+        method: "DELETE",
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}) as { error?: string });
         setToast({
           open: true,
           kind: "error",
-          title: "Error al eliminar",
-          subtitle: String(
-            e?.error || "No se pudo eliminar. Verifica el DELETE /sales/:id",
-          ),
+          title: "No se pudo eliminar el artículo",
+          subtitle: String(e?.error || "Verifica el backend."),
         });
-        setTimeout(hideToast, 2000);
+        setTimeout(hideToast, 2400);
         return;
       }
       setToast({
         open: true,
         kind: "success",
-        title: "¡Venta eliminada!",
-        subtitle: "La venta fue eliminada correctamente.",
+        title: "Artículo eliminado",
+        subtitle: "La venta fue recalculada y el stock fue compensado.",
       });
-      setTimeout(hideToast, 2000);
+      setTimeout(hideToast, 2200);
       load();
     });
   };
@@ -779,21 +816,95 @@ export default function SalesPage() {
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        <div
-          className="overflow-x-auto max-h-[70vh]"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            setShowToTop(el.scrollTop > 240);
-          }}
-        >
+        <div className="md:hidden space-y-3 p-3">
+          {loading && (
+            <div className="rounded-xl border border-[#262862] bg-[#101235] p-4 text-sm text-gray-400">
+              Cargando...
+            </div>
+          )}
+          {!loading && pageSlice.length === 0 && (
+            <div className="rounded-xl border border-[#262862] bg-[#101235] p-4 text-sm text-gray-400">
+              Sin registros
+            </div>
+          )}
+          {pageSlice.map((r, idx) => {
+            const k = `mobile-${r.saleItemId ?? r.saleId}-${idx}`;
+            const lineRevenue = r.revenue ?? r.unitPrice * r.qty;
+            const lineProfit = profitByRule(r);
+
+            return (
+              <div
+                key={k}
+                className="rounded-xl border border-[#262862] bg-[#101235] p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 font-mono text-[11px] text-cyan-200">
+                        #{r.saleId}
+                      </span>
+                      <span className="rounded-md border border-[#262862] bg-[#0F1030] px-2 py-1 font-mono text-[11px] text-gray-300">
+                        {r.sku || "SIN SKU"}
+                      </span>
+                    </div>
+                    <div className="mt-2 break-words text-sm font-semibold text-gray-100">
+                      {r.name}
+                    </div>
+                    <div className="mt-1 text-[11px] text-gray-400">
+                      {new Date(r.createdAt).toLocaleString("es-CO")} ·{" "}
+                      {r.user?.username || "-"}
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <button
+                      onClick={() => deleteSaleItem(r)}
+                      className={`shrink-0 inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition`}
+                      title="Eliminar artículo de esta venta"
+                      aria-label="Eliminar artículo"
+                    >
+                      <span className={`relative ${ACTION_ICON.box}`}>
+                        <Image
+                          src="/borrar.png"
+                          alt="Eliminar"
+                          fill
+                          sizes={ACTION_ICON.sizes}
+                          className="opacity-90 object-contain"
+                        />
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <MiniMetric label="Precio" value={fmtCOP(r.unitPrice)} />
+                  <MiniMetric label="Cant." value={String(r.qty)} />
+                  <MiniMetric label="Venta" value={fmtCOP(lineRevenue)} cyan />
+                  <MiniMetric label="Ganancia" value={fmtCOP(lineProfit)} pink />
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {r.paymentMethods.map((p, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full border border-[#262862] bg-[#0F1030] px-2 py-1 text-[11px] text-gray-300"
+                    >
+                      {p.method === "QR_LLAVE" ? "QR / LLAVE" : p.method}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="overflow-x-auto">
           <div ref={tableTopRef} />
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 z-10">
+          <table className="hidden w-full border-separate border-spacing-y-2 md:table">
+            <thead>
               <tr
                 className="text-left"
                 style={{
                   backgroundColor: "#101233",
-                  borderBottom: `1px solid ${COLORS.border}`,
                 }}
               >
                 <Th>Fecha</Th>
@@ -847,22 +958,20 @@ export default function SalesPage() {
                   <>
                     <tr
                       key={k}
-                      className="hover:bg-[#191B4B]"
+                      className="group"
                       style={{
-                        borderBottom: `1px solid ${COLORS.border}`,
-
                         // ✅ “contorno” entre ventas SIN fila extra
                         ...(isFirstOfSale
                           ? {
-                              borderTop: `2px solid ${COLORS.border}`,
                               boxShadow:
                                 "inset 0 1px 0 rgba(0,255,255,.22), inset 0 2px 0 rgba(255,0,255,.16), inset 3px 0 0 rgba(0,255,255,.10)",
-                              backgroundColor: "rgba(0,255,255,.03)",
                             }
                           : {}),
                       }}
                     >
-                      <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
+                      <Td className="border-l first:rounded-l-lg">
+                        {new Date(r.createdAt).toLocaleString("es-CO")}
+                      </Td>
                       <Td className="font-semibold text-cyan-200">
                         {r.user?.username || "-"}
                       </Td>
@@ -962,7 +1071,7 @@ export default function SalesPage() {
                       </Td>
 
                       {isAdmin && (
-                        <Td>
+                        <Td className="border-r last:rounded-r-lg">
                           <div className="flex flex-wrap gap-2">
                             {!isEditing ? (
                               <>
@@ -987,27 +1096,24 @@ export default function SalesPage() {
                                   </span>
                                 </button>
 
-                                {/* Eliminar sólo en la primera fila visible de la venta */}
-                                {isFirstOfSale && (
-                                  <button
-                                    onClick={() => deleteSale(r.saleId)}
-                                    className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
-                                    title="Eliminar venta"
-                                    aria-label="Eliminar venta"
+                                <button
+                                  onClick={() => deleteSaleItem(r)}
+                                  className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition transform hover:scale-110`}
+                                  title="Eliminar artículo de esta venta"
+                                  aria-label="Eliminar artículo"
+                                >
+                                  <span
+                                    className={`relative ${ACTION_ICON.box}`}
                                   >
-                                    <span
-                                      className={`relative ${ACTION_ICON.box}`}
-                                    >
-                                      <Image
-                                        src="/borrar.png"
-                                        alt="Eliminar"
-                                        fill
-                                        sizes={ACTION_ICON.sizes}
-                                        className="opacity-90 object-contain"
-                                      />
-                                    </span>
-                                  </button>
-                                )}
+                                    <Image
+                                      src="/borrar.png"
+                                      alt="Eliminar"
+                                      fill
+                                      sizes={ACTION_ICON.sizes}
+                                      className="opacity-90 object-contain"
+                                    />
+                                  </span>
+                                </button>
                               </>
                             ) : (
                               <>
@@ -1100,12 +1206,6 @@ export default function SalesPage() {
         {showToTop && (
           <button
             onClick={() => {
-              const container = document.querySelector(
-                ".overflow-x-auto.max-h-\\[70vh\\]",
-              ) as HTMLDivElement | null;
-
-              if (container) container.scrollTo({ top: 0, behavior: "smooth" });
-
               // opcional: también enfoca el inicio
               tableTopRef.current?.scrollIntoView({
                 behavior: "smooth",
@@ -1202,7 +1302,39 @@ function Td({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <td className={`py-2 px-3 ${className}`}>{children}</td>;
+  return (
+    <td
+      className={`py-3 px-3 bg-[#101235] border-y border-[#262862] group-hover:bg-[#191B4B] transition-colors ${className}`}
+    >
+      {children}
+    </td>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+  cyan,
+  pink,
+}: {
+  label: string;
+  value: string;
+  cyan?: boolean;
+  pink?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
+      <div className="text-[11px] uppercase text-gray-400">{label}</div>
+      <div
+        className={[
+          "mt-1 font-semibold",
+          cyan ? "text-cyan-300" : pink ? "text-pink-300" : "text-gray-100",
+        ].join(" ")}
+      >
+        {value}
+      </div>
+    </div>
+  );
 }
 
 /* ===== Botón pager ===== */
