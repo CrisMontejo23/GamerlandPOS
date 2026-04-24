@@ -1233,18 +1233,20 @@ export default function LayawaysPage() {
       6,
     );
 
-    if (y > firmaY - 15) y = firmaY - 15;
+    if (resv.kind !== "ENCARGO") {
+      if (y > firmaY - 15) y = firmaY - 15;
 
-    doc.setDrawColor(0, 0, 0);
-    doc.line(marginX, firmaY, marginX + 70, firmaY);
-    doc.line(pageWidth - marginX - 70, firmaY, pageWidth - marginX, firmaY);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(marginX, firmaY, marginX + 70, firmaY);
+      doc.line(pageWidth - marginX - 70, firmaY, pageWidth - marginX, firmaY);
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text("EL CLIENTE", marginX + 35, firmaY + 5, { align: "center" });
-    doc.text("GAMERLAND PC", pageWidth - marginX - 35, firmaY + 5, {
-      align: "center",
-    });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("EL CLIENTE", marginX + 35, firmaY + 5, { align: "center" });
+      doc.text("GAMERLAND PC", pageWidth - marginX - 35, firmaY + 5, {
+        align: "center",
+      });
+    }
 
     doc.save(`Contrato_${KIND_LABEL[resv.kind]}_${resv.code}.pdf`);
   }
