@@ -149,13 +149,12 @@ async function recomputeReservationTotals(
 async function autoConvertExpiredEncargos(tx: Prisma.TransactionClient) {
   const now = new Date();
 
-  // Regla: ENCARGO abierto, con pickupDate vencida (o igual), y sin abonos (totalPaid = 0)
+  // Regla: ENCARGO abierto con pickupDate vencida (o igual) pasa a APARTADO.
   const res = await tx.reservation.updateMany({
     where: {
       status: "OPEN",
       kind: "ENCARGO",
       pickupDate: { not: null, lte: now },
-      totalPaid: { lte: new Prisma.Decimal(0) }, // totalPaid Decimal
     },
     data: {
       kind: "APARTADO",
@@ -535,17 +534,34 @@ app.patch("/products/:id", requireRole("ADMIN"), async (req, res) => {
   const d = parsed.data;
 
   try {
+    const current = await prisma.product.findUnique({
+      where: { id },
+      select: { category: true },
+    });
+    if (!current) return res.status(404).json({ error: "No encontrado" });
+
+    const nextCategory =
+      d.category !== undefined ? (d.category ? U(d.category) : null) : undefined;
+    const categoryChanged =
+      nextCategory !== undefined && nextCategory !== U(current.category ?? "");
+    const autoSku =
+      d.sku === undefined && categoryChanged
+        ? await getNextSku(nextCategory)
+        : undefined;
+
     const p = await prisma.product.update({
       where: { id },
       data: {
-        ...(d.sku !== undefined ? { sku: U(d.sku) } : {}),
+        ...(d.sku !== undefined
+          ? { sku: U(d.sku) }
+          : autoSku
+            ? { sku: autoSku }
+            : {}),
         ...(d.barcode !== undefined
           ? { barcode: d.barcode ? U(d.barcode) : null }
           : {}),
         ...(d.name !== undefined ? { name: U(d.name) } : {}),
-        ...(d.category !== undefined
-          ? { category: d.category ? U(d.category) : null }
-          : {}),
+        ...(nextCategory !== undefined ? { category: nextCategory } : {}),
         ...(d.cost !== undefined ? { cost: d.cost } : {}),
         ...(d.price !== undefined ? { price: d.price } : {}),
         ...(d.minStock !== undefined ? { minStock: d.minStock } : {}),
@@ -2396,7 +2412,7 @@ app.get("/reservations", requireRole("EMPLOYEE"), async (req, res) => {
   const q = String(req.query.q || "").trim();
 
   try {
-    // Auto-conversión (encargos vencidos sin abono)
+    // Auto-conversión (encargos vencidos)
     await prisma.$transaction(async (tx) => {
       await autoConvertExpiredEncargos(tx);
     });

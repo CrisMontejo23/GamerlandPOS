@@ -8,7 +8,7 @@ export default function NewProductPage({
   const backParams = {
     q: typeof searchParams.q === "string" ? searchParams.q : undefined,
     page: typeof searchParams.page === "string" ? searchParams.page : undefined,
-    sku: typeof searchParams.sku === "string" ? searchParams.sku : undefined,
+    cat: typeof searchParams.cat === "string" ? searchParams.cat : undefined,
   };
 
   return (

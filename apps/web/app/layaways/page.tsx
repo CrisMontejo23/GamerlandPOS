@@ -210,6 +210,24 @@ function fmt(d: string | Date) {
   return new Date(d).toLocaleString("es-CO");
 }
 
+function fmtCardDate(d: string | Date) {
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d);
+
+  const day = dt.toLocaleDateString("es-CO", { weekday: "long" });
+  const month = dt.toLocaleDateString("es-CO", { month: "long" });
+  const time = dt
+    .toLocaleTimeString("es-CO", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(/\s/g, " ")
+    .toLowerCase();
+
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)} ${dt.getDate()} de ${month} a las ${time}`;
+}
+
 function onlyDateISO(d: string) {
   // para mostrar bonito si viene ISO
   try {
@@ -1002,6 +1020,9 @@ export default function LayawaysPage() {
 
     y += 5;
 
+    const totalAbonado = Math.max(resv.totalPaid || 0, resv.initialDeposit || 0);
+    const saldoPendiente = Math.max(resv.totalPrice - totalAbonado, 0);
+
     const resumenBody: Array<[string, string]> = [
       ["TIPO", KIND_LABEL[resv.kind]],
       ["CÓDIGO", resv.code],
@@ -1023,7 +1044,8 @@ export default function LayawaysPage() {
     resumenBody.push(
       ["TOTAL OBJETIVO", toCOP(resv.totalPrice)],
       ["ABONO INICIAL", toCOP(resv.initialDeposit)],
-      ["TOTAL ABONADO A LA FECHA", toCOP(resv.totalPaid)],
+      ["TOTAL ABONADO A LA FECHA", toCOP(totalAbonado)],
+      ["SALDO PENDIENTE", toCOP(saldoPendiente)],
     );
 
     autoTable(doc, {
@@ -1090,7 +1112,9 @@ export default function LayawaysPage() {
       ABONOS: resv.kind === "ENCARGO" ? "CUARTA" : "SEGUNDA",
       CANCELACION: resv.kind === "ENCARGO" ? "QUINTA" : "TERCERA",
       ENTREGA: "CUARTA", // solo APARTADO
-      ACEPTACION: resv.kind === "ENCARGO" ? "SEXTA" : "QUINTA",
+      PRECIO: resv.kind === "ENCARGO" ? "SEXTA" : "QUINTA",
+      PAGOS: resv.kind === "ENCARGO" ? "SÉPTIMA" : "SEXTA",
+      ACEPTACION: resv.kind === "ENCARGO" ? "OCTAVA" : "SÉPTIMA",
     };
 
     // =========================
@@ -1130,19 +1154,19 @@ export default function LayawaysPage() {
         `CLÁUSULA ${N.INCUMPLIMIENTO} – INCUMPLIMIENTO FECHA DE RETIRO`,
       );
       writeParagraph(
-        `En caso de que EL CLIENTE no recoja el encargo en la fecha establecida, a partir de ese momento el presente ENCARGO se entenderá convertido en un SISTEMA DE APARTADO.`,
+        `En caso de que EL CLIENTE no recoja el encargo en la fecha establecida, a partir de ese momento el presente ENCARGO se entenderá convertido automáticamente en un SISTEMA DE APARTADO.`,
         1,
       );
       writeParagraph(
-        `Desde dicha fecha empezarán a regir las siguientes condiciones propias del SISTEMA DE APARTADO:`,
+        `Desde dicha fecha empezarán a regir las condiciones propias del SISTEMA DE APARTADO, incluyendo la devolución únicamente del cincuenta por ciento (50%) del total abonado a la fecha si EL CLIENTE decide arrepentirse o cancelar la compra.`,
         1,
       );
       writeParagraph(
-        `1. CANCELACIÓN / DEVOLUCIÓN (Cláusula ${N.CANCELACION}).`,
+        `EL CLIENTE acepta que, al convertirse en apartado, deberá completar el saldo pendiente y coordinar la entrega con LA TIENDA según disponibilidad.`,
         0.5,
       );
       writeParagraph(
-        `2. ENTREGA (Cláusula ${N.ENTREGA} – el cliente deberá avisar con mínimo una (1) semana de anticipación para reclamar los producto(s)).`,
+        `Para reclamar los producto(s), EL CLIENTE deberá avisar con mínimo una (1) semana de anticipación.`,
         2,
       );
     }
@@ -1154,7 +1178,11 @@ export default function LayawaysPage() {
     writeParagraph(
       `EL CLIENTE realiza un abono inicial de ${toCOP(
         resv.initialDeposit,
-      )}. Los abonos posteriores se irán registrando hasta completar el valor total.`,
+      )}. Con los pagos registrados a la fecha, EL CLIENTE ha abonado ${toCOP(
+        totalAbonado,
+      )} y el saldo pendiente para completar el objetivo es ${toCOP(
+        saldoPendiente,
+      )}. Los abonos posteriores se irán registrando y descontando del saldo pendiente hasta completar el valor total.`,
     );
 
     // =========================
@@ -1174,6 +1202,22 @@ export default function LayawaysPage() {
         `Para reclamar los productos, EL CLIENTE deberá informar con mínimo una (1) semana de anticipación para garantizar disponibilidad.`,
       );
     }
+
+    // =========================
+    // PRECIO / VARIACION
+    // =========================
+    tituloClausula(`CLÁUSULA ${N.PRECIO} – VARIACIÓN DEL PRECIO`);
+    writeParagraph(
+      `EL CLIENTE acepta que, dependiendo del tiempo que tarde en completar el total de la compra, el precio final de la consola o de los productos podrá subir, bajar o mantenerse igual. LA TIENDA informará cualquier ajuste antes de finalizar la venta y el valor objetivo registrado en este contrato servirá como referencia mientras no se complete el pago total.`,
+    );
+
+    // =========================
+    // FORMAS DE PAGO
+    // =========================
+    tituloClausula(`CLÁUSULA ${N.PAGOS} – FORMAS DE PAGO`);
+    writeParagraph(
+      `Los pagos podrán realizarse en efectivo en la tienda física o por transferencia. Cuando el pago sea por transferencia, EL CLIENTE deberá enviar el soporte de pago por WhatsApp para que LA TIENDA pueda registrar el abono.`,
+    );
 
     // =========================
     // ACEPTACIÓN
@@ -1476,53 +1520,128 @@ export default function LayawaysPage() {
                 {colRows.map((resv) => {
                   const saldo = resv.totalPrice - resv.totalPaid;
                   const canFinalize = resv.status === "OPEN" && saldo <= 500;
+                  const cardItems =
+                    resv.items && resv.items.length > 0
+                      ? resv.items
+                      : [{ id: 0, name: getCardItemsLabel(resv), qty: 1 }];
 
                   return (
                     <article
                       key={resv.id}
-                      className="rounded-xl p-3 sm:p-4 space-y-2 border"
+                      className="rounded-xl border p-4 shadow-[0_16px_42px_rgba(0,0,0,0.22)] space-y-4"
                       style={{
                         backgroundColor: COLORS.bgCard,
                         borderColor: COLORS.border,
                       }}
                     >
-                      <header className="flex items-center justify-between gap-2">
-                        <div className="font-semibold text-cyan-300 uppercase">
-                          {resv.code}
+                      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                          <div className="text-2xl sm:text-3xl font-black tracking-wide text-cyan-300 uppercase">
+                            {resv.code}
+                          </div>
+                          <div className="text-sm font-semibold text-slate-200">
+                            {fmtCardDate(resv.createdAt)}
+                          </div>
+                          <div className="text-sm text-slate-300 uppercase">
+                            {resv.customerName}{" "}
+                            <span className="text-slate-500">•</span>{" "}
+                            {resv.customerPhone}
+                          </div>
+                          {resv.city && (
+                            <div className="text-xs text-slate-400 uppercase">
+                              {resv.city}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-800 uppercase">
+                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                          <span className="rounded-full bg-purple-100 px-3 py-1 text-[11px] font-bold uppercase text-purple-800">
                             {KIND_LABEL[resv.kind]}
                           </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 uppercase">
+                          <span className="rounded-full bg-blue-100 px-3 py-1 text-[11px] font-bold uppercase text-blue-800">
                             {STATUS_LABEL[resv.status]}
                           </span>
                         </div>
                       </header>
 
-                      <div className="text-xs text-gray-300">
-                        <div>
-                          <b>APERTURA:</b> {fmt(resv.createdAt)}
-                        </div>
+                      <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
                         {resv.closedAt && (
-                          <div>
-                            <b>CERRADO:</b> {fmt(resv.closedAt)}
+                          <div className="rounded-lg border border-slate-700/70 bg-slate-950/45 px-3 py-2">
+                            <b>CERRADO:</b> {fmtCardDate(resv.closedAt)}
                           </div>
                         )}
                         {resv.kind === "ENCARGO" && resv.pickupDate && (
-                          <div>
+                          <div className="rounded-lg border border-slate-700/70 bg-slate-950/45 px-3 py-2">
                             <b>RETIRO:</b> {onlyDateISO(resv.pickupDate)}
                           </div>
                         )}
                         {resv.kind === "ENCARGO" && resv.deliveredAt && (
-                          <div className="text-emerald-300">
-                            <b>ENTREGADO:</b> {fmt(resv.deliveredAt)}
+                          <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-emerald-300">
+                            <b>ENTREGADO:</b> {fmtCardDate(resv.deliveredAt)}
                           </div>
                         )}
                       </div>
 
-                      <div className="text-[13px] sm:text-sm uppercase space-y-1">
+                      <div className="rounded-xl border border-slate-700/70 bg-slate-950/45 p-3">
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                          Productos
+                        </div>
+                        <div className="space-y-2">
+                          {cardItems.map((it, idx) => (
+                            <div
+                              key={`${resv.id}-${it.id ?? idx}`}
+                              className="flex items-start gap-2 text-sm font-semibold uppercase text-slate-100"
+                            >
+                              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-cyan-300" />
+                              <span className="min-w-0 flex-1 break-words">
+                                {it.name}
+                              </span>
+                              {it.qty > 1 && (
+                                <span className="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
+                                  x{it.qty}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="rounded-lg border border-slate-700/70 bg-slate-950/45 p-3">
+                          <div className="text-[10px] font-bold uppercase text-slate-500">
+                            Objetivo
+                          </div>
+                          <div className="mt-1 text-sm font-bold text-slate-100">
+                            {toCOP(resv.totalPrice)}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/70 bg-slate-950/45 p-3">
+                          <div className="text-[10px] font-bold uppercase text-slate-500">
+                            Inicial
+                          </div>
+                          <div className="mt-1 text-sm font-bold text-slate-100">
+                            {toCOP(resv.initialDeposit)}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3">
+                          <div className="text-[10px] font-bold uppercase text-emerald-300/80">
+                            Abonado
+                          </div>
+                          <div className="mt-1 text-sm font-bold text-emerald-300">
+                            {toCOP(resv.totalPaid)}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-pink-500/30 bg-pink-950/20 p-3">
+                          <div className="text-[10px] font-bold uppercase text-pink-300/80">
+                            Saldo
+                          </div>
+                          <div className="mt-1 text-sm font-bold text-pink-300">
+                            {toCOP(saldo)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="hidden">
                         <div>
                           <b>ÍTEMS:</b> {getCardItemsLabel(resv)}
                         </div>
@@ -1549,7 +1668,7 @@ export default function LayawaysPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 pt-2">
+                      <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:flex-wrap">
                         <button
                           className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase"
                           style={{ borderColor: COLORS.border }}

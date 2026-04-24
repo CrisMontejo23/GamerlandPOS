@@ -75,6 +75,7 @@ export default function ProductForm({
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [loadingSku, setLoadingSku] = useState(false);
+  const [createdProduct, setCreatedProduct] = useState<Product | null>(null);
   const [loadedCategoryName, setLoadedCategoryName] = useState<string | null>(
     null
   );
@@ -163,7 +164,14 @@ export default function ProductForm({
         `/products/next-sku?category=${encodeURIComponent(catName)}`
       );
       const data = await r.json();
-      setForm((f) => ({ ...f, sku: data.sku || "" }));
+      setForm((f) => {
+        const next: Product = { ...f, sku: data.sku || "" };
+        const costNum = Number(next.cost);
+        if (autoPrice && !isNaN(costNum) && isConsola(next, cats)) {
+          next.price = String(costNum + 150000);
+        }
+        return next;
+      });
     } finally {
       setLoadingSku(false);
     }
@@ -222,7 +230,12 @@ export default function ProductForm({
 
     if (r.ok) {
       setMsg("Guardado ✅");
-      goBackToProducts(isEdit ? "updated" : "created");
+      const saved = (await r.json().catch(() => null)) as Product | null;
+      if (!isEdit && saved) {
+        setCreatedProduct(saved);
+      } else {
+        goBackToProducts(isEdit ? "updated" : "created");
+      }
     } else {
       const err = await r
         .json()
@@ -275,10 +288,7 @@ export default function ProductForm({
                 }}
                 value={form.sku}
                 onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    sku: e.target.value.toUpperCase(),
-                  }))
+                  setForm((f) => ({ ...f, sku: e.target.value }))
                 }
               />
             ) : (
@@ -313,7 +323,7 @@ export default function ProductForm({
               }}
               value={form.barcode ?? ""}
               onChange={(e) =>
-                setForm((f) => ({ ...f, barcode: toUpper(e.target.value) }))
+                setForm((f) => ({ ...f, barcode: e.target.value }))
               }
             />
           </div>
@@ -330,7 +340,7 @@ export default function ProductForm({
               }}
               value={form.name}
               onChange={(e) =>
-                setForm((f) => ({ ...f, name: toUpper(e.target.value) }))
+                setForm((f) => ({ ...f, name: e.target.value }))
               }
             />
             {errors.name && (
@@ -443,7 +453,7 @@ export default function ProductForm({
                   }
                   return next;
                 });
-                if (!isEdit) fetchNextSkuByCategory(val); // genera SKU según categoría al crear
+                fetchNextSkuByCategory(val); // genera SKU según categoría al crear o editar
               }}
             >
               <option value="">(SIN CATEGORÍA)</option>
@@ -489,14 +499,80 @@ export default function ProductForm({
               "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
           }}
           onClick={save}
-          disabled={saving}
+          disabled={saving || loadingSku}
           title={isEdit ? "Actualizar producto" : "Crear producto"}
         >
-          {saving ? "Guardando…" : isEdit ? "Actualizar" : "Crear"}
+          {saving
+            ? "Guardando…"
+            : loadingSku
+              ? "Generando SKU…"
+              : isEdit
+                ? "Actualizar"
+                : "Crear"}
         </button>
 
         {!!msg && <div className="text-sm mt-3 text-cyan-300">{msg}</div>}
       </section>
+
+      {createdProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl p-5 shadow-2xl"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+              boxShadow:
+                "0 0 24px rgba(0,255,255,.18), 0 0 36px rgba(255,0,255,.12)",
+            }}
+          >
+            <h3 className="text-xl font-semibold text-cyan-300 uppercase">
+              Producto creado
+            </h3>
+            <p className="mt-2 text-sm text-gray-300">
+              <span className="font-mono text-pink-300">
+                {createdProduct.sku}
+              </span>{" "}
+              - {createdProduct.name}
+            </p>
+            <p className="mt-4 text-sm text-gray-200">
+              ¿Desea agregar stock a este artículo?
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="rounded border px-4 py-2 text-sm uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => goBackToProducts("created")}
+              >
+                No, volver
+              </button>
+              <button
+                type="button"
+                className="rounded-lg px-5 py-2.5 text-sm font-semibold uppercase"
+                style={{
+                  color: "#001014",
+                  background:
+                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                  boxShadow:
+                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
+                }}
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  params.set(
+                    "q",
+                    String(createdProduct.sku || createdProduct.name),
+                  );
+                  params.set("status", "created");
+                  params.set("stock", "1");
+                  router.push(`/products?${params.toString()}`);
+                }}
+              >
+                Sí, agregar stock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -22,9 +22,7 @@ export default function EditProductPage() {
   const backParams = {
     q: searchParams.get("q") || undefined,
     page: searchParams.get("page") || undefined,
-    // OJO: ahora vienes con "cat" en la URL, pero ProductForm espera "sku"
-    // luego si quieres, ajustamos esto para que use "cat" correctamente
-    sku: searchParams.get("cat") || undefined,
+    cat: searchParams.get("cat") || undefined,
   };
 
   return (

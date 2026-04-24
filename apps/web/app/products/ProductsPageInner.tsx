@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type React from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -240,13 +240,13 @@ export default function ProductsPage() {
     setStockModalOpen(false);
   };
 
-  const openStockModal = (p: Product) => {
+  const openStockModal = useCallback((p: Product) => {
     setStockProduct(p);
     setMovementType("in");
     setStockQty("");
     setStockUnitCost("");
     setStockModalOpen(true);
-  };
+  }, []);
 
   const stockSaveDisabled =
     !stockProduct ||
@@ -538,6 +538,22 @@ export default function ProductsPage() {
     params.delete("status");
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
+
+  useEffect(() => {
+    if (searchParams.get("stock") !== "1" || !rows.length) return;
+
+    const query = normText(searchParams.get("q") || q);
+    const product =
+      rows.find((p) => normText(p.sku) === query) ||
+      rows.find((p) => normText(p.name) === query) ||
+      rows.find((p) => normText(`${p.sku} ${p.name}`).includes(query));
+
+    if (product) openStockModal(product);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("stock");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [searchParams, rows, q, router, openStockModal]);
 
   return (
     <>
