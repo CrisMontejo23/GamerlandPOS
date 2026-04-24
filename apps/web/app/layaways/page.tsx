@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { apiFetch } from "../lib/api";
 import jsPDF from "jspdf";
@@ -304,6 +304,7 @@ export default function LayawaysPage() {
 
   // encargo: fecha retiro obligatoria
   const [pickupDate, setPickupDate] = useState<string>("");
+  const pickupDateRef = useRef<HTMLInputElement | null>(null);
 
   // datos cliente
   const [customerName, setCustomerName] = useState("");
@@ -322,6 +323,22 @@ export default function LayawaysPage() {
   // pagos iniciales
   const [initialDeposit, setInitialDeposit] = useState<string>("");
   const [initialMethod, setInitialMethod] = useState<PayMethod>("EFECTIVO");
+
+  const openPickupDatePicker = useCallback(() => {
+    window.setTimeout(() => {
+      const input = pickupDateRef.current;
+      if (!input) return;
+      input.focus();
+      const pickerInput = input as HTMLInputElement & {
+        showPicker?: () => void;
+      };
+      pickerInput.showPicker?.();
+    }, 80);
+  }, []);
+
+  useEffect(() => {
+    if (openForm && kind === "ENCARGO") openPickupDatePicker();
+  }, [openForm, kind, openPickupDatePicker]);
 
   // modal contrato obligatorio
   const [contractReservation, setContractReservation] =
@@ -1797,7 +1814,11 @@ export default function LayawaysPage() {
                     border: `1px solid ${COLORS.border}`,
                   }}
                   value={kind}
-                  onChange={(e) => setKind(e.target.value as ReservationKind)}
+                  onChange={(e) => {
+                    const nextKind = e.target.value as ReservationKind;
+                    setKind(nextKind);
+                    if (nextKind === "ENCARGO") openPickupDatePicker();
+                  }}
                 >
                   <option value="ENCARGO">ENCARGO</option>
                   <option value="APARTADO">APARTADO</option>
@@ -1810,6 +1831,7 @@ export default function LayawaysPage() {
                     Fecha de retiro *
                   </label>
                   <input
+                    ref={pickupDateRef}
                     type="date"
                     className="w-full rounded-lg px-3 py-3 text-gray-100"
                     style={{
