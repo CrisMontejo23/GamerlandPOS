@@ -203,18 +203,8 @@ type Row = {
   paymentMethods: Payment[];
 };
 
-type SalePatch = {
-  customer?: string | null;
-  status?: "paid" | "void" | "return";
-  items?: {
-    productId: number;
-    unitPrice: number;
-    qty: number;
-    discount?: number;
-  }[];
-};
-
 type Period = "day" | "month" | "year";
+type PayMethod = "EFECTIVO" | "QR_LLAVE" | "DATAFONO";
 
 /* ===== Constantes / helpers ===== */
 const COLORS = {
@@ -480,56 +470,73 @@ export default function SalesPage() {
   }, [safePage, totalPages]);
 
   /* ===== Acciones admin ===== */
-  const patchSale = async (
-    id: number,
-    body: SalePatch | Record<string, unknown>,
-  ) => {
-    const r = await apiFetch(`/sales/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}) as { error?: string });
-      alert(`Error: ${e?.error || "No se pudo actualizar"}`);
-      return false;
-    }
-    return true;
-  };
-
   // Edición inline: SOLO precio y cantidad (el costo lo maneja el back)
   type LineKey = string; // `${saleId}-${idx}`
   const [editKey, setEditKey] = useState<LineKey | null>(null);
   const [editPrice, setEditPrice] = useState<number | "">("");
   const [editQty, setEditQty] = useState<number | "">("");
+  const [editPayMethod, setEditPayMethod] = useState<PayMethod>("EFECTIVO");
+
+  const isServiceRow = (r: Row) => {
+    const category = String(r.category || "").toUpperCase();
+    const name = String(r.name || "").toUpperCase();
+    return category === "SERVICIOS" || name.includes("PAPELERIA");
+  };
 
   const startEditLine = (k: LineKey, r: Row) => {
     if (!isAdmin) return;
     setEditKey(k);
     setEditPrice(r.unitPrice);
     setEditQty(r.qty);
+    const currentMethod = String(
+      r.paymentMethods?.[0]?.method || "EFECTIVO",
+    ) as PayMethod;
+    setEditPayMethod(
+      ["EFECTIVO", "QR_LLAVE", "DATAFONO"].includes(currentMethod)
+        ? currentMethod
+        : "EFECTIVO",
+    );
   };
   const cancelEditLine = () => {
     setEditKey(null);
     setEditPrice("");
     setEditQty("");
+    setEditPayMethod("EFECTIVO");
   };
   const saveEditLine = async (r: Row) => {
     if (editKey == null) return;
-    const body: SalePatch = {
-      items: [
-        {
-          productId: Number(r.productId),
-          unitPrice: editPrice === "" ? r.unitPrice : Number(editPrice),
-          qty: editQty === "" ? r.qty : Number(editQty),
-          discount: 0,
-        },
-      ],
+    if (!r.saleItemId) return;
+    const body = {
+      qty: editQty === "" ? r.qty : Number(editQty),
+      paymentMethod: editPayMethod,
+      ...(isServiceRow(r)
+        ? { unitPrice: editPrice === "" ? r.unitPrice : Number(editPrice) }
+        : {}),
     };
-    const ok = await patchSale(r.saleId, body);
-    if (ok) {
-      cancelEditLine();
-      load();
+    const resp = await apiFetch(`/sales/${r.saleId}/items/${r.saleItemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}) as { error?: string });
+      setToast({
+        open: true,
+        kind: "error",
+        title: "No se pudo actualizar",
+        subtitle: String(e?.error || "Verifica stock y datos."),
+      });
+      setTimeout(hideToast, 2400);
+      return;
     }
+    setToast({
+      open: true,
+      kind: "success",
+      title: "Venta actualizada",
+      subtitle: "La línea, el pago y el stock fueron recalculados.",
+    });
+    setTimeout(hideToast, 2200);
+    cancelEditLine();
+    load();
   };
 
   /* ===== Eliminar venta ===== */
@@ -780,8 +787,12 @@ export default function SalesPage() {
         {/* Resumen (igual pero más pro) */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <SummaryCard title="Ventas" value={totals.revenue} accent="cyan" />
-          <SummaryCard title="Costo" value={totals.cost} accent="pink" />
-          <SummaryCard title="Ganancia" value={totals.profit} accent="cyan" />
+          {isAdmin && (
+            <>
+              <SummaryCard title="Costo" value={totals.cost} accent="pink" />
+              <SummaryCard title="Ganancia" value={totals.profit} accent="cyan" />
+            </>
+          )}
           <SummaryCard title="Papelería" value={paperTotal} accent="pink" />
         </div>
 
@@ -829,6 +840,8 @@ export default function SalesPage() {
           )}
           {pageSlice.map((r, idx) => {
             const k = `mobile-${r.saleItemId ?? r.saleId}-${idx}`;
+            const isEditing = editKey === k;
+            const service = isServiceRow(r);
             const lineRevenue = r.revenue ?? r.unitPrice * r.qty;
             const lineProfit = profitByRule(r);
 
@@ -856,22 +869,40 @@ export default function SalesPage() {
                     </div>
                   </div>
                   {isAdmin && (
-                    <button
-                      onClick={() => deleteSaleItem(r)}
-                      className={`shrink-0 inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition`}
-                      title="Eliminar artículo de esta venta"
-                      aria-label="Eliminar artículo"
-                    >
-                      <span className={`relative ${ACTION_ICON.box}`}>
-                        <Image
-                          src="/borrar.png"
-                          alt="Eliminar"
-                          fill
-                          sizes={ACTION_ICON.sizes}
-                          className="opacity-90 object-contain"
-                        />
-                      </span>
-                    </button>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        onClick={() => startEditLine(k, r)}
+                        className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition`}
+                        title="Editar artículo"
+                        aria-label="Editar artículo"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/edit.png"
+                            alt="Editar"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="opacity-90 object-contain"
+                          />
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => deleteSaleItem(r)}
+                        className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition`}
+                        title="Eliminar artículo de esta venta"
+                        aria-label="Eliminar artículo"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/borrar.png"
+                            alt="Eliminar"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="opacity-90 object-contain"
+                          />
+                        </span>
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -879,8 +910,87 @@ export default function SalesPage() {
                   <MiniMetric label="Precio" value={fmtCOP(r.unitPrice)} />
                   <MiniMetric label="Cant." value={String(r.qty)} />
                   <MiniMetric label="Venta" value={fmtCOP(lineRevenue)} cyan />
-                  <MiniMetric label="Ganancia" value={fmtCOP(lineProfit)} pink />
+                  {isAdmin && (
+                    <MiniMetric
+                      label="Ganancia"
+                      value={fmtCOP(lineProfit)}
+                      pink
+                    />
+                  )}
                 </div>
+
+                {isEditing && (
+                  <div className="mt-3 grid grid-cols-1 gap-2 border-t border-[#262862] pt-3">
+                    <select
+                      className="rounded-lg px-3 py-2 text-sm outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={editPayMethod}
+                      onChange={(e) =>
+                        setEditPayMethod(e.target.value as PayMethod)
+                      }
+                    >
+                      <option value="EFECTIVO">EFECTIVO</option>
+                      <option value="QR_LLAVE">QR / LLAVE</option>
+                      <option value="DATAFONO">DATAFONO</option>
+                    </select>
+                    {service && (
+                      <input
+                        className="rounded-lg px-3 py-2 text-right text-sm outline-none"
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                        type="number"
+                        min={0}
+                        value={editPrice}
+                        onChange={(e) =>
+                          setEditPrice(
+                            e.target.value === ""
+                              ? ""
+                              : Math.max(0, Number(e.target.value)),
+                          )
+                        }
+                      />
+                    )}
+                    <input
+                      className="rounded-lg px-3 py-2 text-center text-sm outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      type="number"
+                      min={1}
+                      value={editQty}
+                      onChange={(e) =>
+                        setEditQty(
+                          e.target.value === ""
+                            ? ""
+                            : Math.max(1, Number(e.target.value)),
+                        )
+                      }
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => saveEditLine(r)}
+                        className="flex-1 rounded-lg px-3 py-2 text-sm font-semibold"
+                        style={{ backgroundColor: "#0bd977", color: "#001014" }}
+                        disabled={editQty === "" || (service && editPrice === "")}
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        onClick={cancelEditLine}
+                        className="flex-1 rounded-lg px-3 py-2 text-sm"
+                        style={{ backgroundColor: "#374151" }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-3 flex flex-wrap gap-1">
                   {r.paymentMethods.map((p, i) => (
@@ -912,11 +1022,11 @@ export default function SalesPage() {
                 <Th>SKU</Th>
                 <Th>Producto</Th>
                 <Th className="text-right">Precio</Th>
-                <Th className="text-right">Costo</Th>
+                {isAdmin && <Th className="text-right">Costo</Th>}
                 <Th className="text-center">Cant.</Th>
                 <Th className="text-right">Total venta</Th>
-                <Th className="text-right">Total costo</Th>
-                <Th className="text-right">Ganancia</Th>
+                {isAdmin && <Th className="text-right">Total costo</Th>}
+                {isAdmin && <Th className="text-right">Ganancia</Th>}
                 <Th>Método(s)</Th>
                 {isAdmin && <Th>Acciones</Th>}
               </tr>
@@ -926,7 +1036,7 @@ export default function SalesPage() {
                 <tr>
                   <td
                     className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 12 : 11}
+                    colSpan={isAdmin ? 12 : 8}
                   >
                     Cargando…
                   </td>
@@ -936,7 +1046,7 @@ export default function SalesPage() {
                 <tr>
                   <td
                     className="py-3 px-3 text-gray-400"
-                    colSpan={isAdmin ? 12 : 11}
+                    colSpan={isAdmin ? 12 : 8}
                   >
                     Sin registros
                   </td>
@@ -980,7 +1090,7 @@ export default function SalesPage() {
 
                       {/* Precio (editable) */}
                       <Td className="text-right">
-                        {isEditing ? (
+                        {isEditing && isServiceRow(r) ? (
                           <input
                             className="rounded px-2 py-1 w-28 text-right outline-none"
                             style={{
@@ -1004,7 +1114,9 @@ export default function SalesPage() {
                       </Td>
 
                       {/* Costo (solo lectura; el back lo maneja) */}
-                      <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
+                      {isAdmin && (
+                        <Td className="text-right">{fmtCOP(r.unitCost)}</Td>
+                      )}
 
                       {/* Cantidad (editable) */}
                       <Td className="text-center">
@@ -1034,14 +1146,35 @@ export default function SalesPage() {
                       <Td className="text-right text-cyan-300">
                         {fmtCOP(lineRevenue)}
                       </Td>
-                      <Td className="text-right">{fmtCOP(lineCost)}</Td>
-                      <Td className="text-right text-pink-300">
-                        {fmtCOP(lineProfit)}
-                      </Td>
+                      {isAdmin && (
+                        <Td className="text-right">{fmtCOP(lineCost)}</Td>
+                      )}
+                      {isAdmin && (
+                        <Td className="text-right text-pink-300">
+                          {fmtCOP(lineProfit)}
+                        </Td>
+                      )}
 
-                      <Td>
-                        <div className="flex flex-wrap gap-1">
-                          {r.paymentMethods.map((p, i) => {
+                      <Td className={!isAdmin ? "border-r last:rounded-r-lg" : ""}>
+                        {isEditing ? (
+                          <select
+                            className="rounded px-2 py-1 text-sm outline-none"
+                            style={{
+                              backgroundColor: COLORS.input,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                            value={editPayMethod}
+                            onChange={(e) =>
+                              setEditPayMethod(e.target.value as PayMethod)
+                            }
+                          >
+                            <option value="EFECTIVO">EFECTIVO</option>
+                            <option value="QR_LLAVE">QR / LLAVE</option>
+                            <option value="DATAFONO">DATAFONO</option>
+                          </select>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {r.paymentMethods.map((p, i) => {
                             const m = String(p.method || "").toUpperCase();
                             const tone = m.includes("EFECT")
                               ? "rgba(0,255,255,.10)"
@@ -1051,23 +1184,24 @@ export default function SalesPage() {
                                   ? "rgba(99,102,241,.12)"
                                   : "rgba(255,255,255,.06)";
 
-                            return (
-                              <span
-                                key={i}
-                                className="px-2 py-0.5 rounded-full text-xs"
-                                style={{
-                                  backgroundColor: tone,
-                                  border: `1px solid ${COLORS.border}`,
-                                }}
-                                title={p.method}
-                              >
-                                {p.method === "QR_LLAVE"
-                                  ? "QR / LLAVE"
-                                  : p.method}
-                              </span>
-                            );
-                          })}
-                        </div>
+                              return (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-full text-xs"
+                                  style={{
+                                    backgroundColor: tone,
+                                    border: `1px solid ${COLORS.border}`,
+                                  }}
+                                  title={p.method}
+                                >
+                                  {p.method === "QR_LLAVE"
+                                    ? "QR / LLAVE"
+                                    : p.method}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </Td>
 
                       {isAdmin && (

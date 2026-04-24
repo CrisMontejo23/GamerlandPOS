@@ -746,6 +746,12 @@ const saleAdminUpdateSchema = z.object({
   status: z.enum(["paid", "void", "return"]).optional(),
 });
 
+const saleItemUpdateSchema = z.object({
+  qty: z.coerce.number().int().positive().optional(),
+  unitPrice: z.coerce.number().nonnegative().optional(),
+  paymentMethod: z.enum(PaymentMethods).optional(),
+});
+
 app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id))
@@ -890,6 +896,131 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
       .json({ error: err?.message || "No se pudo actualizar la venta" });
   }
 });
+
+app.patch(
+  "/sales/:saleId/items/:itemId",
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res) => {
+    const saleId = Number(req.params.saleId);
+    const itemId = Number(req.params.itemId);
+    if (!Number.isInteger(saleId) || !Number.isInteger(itemId)) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+
+    const parsed = saleItemUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", issues: parsed.error.flatten() });
+    }
+
+    const userId = req.user!.id;
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const item = await tx.saleItem.findFirst({
+          where: { id: itemId, saleId },
+          include: {
+            sale: { include: { items: true, payments: true } },
+            product: { select: { cost: true, category: true, name: true } },
+          },
+        });
+        if (!item) throw new Error("No encontrado");
+
+        const nextQty = parsed.data.qty ?? Number(item.qty);
+        const isService =
+          String(item.product?.category || "").toUpperCase() === "SERVICIOS" ||
+          String(item.product?.name || "").toUpperCase().includes("PAPELERIA");
+        const nextUnitPrice = isService
+          ? (parsed.data.unitPrice ?? Number(item.unitPrice))
+          : Number(item.unitPrice);
+        const delta = nextQty - Number(item.qty);
+
+        if (!isService && delta > 0) {
+          const stock = await getCurrentStock(tx, item.productId);
+          if (stock < delta) {
+            throw new Error(`Stock insuficiente. Disponible: ${stock}`);
+          }
+        }
+
+        if (delta !== 0) {
+          await tx.stockMovement.create({
+            data: {
+              productId: item.productId,
+              type: delta > 0 ? "out" : "in",
+              qty: Math.abs(delta),
+              unitCost: Number(item.product?.cost ?? 0),
+              reference: `sale#${saleId}:item#${itemId}:edit`,
+              userId,
+            },
+          });
+        }
+
+        await tx.saleItem.update({
+          where: { id: itemId },
+          data: {
+            qty: nextQty,
+            unitPrice: nextUnitPrice,
+            total: nextUnitPrice * nextQty - Number(item.discount ?? 0),
+          },
+        });
+
+        const curItems = await tx.saleItem.findMany({ where: { saleId } });
+        const subtotal = curItems.reduce(
+          (a, it) => a + Number(it.unitPrice) * Number(it.qty),
+          0,
+        );
+        const discount = curItems.reduce(
+          (a, it) => a + Number(it.discount ?? 0),
+          0,
+        );
+        const tax = 0;
+        const total = subtotal + tax - discount;
+
+        if (parsed.data.paymentMethod) {
+          await tx.payment.deleteMany({ where: { saleId } });
+          await tx.payment.create({
+            data: {
+              saleId,
+              method: parsed.data.paymentMethod,
+              amount: total,
+            },
+          });
+        } else if (item.sale.payments.length > 0) {
+          const previousTotal = Number(item.sale.total || 0);
+          const ratio = previousTotal > 0 ? total / previousTotal : 1;
+          await tx.payment.deleteMany({ where: { saleId } });
+          await tx.payment.createMany({
+            data: item.sale.payments.map((p) => ({
+              saleId,
+              method: p.method,
+              amount: Math.round(Number(p.amount) * ratio),
+              reference: p.reference ?? undefined,
+            })),
+          });
+        }
+
+        const sale = await tx.sale.update({
+          where: { id: saleId },
+          data: { subtotal, discount, tax, total },
+          include: { items: true, payments: true },
+        });
+
+        return { ok: true, sale, itemId };
+      });
+
+      return res.json(result);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      if (err?.message === "No encontrado") {
+        return res.status(404).json({ error: "No encontrado" });
+      }
+      return res
+        .status(400)
+        .json({ error: err?.message || "No se pudo actualizar el artículo" });
+    }
+  },
+);
 
 app.delete(
   "/sales/:id",
@@ -1343,16 +1474,19 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
 
   // 4) UTILIDAD por REGLAS (sumatoria línea a línea)
   //    Necesitamos items y el unitCost por venta/producto
-  const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
+  const costMap = new Map<string, number>();
   for (const m of outs) {
     const saleId = Number((m.reference || "").match(/sale#(\d+)/)?.[1] || 0);
     if (!saleId) continue;
-    costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
+    const itemId = Number((m.reference || "").match(/item#(\d+)/)?.[1] || 0);
+    if (itemId) costMap.set(`item:${itemId}`, Number(m.unitCost) || 0);
+    costMap.set(`sale-product:${saleId}:${m.productId}`, Number(m.unitCost) || 0);
   }
 
   const items = await prisma.saleItem.findMany({
     where: { sale: { createdAt: { gte: from, lte: to }, status: "paid" } },
     select: {
+      id: true,
       saleId: true,
       productId: true,
       qty: true,
@@ -1362,7 +1496,10 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
   });
 
   const utilidadReglas = items.reduce((acc, it) => {
-    const unitCost = toN(costMap.get(`${it.saleId}:${it.productId}`));
+    const unitCost = toN(
+      costMap.get(`item:${it.id}`) ??
+        costMap.get(`sale-product:${it.saleId}:${it.productId}`),
+    );
     return (
       acc +
       profitByRule(
@@ -1445,11 +1582,13 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
     reference: string | null;
   }>;
 
-  const costMap = new Map<string, number>(); // `${saleId}:${productId}` -> unitCost
+  const costMap = new Map<string, number>();
   for (const m of outs) {
     const saleId = Number((m.reference || "").match(/sale#(\d+)/)?.[1] || 0);
     if (!saleId) continue;
-    costMap.set(`${saleId}:${m.productId}`, Number(m.unitCost) || 0);
+    const itemId = Number((m.reference || "").match(/item#(\d+)/)?.[1] || 0);
+    if (itemId) costMap.set(`item:${itemId}`, Number(m.unitCost) || 0);
+    costMap.set(`sale-product:${saleId}:${m.productId}`, Number(m.unitCost) || 0);
   }
 
   const rows = sales.flatMap((s) =>
@@ -1457,7 +1596,10 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       const unitPrice = toN(it.unitPrice);
       const qty = toN(it.qty);
       const discount = toN(it.discount);
-      const unitCost = toN(costMap.get(`${s.id}:${it.productId}`));
+      const unitCost = toN(
+        costMap.get(`item:${it.id}`) ??
+          costMap.get(`sale-product:${s.id}:${it.productId}`),
+      );
       const revenue = unitPrice * qty;
       const cost = unitCost * qty;
 

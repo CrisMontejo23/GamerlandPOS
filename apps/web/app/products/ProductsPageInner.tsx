@@ -829,19 +829,21 @@ export default function ProductsPage() {
                   </span>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                   <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
                     <div className="text-gray-400">Precio</div>
                     <div className="mt-1 font-semibold text-cyan-300">
                       {fmtCOP(p.price)}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
-                    <div className="text-gray-400">Costo</div>
-                    <div className="mt-1 font-semibold text-pink-300">
-                      {fmtCOP(p.cost)}
+                  {role === "ADMIN" && (
+                    <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
+                      <div className="text-gray-400">Costo</div>
+                      <div className="mt-1 font-semibold text-pink-300">
+                        {fmtCOP(p.cost)}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#262862] pt-3">
@@ -932,7 +934,9 @@ export default function ProductsPage() {
                 <th className="px-3 text-left">CATEGORÍA</th>
                 <th className="px-3 text-right">STOCK</th>
                 <th className="px-3 text-right">PRECIO</th>
-                <th className="px-3 text-right">COSTO</th>
+                {role === "ADMIN" && (
+                  <th className="px-3 text-right">COSTO</th>
+                )}
                 <th className="px-3 text-right last:rounded-r-lg">ACCIONES</th>
               </tr>
             </thead>
@@ -996,9 +1000,11 @@ export default function ProductsPage() {
                   <td className="px-3 bg-[#101235] border-y border-[#262862] text-right text-cyan-300 group-hover:bg-[#191B4B] transition-colors">
                     {fmtCOP(p.price)}
                   </td>
-                  <td className="px-3 bg-[#101235] border-y border-[#262862] text-right text-pink-300 group-hover:bg-[#191B4B] transition-colors">
-                    {fmtCOP(p.cost)}
-                  </td>
+                  {role === "ADMIN" && (
+                    <td className="px-3 bg-[#101235] border-y border-[#262862] text-right text-pink-300 group-hover:bg-[#191B4B] transition-colors">
+                      {fmtCOP(p.cost)}
+                    </td>
+                  )}
                   <td className="px-3 bg-[#101235] border-y border-r border-[#262862] text-right last:rounded-r-lg group-hover:bg-[#191B4B] transition-colors">
                     {role === "ADMIN" ? (
                       <div className="flex justify-end gap-2">
@@ -1075,7 +1081,7 @@ export default function ProductsPage() {
                 <tr>
                   <td
                     className="py-4 px-3 text-center text-gray-400"
-                    colSpan={8}
+                    colSpan={role === "ADMIN" ? 8 : 7}
                   >
                     Sin resultados
                   </td>
