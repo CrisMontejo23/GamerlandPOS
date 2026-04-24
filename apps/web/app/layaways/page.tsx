@@ -695,6 +695,11 @@ export default function LayawaysPage() {
     return paymentsCache[paymentsOpenId] ?? [];
   }, [paymentsOpenId, paymentsCache]);
 
+  const currentPaymentReservation = useMemo(() => {
+    if (!paymentsOpenId) return null;
+    return rows.find((r) => r.id === paymentsOpenId) ?? null;
+  }, [paymentsOpenId, rows]);
+
   const registerPayment = async () => {
     if (!paymentsOpenId) return;
     const dep = Number(newPayAmount);
@@ -1540,6 +1545,7 @@ export default function LayawaysPage() {
                             {resv.code}
                           </div>
                           <div className="text-sm font-semibold text-slate-200">
+                            <span className="text-slate-400">Abierto:</span>{" "}
                             {fmtCardDate(resv.createdAt)}
                           </div>
                           <div className="text-sm text-slate-300 uppercase">
@@ -1567,17 +1573,17 @@ export default function LayawaysPage() {
                       <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
                         {resv.closedAt && (
                           <div className="rounded-lg border border-slate-700/70 bg-slate-950/45 px-3 py-2">
-                            <b>CERRADO:</b> {fmtCardDate(resv.closedAt)}
+                            <b>Cerrado:</b> {fmtCardDate(resv.closedAt)}
                           </div>
                         )}
                         {resv.kind === "ENCARGO" && resv.pickupDate && (
                           <div className="rounded-lg border border-slate-700/70 bg-slate-950/45 px-3 py-2">
-                            <b>RETIRO:</b> {onlyDateISO(resv.pickupDate)}
+                            <b>Retiro:</b> {onlyDateISO(resv.pickupDate)}
                           </div>
                         )}
                         {resv.kind === "ENCARGO" && resv.deliveredAt && (
                           <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-emerald-300">
-                            <b>ENTREGADO:</b> {fmtCardDate(resv.deliveredAt)}
+                            <b>Entregado:</b> {fmtCardDate(resv.deliveredAt)}
                           </div>
                         )}
                       </div>
@@ -1669,16 +1675,16 @@ export default function LayawaysPage() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:flex-wrap">
-                        <button
-                          className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase"
-                          style={{ borderColor: COLORS.border }}
-                          onClick={() => openPaymentsModal(resv)}
-                        >
-                          VER / ABONAR
-                        </button>
-
                         {resv.status === "OPEN" && (
                           <>
+                            <button
+                              className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase"
+                              style={{ borderColor: COLORS.border }}
+                              onClick={() => openPaymentsModal(resv)}
+                            >
+                              VER / ABONAR / CERRAR
+                            </button>
+
                             <button
                               className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase"
                               style={{ borderColor: COLORS.border }}
@@ -1697,7 +1703,7 @@ export default function LayawaysPage() {
                           </>
                         )}
 
-                        {canFinalize && (
+                        {resv.status === "OPEN" && canFinalize && (
                           <button
                             className="w-full px-3 py-2 sm:py-1 rounded border text-xs uppercase text-emerald-300"
                             style={{ borderColor: COLORS.border }}
@@ -2180,38 +2186,84 @@ export default function LayawaysPage() {
 
       {/* Modal VER / ABONAR */}
       {paymentsOpenId && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-2xl rounded-xl p-3 sm:p-4 space-y-3 overflow-y-auto"
+            className="w-full max-w-4xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
               maxHeight: "92vh",
             }}
           >
-            <h3 className="text-lg font-semibold text-cyan-300 uppercase">
-              ABONOS {rows.find((r) => r.id === paymentsOpenId)?.code}
-            </h3>
+            <div className="flex flex-col gap-3 border-b border-slate-700/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Abonos y cierre
+                </div>
+                <h3 className="mt-1 text-2xl font-black uppercase tracking-wide text-cyan-300">
+                  {currentPaymentReservation?.code ?? "REGISTRO"}
+                </h3>
+                {currentPaymentReservation && (
+                  <div className="mt-1 text-sm text-slate-300 uppercase">
+                    {currentPaymentReservation.customerName}{" "}
+                    <span className="text-slate-500">•</span>{" "}
+                    {currentPaymentReservation.customerPhone}
+                  </div>
+                )}
+              </div>
 
-            <div className="hidden sm:block max-h-64 overflow-auto text-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[620px]">
-                  <thead className="bg-black/40">
+              {currentPaymentReservation && (
+                <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
+                  <div className="rounded-xl border border-slate-700/70 bg-slate-950/45 p-3">
+                    <div className="text-[10px] font-bold uppercase text-slate-500">
+                      Objetivo
+                    </div>
+                    <div className="mt-1 text-sm font-bold text-slate-100">
+                      {toCOP(currentPaymentReservation.totalPrice)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3">
+                    <div className="text-[10px] font-bold uppercase text-emerald-300/80">
+                      Abonado
+                    </div>
+                    <div className="mt-1 text-sm font-bold text-emerald-300">
+                      {toCOP(currentPaymentReservation.totalPaid)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-pink-500/30 bg-pink-950/20 p-3">
+                    <div className="text-[10px] font-bold uppercase text-pink-300/80">
+                      Saldo
+                    </div>
+                    <div className="mt-1 text-sm font-bold text-pink-300">
+                      {toCOP(
+                        currentPaymentReservation.totalPrice -
+                          currentPaymentReservation.totalPaid,
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden sm:block text-xs">
+              <div className="overflow-x-auto rounded-xl border border-slate-700/70 bg-slate-950/35">
+                <table className="w-full min-w-[720px] border-separate border-spacing-y-2 px-2 text-left">
+                  <thead>
                     <tr>
-                      <th className="px-2 py-1 border-b border-gray-700">
+                      <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                         FECHA
                       </th>
-                      <th className="px-2 py-1 border-b border-gray-700">
+                      <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                         MÉTODO
                       </th>
-                      <th className="px-2 py-1 border-b border-gray-700">
+                      <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                         MONTO
                       </th>
-                      <th className="px-2 py-1 border-b border-gray-700">
+                      <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                         NOTA
                       </th>
                       {role === "ADMIN" && (
-                        <th className="px-2 py-1 border-b border-gray-700 text-right">
+                        <th className="px-3 py-2 text-right text-[11px] uppercase text-slate-400">
                           ACCIONES
                         </th>
                       )}
@@ -2219,24 +2271,26 @@ export default function LayawaysPage() {
                   </thead>
                   <tbody>
                     {currentPayments.map((p) => (
-                      <tr key={p.id}>
-                        <td className="px-2 py-1 border-b border-gray-800">
-                          {fmt(p.createdAt)}
+                      <tr key={p.id} className="bg-slate-900/65">
+                        <td className="rounded-l-lg px-3 py-3 text-slate-300">
+                          {fmtCardDate(p.createdAt)}
                         </td>
-                        <td className="px-2 py-1 border-b border-gray-800">
-                          {PaymentLabels[p.method]}
+                        <td className="px-3 py-3 font-semibold uppercase text-slate-100">
+                          <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-cyan-200">
+                            {PaymentLabels[p.method]}
+                          </span>
                         </td>
-                        <td className="px-2 py-1 border-b border-gray-800">
+                        <td className="px-3 py-3 font-bold text-emerald-300">
                           {toCOP(p.amount)}
                         </td>
-                        <td className="px-2 py-1 border-b border-gray-800">
-                          {p.note || ""}
+                        <td className="px-3 py-3 text-slate-300">
+                          {p.note || "—"}
                         </td>
                         {role === "ADMIN" && (
-                          <td className="px-2 py-1 border-b border-gray-800 text-right">
+                          <td className="rounded-r-lg px-3 py-3 text-right">
                             <button
                               onClick={() => deletePayment(p)}
-                              className="inline-flex items-center justify-center"
+                              className="inline-flex items-center justify-center rounded-lg border border-red-400/30 bg-red-950/20 p-2"
                             >
                               <Image
                                 src="/borrar.png"
@@ -2254,7 +2308,7 @@ export default function LayawaysPage() {
                       <tr>
                         <td
                           colSpan={role === "ADMIN" ? 5 : 4}
-                          className="px-2 py-2 text-center text-gray-500"
+                          className="px-3 py-8 text-center text-sm text-slate-500"
                         >
                           Sin abonos registrados.
                         </td>
@@ -2269,21 +2323,21 @@ export default function LayawaysPage() {
               {currentPayments.map((p) => (
                 <div
                   key={p.id}
-                  className="rounded-xl border p-3 space-y-1"
+                  className="rounded-xl border p-3 space-y-2"
                   style={{
                     borderColor: COLORS.border,
                     backgroundColor: "rgba(0,0,0,0.25)",
                   }}
                 >
-                  <div className="text-[11px] text-gray-400">
-                    {fmt(p.createdAt)}
+                  <div className="text-[12px] font-semibold text-slate-400">
+                    {fmtCardDate(p.createdAt)}
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="text-xs uppercase text-gray-200">
+                    <div className="rounded-full bg-cyan-400/10 px-2 py-1 text-[11px] font-bold uppercase text-cyan-200">
                       {PaymentLabels[p.method]}
                     </div>
-                    <div className="text-sm font-semibold text-cyan-300">
+                    <div className="text-base font-black text-emerald-300">
                       {toCOP(p.amount)}
                     </div>
                   </div>
@@ -2305,25 +2359,26 @@ export default function LayawaysPage() {
               ))}
 
               {currentPayments.length === 0 && (
-                <div
-                  className="rounded-xl border p-3 text-center text-gray-500 text-sm"
-                  style={{ borderColor: COLORS.border }}
-                >
+                <div className="rounded-xl border border-slate-700/70 bg-slate-950/35 p-5 text-center text-sm text-slate-500">
                   Sin abonos registrados.
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-300">
+                Nuevo abono
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_1.5fr]">
               <div>
-                <label className="block text-sm mb-1 uppercase">
-                  NUEVO ABONO *
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Valor *
                 </label>
                 <input
                   type="number"
                   min={0}
                   step="1"
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2333,9 +2388,11 @@ export default function LayawaysPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">MÉTODO *</label>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Método *
+                </label>
                 <select
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2349,9 +2406,11 @@ export default function LayawaysPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">NOTA</label>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Nota
+                </label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2360,18 +2419,19 @@ export default function LayawaysPage() {
                   onChange={(e) => setNewPayNote(e.target.value)}
                 />
               </div>
+              </div>
             </div>
 
             <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                className="w-full rounded-lg border px-4 py-3 text-sm font-semibold uppercase sm:w-auto"
                 style={{ borderColor: COLORS.border }}
                 onClick={closePaymentsModal}
               >
                 CERRAR
               </button>
               <button
-                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                className="w-full rounded-lg px-5 py-3 text-sm font-black uppercase sm:w-auto"
                 style={{
                   color: "#001014",
                   background:
