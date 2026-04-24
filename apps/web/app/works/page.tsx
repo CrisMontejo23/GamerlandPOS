@@ -1528,7 +1528,7 @@ export default function WorksPage() {
             )}
             </div>
             <div className="mt-1 text-sm font-semibold text-gray-200 sm:text-[15px]">
-              Ingreso: {fmtIngreso(w.createdAt)}
+              {fmtIngreso(w.createdAt)}
             </div>
             <div className="mt-1 text-sm font-semibold uppercase text-gray-100">
               {UU(w.customerName)} • {UU(w.customerPhone)}
