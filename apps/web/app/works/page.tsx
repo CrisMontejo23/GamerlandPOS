@@ -127,6 +127,25 @@ const toNum = (v: unknown): number | null => {
   return null;
 };
 const fmt = (d: string | Date) => new Date(d).toLocaleString();
+const fmtIngreso = (d: string | Date) => {
+  const date = new Date(d);
+  const day = new Intl.DateTimeFormat("es-CO", { weekday: "long" }).format(
+    date,
+  );
+  const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(
+    date,
+  );
+  const time = date
+    .toLocaleTimeString("es-CO", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(/\s/g, " ")
+    .toLowerCase();
+
+  return `${day} ${date.getDate()} de ${month} a las ${time}`;
+};
 
 // AnyRow incluye los nuevos campos (por ser Partial<WorkOrder>)
 type AnyRow = Partial<WorkOrder> & { id: number; code: string };
@@ -1507,8 +1526,8 @@ export default function WorksPage() {
               </span>
             )}
             </div>
-            <div className="mt-1 text-xs uppercase text-gray-400">
-              Ingreso: {fmt(w.createdAt)}
+            <div className="mt-1 text-sm font-semibold text-gray-200 sm:text-[15px]">
+              Ingreso: {fmtIngreso(w.createdAt)}
             </div>
             <div className="mt-1 text-sm font-semibold uppercase text-gray-100">
               {UU(w.customerName)} • {UU(w.customerPhone)}
