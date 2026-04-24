@@ -254,11 +254,17 @@ export default function WorksPage() {
   const [editQDTarget, setEditQDTarget] = useState<WorkOrder | null>(null);
   const [editHasQuote, setEditHasQuote] = useState<"YES" | "NO">("NO");
   const [editQuoteValue, setEditQuoteValue] = useState<string>("");
+  const [editTotalValue, setEditTotalValue] = useState<string>("");
   const [editHasDeposit, setEditHasDeposit] = useState<"YES" | "NO">("NO");
   const [editDepositValue, setEditDepositValue] = useState<string>("");
   const [editDepositMethod, setEditDepositMethod] =
     useState<PayMethod>("EFECTIVO");
   const [editDepositNote, setEditDepositNote] = useState<string>("");
+
+  // Cambiar estado (ADMIN)
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<WorkOrder | null>(null);
+  const [statusDraft, setStatusDraft] = useState<WorkStatus>("RECEIVED");
 
   // === Editar DESCRIPCIÓN / ITEM ===
   const [editOpen, setEditOpen] = useState(false);
@@ -266,11 +272,11 @@ export default function WorksPage() {
   const [editItem, setEditItem] = useState("");
   const [editDescription, setEditDescription] = useState("");
   // === Modal EDITAR ITEMS (antes era desc/item del WorkOrder) ===
-  type EditItemRow = { id: number; label: string };
+  type EditItemRow = { id: number; label: string; detail: string };
 
   const [editItems, setEditItems] = useState<EditItemRow[]>([]);
   const [editItemsOriginal, setEditItemsOriginal] = useState<
-    Record<number, string>
+    Record<number, { label: string; detail: string }>
   >({});
   const [editItemsSaving, setEditItemsSaving] = useState(false);
 
@@ -329,6 +335,12 @@ export default function WorksPage() {
     );
   }
 
+  function updateEditItemDetail(id: number, value: string) {
+    setEditItems((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, detail: UU(value) } : r)),
+    );
+  }
+
   async function openEditDetails(w: WorkOrder) {
     setEditTarget(w);
 
@@ -341,10 +353,13 @@ export default function WorksPage() {
     const rowsToEdit: EditItemRow[] = (items || []).map((it) => ({
       id: it.id,
       label: UU(it.label),
+      detail: UU(it.detail || ""),
     }));
 
-    const originalMap: Record<number, string> = {};
-    rowsToEdit.forEach((r) => (originalMap[r.id] = r.label));
+    const originalMap: Record<number, { label: string; detail: string }> = {};
+    rowsToEdit.forEach(
+      (r) => (originalMap[r.id] = { label: r.label, detail: r.detail }),
+    );
 
     setEditItems(rowsToEdit);
     setEditItemsOriginal(originalMap);
@@ -371,15 +386,19 @@ export default function WorksPage() {
 
     try {
       // solo enviar los que cambiaron
-      const changed = editItems.filter(
-        (it) => (editItemsOriginal[it.id] ?? "") !== it.label,
-      );
+      const changed = editItems.filter((it) => {
+        const original = editItemsOriginal[it.id] ?? { label: "", detail: "" };
+        return original.label !== it.label || original.detail !== it.detail;
+      });
 
       await Promise.all(
         changed.map(async (it) => {
           const r = await apiFetch(`/works/${editTarget.id}/items/${it.id}`, {
             method: "PATCH",
-            body: JSON.stringify({ label: UDATA(it.label) }),
+            body: JSON.stringify({
+              label: UDATA(it.label),
+              detail: it.detail.trim() ? UDATA(it.detail) : "",
+            }),
           });
           if (!r.ok) {
             const e = (await r.json().catch(() => ({}))) as { error?: string };
@@ -427,6 +446,7 @@ export default function WorksPage() {
     setEditQDTarget(null);
     setEditHasQuote("NO");
     setEditQuoteValue("");
+    setEditTotalValue("");
     setEditHasDeposit("NO");
     setEditDepositValue("");
     setEditDepositMethod("EFECTIVO");
@@ -528,6 +548,26 @@ export default function WorksPage() {
 
     const msgToSend = buildStatusMsg(w, newStatus);
     openWhatsApp(w.customerPhone, msgToSend);
+  }
+
+  function openStatusModal(w: WorkOrder) {
+    if (role !== "ADMIN") return;
+    setStatusTarget(w);
+    setStatusDraft(w.status);
+    setStatusModalOpen(true);
+  }
+
+  async function saveStatusFromModal() {
+    if (!statusTarget) return;
+    const target = statusTarget;
+    const next = statusDraft;
+    setStatusModalOpen(false);
+    setStatusTarget(null);
+
+    if (target.status === next) return;
+    await updateStatusAndNotify(target, next, {
+      ...(next !== "RECEIVED" ? { informedCustomer: true } : {}),
+    });
   }
 
   const onDelete = async (id: number) => {
@@ -668,6 +708,7 @@ export default function WorksPage() {
       setEditHasQuote("NO");
       setEditQuoteValue("");
     }
+    setEditTotalValue(w.total != null ? String(Number(w.total)) : "");
     // por defecto no obliga abono
     setEditHasDeposit("NO");
     setEditDepositValue("");
@@ -679,12 +720,27 @@ export default function WorksPage() {
 
   async function saveEditQuoteDeposit() {
     if (!editQDTarget) return;
+    const canEditFinalTotal =
+      editQDTarget.status === "FINISHED" || editQDTarget.status === "DELIVERED";
+    const finalTotal =
+      editTotalValue.trim() === "" ? null : Number(editTotalValue);
+
+    if (
+      canEditFinalTotal &&
+      finalTotal != null &&
+      (!Number.isFinite(finalTotal) || finalTotal < 0)
+    ) {
+      setMsg("VALOR TOTAL INVÁLIDO");
+      setTimeout(() => setMsg(""), 2200);
+      return;
+    }
 
     // 1) Actualizar/limpiar cotización en WorkOrder
     if (editHasQuote === "NO") {
       const ok = await update(editQDTarget.id, {
         quotation: null,
         quote: null,
+        ...(canEditFinalTotal ? { total: finalTotal } : {}),
       });
       if (ok !== false) setMsg("COTIZACIÓN ACTUALIZADA ✅");
       // si no hay cotización, ignoramos abono
@@ -699,7 +755,11 @@ export default function WorksPage() {
       setTimeout(() => setMsg(""), 2200);
       return;
     }
-    const ok = await update(editQDTarget.id, { quotation: qNum, quote: qNum });
+    const ok = await update(editQDTarget.id, {
+      quotation: qNum,
+      quote: qNum,
+      ...(canEditFinalTotal ? { total: finalTotal } : {}),
+    });
     if (ok === false) return;
 
     // 2) (Opcional) Registrar abono como pago real
@@ -1437,21 +1497,29 @@ export default function WorksPage() {
         className={`rounded-xl p-4 space-y-2 border ${s.card}`}
         style={{ backgroundColor: COLORS.bgCard }}
       >
-        <header className="flex items-center justify-between">
-          <div className="font-semibold text-cyan-300 uppercase">
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-2xl font-black tracking-wide text-cyan-300 uppercase sm:text-3xl">
             {UU(w.code)}
             {w.isWarranty && (
               <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded bg-pink-200 text-pink-800">
                 GARANTÍA
               </span>
             )}
+            </div>
+            <div className="mt-1 text-xs uppercase text-gray-400">
+              Ingreso: {fmt(w.createdAt)}
+            </div>
+            <div className="mt-1 text-sm font-semibold uppercase text-gray-100">
+              {UU(w.customerName)}
+            </div>
           </div>
           <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
             {niceStatus[w.status]}
           </span>
         </header>
 
-        <div className="text-sm text-gray-300 space-y-1">
+        <div className="hidden text-sm text-gray-300 space-y-1">
           <div>
             <b>INGRESO:</b> {fmt(w.createdAt)}
           </div>
@@ -1474,10 +1542,12 @@ export default function WorksPage() {
 
             return (
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs uppercase text-gray-300">
-                  <span className="font-semibold">PRODUCTOS / CHECKLIST</span>
+                <div className="flex items-center justify-between gap-2 text-xs uppercase text-gray-300">
+                  <span className="font-semibold text-cyan-200">
+                    PRODUCTOS / CHECKLIST
+                  </span>
                   <button
-                    className="px-2 py-0.5 rounded border text-[11px]"
+                    className="rounded-lg border px-3 py-1.5 text-[11px] font-semibold"
                     style={{ borderColor: COLORS.border }}
                     onClick={() => {
                       const next = !inputOpen;
@@ -1548,19 +1618,19 @@ export default function WorksPage() {
                 )}
 
                 {items.length > 0 && (
-                  <ul className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                  <ul className="space-y-2 pr-1">
                     {items.map((it) => (
                       <li
                         key={it.id}
-                        className="flex items-center gap-2 text-[11px] text-gray-200"
+                        className="flex items-start gap-3 rounded-lg border border-white/10 bg-[#0F1030]/70 p-2 text-sm text-gray-200"
                       >
                         <input
                           type="checkbox"
-                          className="h-3 w-3 accent-cyan-400"
+                          className="mt-1 h-4 w-4 shrink-0 accent-cyan-400"
                           checked={it.done}
                           onChange={() => toggleWorkItem(w, it)}
                         />
-                        <div className="flex flex-col">
+                        <div className="flex min-w-0 flex-col">
                           <span
                             className={
                               it.done
@@ -1572,7 +1642,7 @@ export default function WorksPage() {
                           </span>
 
                           {it.detail && (
-                            <span className="text-[10px] text-cyan-300 ml-4">
+                            <span className="mt-0.5 text-xs text-cyan-300">
                               {UU(it.detail)}
                             </span>
                           )}
@@ -1639,7 +1709,17 @@ export default function WorksPage() {
 
         {/* Botonera según estado (sin retornos) */}
         {!delivered && (
-          <div className="flex flex-wrap gap-2 pt-2">
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:flex-wrap">
+            {role === "ADMIN" && (
+              <button
+                className={BTN.secondary}
+                style={{ borderColor: COLORS.border }}
+                onClick={() => openStatusModal(w)}
+                title="Cambiar estado del trabajo"
+              >
+                CAMBIAR ESTADO
+              </button>
+            )}
             {/* ACCIONES DE ESTADO */}
             {w.status === "RECEIVED" && (
               <>
@@ -1707,6 +1787,15 @@ export default function WorksPage() {
             <button
               className={BTN.secondary}
               style={{ borderColor: COLORS.border }}
+              onClick={() => openEditQuoteDeposit(w)}
+              title="Editar cotización, abonos o valor total"
+            >
+              VALORES
+            </button>
+
+            <button
+              className={BTN.secondary}
+              style={{ borderColor: COLORS.border }}
               onClick={() => openPaymentsModal(w)}
               title="Ver historial de abonos"
             >
@@ -1728,7 +1817,17 @@ export default function WorksPage() {
         )}
 
         {delivered && (
-          <div className="flex flex-wrap gap-2 pt-2">
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:flex-wrap">
+            {role === "ADMIN" && (
+              <button
+                className={BTN.secondary}
+                style={{ borderColor: COLORS.border }}
+                onClick={() => openStatusModal(w)}
+                title="Cambiar estado del trabajo"
+              >
+                CAMBIAR ESTADO
+              </button>
+            )}
             {/* Botón GARANTÍA disponible para cualquier rol */}
             <button
               className={BTN.base}
@@ -2474,6 +2573,60 @@ export default function WorksPage() {
         </div>
       )}
 
+      {/* Modal CAMBIAR ESTADO */}
+      {statusModalOpen && statusTarget && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div
+            className="w-full max-w-md rounded-xl p-4 space-y-3"
+            style={{
+              backgroundColor: COLORS.bgCard,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <h3 className="text-lg font-semibold text-cyan-300 uppercase">
+              CAMBIAR ESTADO — {UU(statusTarget.code)}
+            </h3>
+            <select
+              className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+              style={{
+                backgroundColor: COLORS.input,
+                border: `1px solid ${COLORS.border}`,
+              }}
+              value={statusDraft}
+              onChange={(e) => setStatusDraft(e.target.value as WorkStatus)}
+            >
+              <option value="RECEIVED">RECIBIDO</option>
+              <option value="IN_PROGRESS">EN PROCESO</option>
+              <option value="FINISHED">FINALIZADO</option>
+              <option value="DELIVERED">ENTREGADO</option>
+            </select>
+            <div className="text-xs text-gray-400">
+              Al guardar se actualizará el estado y se abrirá WhatsApp con el
+              mensaje correspondiente.
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                style={{ borderColor: COLORS.border }}
+                onClick={() => {
+                  setStatusModalOpen(false);
+                  setStatusTarget(null);
+                }}
+              >
+                CANCELAR
+              </button>
+              <button
+                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                style={BTN_STYLE.pinkNeon}
+                onClick={saveStatusFromModal}
+              >
+                GUARDAR ESTADO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal EDITAR COT/ABONO */}
       {editQDOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
@@ -2619,6 +2772,29 @@ export default function WorksPage() {
               </div>
             )}
 
+            {editQDTarget &&
+              (editQDTarget.status === "FINISHED" ||
+                editQDTarget.status === "DELIVERED") && (
+                <div>
+                  <label className="block text-sm mb-1 uppercase">
+                    VALOR TOTAL / VALOR A PAGAR
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className="w-full rounded px-3 py-2 text-gray-100"
+                    style={{
+                      backgroundColor: COLORS.input,
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                    value={editTotalValue}
+                    onChange={(e) => setEditTotalValue(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              )}
+
             <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
@@ -2681,7 +2857,7 @@ export default function WorksPage() {
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                   {editItems.map((it) => (
-                    <div key={it.id} className="space-y-1">
+                    <div key={it.id} className="space-y-2">
                       <label className="block text-[11px] uppercase text-gray-400">
                         PRODUCTO #{it.id}
                       </label>
@@ -2696,6 +2872,18 @@ export default function WorksPage() {
                           updateEditItemLabel(it.id, e.target.value)
                         }
                         placeholder="EJ: CONTROL — STICK DRIFT"
+                      />
+                      <textarea
+                        className="min-h-20 w-full rounded px-3 py-2 text-gray-100 uppercase"
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                        value={it.detail}
+                        onChange={(e) =>
+                          updateEditItemDetail(it.id, e.target.value)
+                        }
+                        placeholder="DESCRIPCIÓN / TRABAJO REALIZADO / OBSERVACIONES"
                       />
                     </div>
                   ))}
