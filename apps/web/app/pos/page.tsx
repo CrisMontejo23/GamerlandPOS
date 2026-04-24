@@ -10,6 +10,7 @@ type Product = {
   id: number;
   sku: string;
   name: string;
+  category?: string | null;
   price: number;
   cost: number;
   stock?: number;
@@ -37,6 +38,16 @@ type PosPreloadPayload =
 // ===== Helpers UI =====
 const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-CO")}`;
 const parseMoneyInput = (v: string) => Number(v.replace(/[^\d]/g, "")) || 0;
+const normText = (v: unknown) =>
+  String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+const searchTokens = (value: string) =>
+  normText(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
 
 // Paleta local
 const COLORS = {
@@ -212,7 +223,8 @@ export default function POSPage() {
     let abort = false;
 
     const run = async () => {
-      if (!q) {
+      const tokens = searchTokens(q);
+      if (!tokens.length) {
         setFound([]);
         setOpenResults(false);
         setActiveIndex(-1);
@@ -221,8 +233,9 @@ export default function POSPage() {
       setLoading(true);
       try {
         const url = new URL(`/products`, window.location.origin);
-        url.searchParams.set("q", q);
         url.searchParams.set("withStock", "true");
+        url.searchParams.set("page", "1");
+        url.searchParams.set("pageSize", "1000");
 
         const r = await apiFetch(`/products?${url.searchParams.toString()}`);
         const payload = (await r.json()) as
@@ -230,10 +243,18 @@ export default function POSPage() {
           | { total: number; rows: Product[] };
 
         const list = Array.isArray(payload) ? payload : (payload?.rows ?? []);
+        const filtered = list
+          .filter((p) => {
+            const haystack = normText(
+              [p.id, p.sku, p.name, p.category, p.price, p.stock].join(" "),
+            );
+            return tokens.every((token) => haystack.includes(token));
+          })
+          .slice(0, 30);
 
         if (!abort) {
-          setFound(list);
-          const has = list.length > 0;
+          setFound(filtered);
+          const has = filtered.length > 0;
           setOpenResults(has);
           setActiveIndex(has ? 0 : -1);
         }
@@ -397,10 +418,6 @@ export default function POSPage() {
         i.product.id === id ? { ...i, unitPrice: Number(val || 0) } : i,
       ),
     );
-  const addOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && found[0]) add(found[0]);
-  };
-
   // Derivados
   const subtotal = useMemo(
     () => cart.reduce((a, i) => a + i.unitPrice * i.qty, 0),
@@ -709,6 +726,10 @@ export default function POSPage() {
       id: Number(r.id ?? 0),
       sku: String(r.sku ?? ""),
       name: String(r.name ?? "PAPELERIA"),
+      category:
+        typeof r.category === "string" || r.category === null
+          ? r.category
+          : undefined,
       price: Number(r.price ?? "0"),
       cost: Number(r.cost ?? "0"),
       stock: Number(r.stock ?? 0),
@@ -899,11 +920,14 @@ export default function POSPage() {
             </div>
 
             {/* Cards móvil */}
-            <div className="p-3 space-y-2">
+            <div className="p-3 space-y-3">
               {cart.length === 0 && (
                 <div
-                  className="rounded-xl border p-3 text-center text-gray-400 text-sm"
-                  style={{ borderColor: COLORS.border }}
+                  className="rounded-xl border p-4 text-center text-gray-400 text-sm"
+                  style={{
+                    borderColor: COLORS.border,
+                    backgroundColor: COLORS.input,
+                  }}
                 >
                   Carrito vacío. Busca productos y presiona <b>Enter</b>.
                 </div>
@@ -917,10 +941,11 @@ export default function POSPage() {
                 return (
                   <div
                     key={i.product.id}
-                    className="rounded-xl border p-3 space-y-2"
+                    className="rounded-xl border p-3 space-y-3"
                     style={{
                       borderColor: COLORS.border,
-                      backgroundColor: "rgba(0,0,0,0.25)",
+                      backgroundColor: "#101235",
+                      boxShadow: "0 0 16px rgba(0,0,0,.18)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -956,10 +981,10 @@ export default function POSPage() {
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[11px] uppercase text-gray-400 mb-1">
-                          Precio unit.
+                          Precio
                         </label>
                         <input
-                          className="w-full rounded px-3 py-2 text-right outline-none"
+                          className="w-full rounded-lg px-3 py-2 text-right outline-none"
                           style={{
                             backgroundColor: COLORS.input,
                             border: `1px solid ${COLORS.border}`,
@@ -986,21 +1011,22 @@ export default function POSPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      <div className="text-xs text-gray-400">
-                        Costo:{" "}
-                        <span className="text-gray-200">
-                          {fmt(Number(i.product.cost))}
-                        </span>
+                    <div className="flex items-center justify-between gap-2 border-t border-[#262862] pt-3">
+                      <div>
+                        <div className="text-[11px] uppercase text-gray-400">
+                          Cantidad
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {isService ? "Servicio" : `Stock ${stock}`}
+                        </div>
                       </div>
 
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex items-center gap-2 rounded-lg border border-[#262862] bg-[#0F1030] p-1">
                         <button
                           onClick={() => dec(i.product.id)}
-                          className="px-3 py-2 rounded"
+                          className="px-3 py-2 rounded-md transition hover:bg-white/10"
                           style={{
                             backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
                           }}
                         >
                           -
@@ -1010,10 +1036,9 @@ export default function POSPage() {
                         </span>
                         <button
                           onClick={() => inc(i.product.id)}
-                          className="px-3 py-2 rounded"
+                          className="px-3 py-2 rounded-md transition hover:bg-white/10"
                           style={{
                             backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
                           }}
                         >
                           +
@@ -1263,26 +1288,25 @@ export default function POSPage() {
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+              <div className="overflow-x-auto p-3">
+                <table className="w-full border-separate border-spacing-y-2">
                   <thead>
                     <tr
-                      style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                      className="text-left"
+                      className="text-left text-xs uppercase"
+                      style={{ backgroundColor: "#1E1F4B" }}
                     >
-                      <th className="py-2 px-4 text-gray-300">SKU</th>
+                      <th className="py-3 px-4 text-gray-300 first:rounded-l-lg">SKU</th>
                       <th className="px-3 text-gray-300">Producto</th>
-                      <th className="px-3 text-right text-gray-300">Costo</th>
                       <th className="px-3 text-right text-gray-300">Precio</th>
-                      <th className="px-3 text-center text-gray-300">Cant.</th>
+                      <th className="px-3 text-center text-gray-300">Cantidad</th>
                       <th className="px-3 text-right text-gray-300">Total</th>
-                      <th className="px-3"></th>
+                      <th className="px-3 last:rounded-r-lg"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {cart.length === 0 && (
                       <tr>
-                        <td className="py-10 px-4 text-gray-400" colSpan={7}>
+                        <td className="py-10 px-4 text-center text-gray-400" colSpan={6}>
                           Carrito vacío. Busca productos y presiona <b>Enter</b>{" "}
                           para agregarlos.
                         </td>
@@ -1296,14 +1320,13 @@ export default function POSPage() {
                       return (
                         <tr
                           key={i.product.id}
-                          style={{ borderBottom: `1px solid ${COLORS.border}` }}
-                          className="hover:bg-[#191B4B]"
+                          className="group"
                         >
-                          <td className="py-2 px-4 font-mono text-sm text-gray-300">
+                          <td className="py-3 px-4 bg-[#101235] border-y border-l border-[#262862] first:rounded-l-lg font-mono text-sm text-gray-300 group-hover:bg-[#191B4B] transition-colors">
                             {i.product.sku || "—"}
                           </td>
 
-                          <td className="px-3">
+                          <td className="px-3 bg-[#101235] border-y border-[#262862] group-hover:bg-[#191B4B] transition-colors">
                             <div className="flex items-center gap-2">
                               <div className="font-medium">
                                 {i.product.name}
@@ -1333,11 +1356,7 @@ export default function POSPage() {
                             )}
                           </td>
 
-                          <td className="px-3 text-right whitespace-nowrap">
-                            {fmt(Number(i.product.cost))}
-                          </td>
-
-                          <td className="px-3 text-right">
+                          <td className="px-3 bg-[#101235] border-y border-[#262862] text-right group-hover:bg-[#191B4B] transition-colors">
                             <input
                               className="rounded-lg px-3 py-2 w-32 text-right outline-none"
                               style={{
@@ -1358,7 +1377,7 @@ export default function POSPage() {
                             />
                           </td>
 
-                          <td className="px-3 text-center">
+                          <td className="px-3 bg-[#101235] border-y border-[#262862] text-center group-hover:bg-[#191B4B] transition-colors">
                             <div className="inline-flex items-center gap-2">
                               <button
                                 onClick={() => dec(i.product.id)}
@@ -1388,11 +1407,11 @@ export default function POSPage() {
                             </div>
                           </td>
 
-                          <td className="px-3 text-right whitespace-nowrap text-cyan-300 font-semibold">
+                          <td className="px-3 bg-[#101235] border-y border-[#262862] text-right whitespace-nowrap text-cyan-300 font-semibold group-hover:bg-[#191B4B] transition-colors">
                             {fmt(i.unitPrice * i.qty)}
                           </td>
 
-                          <td className="px-3 text-right">
+                          <td className="px-3 bg-[#101235] border-y border-r border-[#262862] text-right last:rounded-r-lg group-hover:bg-[#191B4B] transition-colors">
                             <button
                               onClick={() => remove(i.product.id)}
                               className="inline-flex items-center justify-center rounded-md p-2 hover:bg-white/5 transition transform hover:scale-110"
