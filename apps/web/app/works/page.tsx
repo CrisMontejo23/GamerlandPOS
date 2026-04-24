@@ -2084,29 +2084,40 @@ export default function WorksPage() {
 
       {/* Modal Crear */}
       {openForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-xl rounded-xl p-4"
+            className="w-full max-w-4xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
+              maxHeight: "92vh",
             }}
           >
-            <h2 className="text-lg font-semibold text-cyan-300 mb-3 uppercase">
-              NUEVO TRABAJO
-            </h2>
+            <div className="border-b border-slate-700/70 pb-4">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                Servicio técnico
+              </div>
+              <h2 className="mt-1 text-2xl font-black uppercase tracking-wide text-cyan-300">
+                NUEVO TRABAJO
+              </h2>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* PRODUCTOS RECIBIDOS */}
-              <div className="md:col-span-2 space-y-2 mt-2">
-                <span className="text-sm font-semibold uppercase">
-                  PRODUCTOS RECIBIDOS
-                </span>
+              <div className="md:col-span-2 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold uppercase tracking-wide text-slate-300">
+                    PRODUCTOS RECIBIDOS
+                  </span>
+                  <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold uppercase text-cyan-300">
+                    {productRows.length}
+                  </span>
+                </div>
 
                 {productRows.map((row, index) => (
                   <div
                     key={row.id}
-                    className="flex flex-wrap gap-2 items-center"
+                    className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center"
                   >
                     {/* QUÉ SE RECIBE */}
                     <input
@@ -2115,7 +2126,7 @@ export default function WorksPage() {
                         updateProductRow(row.id, "label", e.target.value)
                       }
                       placeholder="QUÉ SE RECIBE (EJ: CONTROL, CONSOLA...)"
-                      className="flex-1 min-w-[160px] rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                      className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase text-sm"
                       style={{
                         backgroundColor: COLORS.input,
                         border: `1px solid ${COLORS.border}`,
@@ -2129,7 +2140,7 @@ export default function WorksPage() {
                         updateProductRow(row.id, "description", e.target.value)
                       }
                       placeholder="DESCRIPCIÓN (COLOR, ESTADO, DETALLE...)"
-                      className="flex-1 min-w-[160px] rounded px-3 py-2 text-gray-100 uppercase text-xs"
+                      className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase text-sm"
                       style={{
                         backgroundColor: COLORS.input,
                         border: `1px solid ${COLORS.border}`,
@@ -2139,7 +2150,7 @@ export default function WorksPage() {
                     {/* + PRODUCTO solo en la última fila */}
                     {index === productRows.length - 1 && (
                       <button
-                        className="px-3 py-2 rounded text-[11px] font-semibold uppercase"
+                        className="w-full rounded-lg px-3 py-3 text-[11px] font-black uppercase sm:w-auto"
                         style={{
                           color: "#001014",
                           background:
@@ -2163,7 +2174,7 @@ export default function WorksPage() {
               </div>
 
               {/* COTIZACIÓN (crear) */}
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
                 <div>
                   <label className="block text-sm mb-1 uppercase">
                     ¿HAY COTIZACIÓN? *
@@ -2187,14 +2198,14 @@ export default function WorksPage() {
                 {hasQuote === "YES" && (
                   <>
                     <div>
-                      <label className="block text-sm mb-1 uppercase">
+                      <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                         VALOR COTIZACIÓN *
                       </label>
                       <input
                         type="number"
                         min={0}
                         step="1"
-                        className="w-full rounded px-3 py-2 text-gray-100"
+                        className="w-full rounded-lg px-3 py-3 text-gray-100"
                         style={{
                           backgroundColor: COLORS.input,
                           border: `1px solid ${COLORS.border}`,
@@ -2206,11 +2217,11 @@ export default function WorksPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm mb-1 uppercase">
+                      <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                         ¿ABONA AHORA?
                       </label>
                       <select
-                        className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                        className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                         style={{
                           backgroundColor: COLORS.input,
                           border: `1px solid ${COLORS.border}`,
@@ -2228,14 +2239,14 @@ export default function WorksPage() {
                     {hasDeposit === "YES" && (
                       <>
                         <div>
-                          <label className="block text-sm mb-1 uppercase">
+                          <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                             VALOR ABONO
                           </label>
                           <input
                             type="number"
                             min={0}
                             step="1"
-                            className="w-full rounded px-3 py-2 text-gray-100"
+                            className="w-full rounded-lg px-3 py-3 text-gray-100"
                             style={{
                               backgroundColor: COLORS.input,
                               border: `1px solid ${COLORS.border}`,
@@ -2246,11 +2257,11 @@ export default function WorksPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm mb-1 uppercase">
+                          <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                             MÉTODO PAGO
                           </label>
                           <select
-                            className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                            className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                             style={{
                               backgroundColor: COLORS.input,
                               border: `1px solid ${COLORS.border}`,
@@ -2271,11 +2282,11 @@ export default function WorksPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                   NOMBRE CLIENTE *
                 </label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2285,11 +2296,11 @@ export default function WorksPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                   WHATSAPP CLIENTE *
                 </label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2299,7 +2310,7 @@ export default function WorksPage() {
                 />
               </div>
 
-              <div className="md:col-span-2 text-xs text-gray-300 uppercase">
+              <div className="md:col-span-2 rounded-2xl border border-cyan-400/20 bg-cyan-950/15 p-3 text-xs text-slate-300 uppercase">
                 💬 SE INFORMA AL CLIENTE:{" "}
                 <i>
                   “LA REVISIÓN TIENE UN COSTO DE $20.000; SI REALIZA EL ARREGLO,
@@ -2599,7 +2610,7 @@ export default function WorksPage() {
               border: `1px solid ${COLORS.border}`,
             }}
           >
-            <h3 className="text-lg font-semibold text-cyan-300 uppercase">
+            <h3 className="border-b border-slate-700/70 pb-4 text-2xl font-black tracking-wide text-cyan-300 uppercase">
               CAMBIAR ESTADO — {UU(statusTarget.code)}
             </h3>
             <select
@@ -2622,7 +2633,7 @@ export default function WorksPage() {
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                className="w-full rounded-lg border px-4 py-3 text-sm font-semibold uppercase sm:w-auto"
                 style={{ borderColor: COLORS.border }}
                 onClick={() => {
                   setStatusModalOpen(false);
@@ -2632,7 +2643,7 @@ export default function WorksPage() {
                 CANCELAR
               </button>
               <button
-                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                className="w-full rounded-lg px-5 py-3 text-sm font-black uppercase sm:w-auto"
                 style={BTN_STYLE.pinkNeon}
                 onClick={saveStatusFromModal}
               >
@@ -2647,10 +2658,11 @@ export default function WorksPage() {
       {editQDOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-xl rounded-xl p-4 space-y-3"
+            className="w-full max-w-3xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
+              maxHeight: "92vh",
             }}
           >
             <h3 className="text-lg font-semibold text-cyan-300 uppercase">
@@ -2659,7 +2671,7 @@ export default function WorksPage() {
                 : "EDITAR COT/ABONO"}
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
               <div>
                 <label className="block text-sm mb-1 uppercase">
                   ¿HAY COTIZACIÓN? *
@@ -2792,7 +2804,7 @@ export default function WorksPage() {
               (editQDTarget.status === "FINISHED" ||
                 editQDTarget.status === "DELIVERED") && (
                 <div>
-                  <label className="block text-sm mb-1 uppercase">
+                  <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
                     VALOR TOTAL / VALOR A PAGAR
                   </label>
                   <input
@@ -2842,12 +2854,13 @@ export default function WorksPage() {
 
       {/* Modal EDITAR DESCRIPCIÓN / ITEM */}
       {editOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-xl rounded-xl p-4 space-y-3"
+            className="w-full max-w-3xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
+              maxHeight: "92vh",
             }}
             role="dialog"
             aria-modal="true"
@@ -2855,30 +2868,33 @@ export default function WorksPage() {
           >
             <h3
               id="edit-desc-title"
-              className="text-lg font-semibold text-cyan-300 uppercase"
+              className="border-b border-slate-700/70 pb-4 text-2xl font-black uppercase tracking-wide text-cyan-300"
             >
               EDITAR — {editTarget ? UU(editTarget.code) : ""}
             </h3>
 
-            <div className="space-y-3">
-              <div className="text-xs text-gray-300 uppercase">
+            <div className="space-y-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="text-xs font-semibold text-slate-300 uppercase">
                 Edita los productos del trabajo{" "}
                 {editTarget ? UU(editTarget.code) : ""}
               </div>
 
               {editItems.length === 0 ? (
-                <div className="text-sm text-gray-400">
+                <div className="rounded-xl border border-slate-700/70 bg-slate-950/35 p-5 text-center text-sm text-slate-500">
                   Sin productos registrados.
                 </div>
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                   {editItems.map((it) => (
-                    <div key={it.id} className="space-y-2">
-                      <label className="block text-[11px] uppercase text-gray-400">
+                    <div
+                      key={it.id}
+                      className="space-y-2 rounded-xl border border-slate-700/70 bg-slate-900/55 p-3"
+                    >
+                      <label className="block text-[11px] font-bold uppercase text-slate-400">
                         PRODUCTO #{it.id}
                       </label>
                       <input
-                        className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                    className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                         style={{
                           backgroundColor: COLORS.input,
                           border: `1px solid ${COLORS.border}`,
@@ -2890,7 +2906,7 @@ export default function WorksPage() {
                         placeholder="EJ: CONTROL — STICK DRIFT"
                       />
                       <textarea
-                        className="min-h-20 w-full rounded px-3 py-2 text-gray-100 uppercase"
+                        className="min-h-24 w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                         style={{
                           backgroundColor: COLORS.input,
                           border: `1px solid ${COLORS.border}`,
@@ -2909,7 +2925,7 @@ export default function WorksPage() {
 
             <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                className="w-full rounded-lg border px-4 py-3 text-sm font-semibold uppercase sm:w-auto"
                 style={{ borderColor: COLORS.border }}
                 onClick={() => {
                   setEditOpen(false);
@@ -2920,7 +2936,7 @@ export default function WorksPage() {
               </button>
               <button
                 disabled={editItemsSaving}
-                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                className="w-full rounded-lg px-5 py-3 text-sm font-black uppercase sm:w-auto"
                 style={{
                   color: "#001014",
                   background:

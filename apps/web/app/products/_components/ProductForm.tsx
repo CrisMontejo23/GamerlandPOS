@@ -263,25 +263,44 @@ export default function ProductForm({
   }
 
   return (
-    <div className="space-y-6 text-gray-200">
-      {/* Identificación */}
-      <section
-        className="rounded-xl p-4"
+    <div className="space-y-5 text-gray-200">
+      <header
+        className="rounded-2xl p-4 sm:p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)]"
         style={{
           backgroundColor: COLORS.bgCard,
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        <h2 className="text-lg font-semibold mb-3 text-cyan-300">
+        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+          Inventario
+        </div>
+        <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <h1 className="text-2xl font-black uppercase tracking-wide text-cyan-300">
+            {isEdit ? "Editar producto" : "Nuevo producto"}
+          </h1>
+          <div className="rounded-xl border border-cyan-400/25 bg-cyan-950/20 px-3 py-2 text-sm font-bold uppercase text-cyan-200">
+            {form.sku || "SKU pendiente"}
+          </div>
+        </div>
+      </header>
+      {/* Identificación */}
+      <section
+        className="rounded-2xl p-4 sm:p-5 shadow-[0_14px_42px_rgba(0,0,0,0.22)]"
+        style={{
+          backgroundColor: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+        }}
+      >
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-300">
           Identificación
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* SKU */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">SKU *</label>
+            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">SKU *</label>
             {isEdit ? (
               <input
-                className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+                className="w-full rounded-lg px-3 py-3 text-gray-100 outline-none"
                 style={{
                   backgroundColor: COLORS.input,
                   border: `1px solid ${COLORS.border}`,
@@ -293,7 +312,7 @@ export default function ProductForm({
               />
             ) : (
               <div
-                className="rounded px-3 py-2 w-full flex justify-between items-center"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-3"
                 style={{
                   backgroundColor: COLORS.input,
                   border: `1px solid ${COLORS.border}`,
@@ -312,11 +331,11 @@ export default function ProductForm({
 
           {/* Barcode */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">
+            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
               CÓDIGO DE BARRAS
             </label>
             <input
-              className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+              className="w-full rounded-lg px-3 py-3 text-gray-100 outline-none"
               style={{
                 backgroundColor: COLORS.input,
                 border: `1px solid ${COLORS.border}`,
@@ -330,10 +349,10 @@ export default function ProductForm({
 
           {/* Nombre */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">NOMBRE *</label>
+            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">NOMBRE *</label>
             <input
               ref={nameRef}
-              className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+              className="w-full rounded-lg px-3 py-3 text-gray-100 outline-none"
               style={{
                 backgroundColor: COLORS.input,
                 border: `1px solid ${COLORS.border}`,
@@ -352,23 +371,23 @@ export default function ProductForm({
 
       {/* Precios */}
       <section
-        className="rounded-xl p-4"
+        className="rounded-2xl p-4 sm:p-5 shadow-[0_14px_42px_rgba(0,0,0,0.22)]"
         style={{
           backgroundColor: COLORS.bgCard,
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        <h2 className="text-lg font-semibold mb-3 text-cyan-300">Precios</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-300">Precios</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {/* Costo */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">
+            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
               COSTO (COP)
             </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-gray-400">$</span>
               <input
-                className="rounded pl-7 pr-3 py-2 w-full text-gray-100 outline-none"
+                className="w-full rounded-lg py-3 pl-7 pr-3 text-gray-100 outline-none"
                 style={{
                   backgroundColor: COLORS.input,
                   border: `1px solid ${COLORS.border}`,
@@ -402,13 +421,13 @@ export default function ProductForm({
 
           {/* Precio */}
           <div>
-            <label className="block text-sm text-gray-300 mb-1">
+            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
               PRECIO VENTA (COP)
             </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-gray-400">$</span>
               <input
-                className="rounded pl-7 pr-3 py-2 w-full text-gray-100 outline-none"
+                className="w-full rounded-lg py-3 pl-7 pr-3 text-gray-100 outline-none"
                 style={{
                   backgroundColor: COLORS.input,
                   border: `1px solid ${COLORS.border}`,
@@ -432,11 +451,11 @@ export default function ProductForm({
 
           {/* Categoría */}
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-300 mb-1">
+            <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
               CATEGORÍA
             </label>
             <select
-              className="rounded px-3 py-2 w-full text-gray-100 outline-none"
+              className="w-full rounded-lg px-3 py-3 text-gray-100 outline-none"
               style={{
                 backgroundColor: COLORS.input,
                 border: `1px solid ${COLORS.border}`,
@@ -469,7 +488,7 @@ export default function ProductForm({
 
       {/* Estado + Guardar */}
       <section
-        className="rounded-xl p-4"
+        className="rounded-2xl p-4 sm:p-5 shadow-[0_14px_42px_rgba(0,0,0,0.22)]"
         style={{
           backgroundColor: COLORS.bgCard,
           border: `1px solid ${COLORS.border}`,
@@ -490,7 +509,7 @@ export default function ProductForm({
         </div>
 
         <button
-          className="w-full md:w-auto px-5 py-2.5 rounded-lg font-semibold disabled:opacity-60"
+          className="w-full rounded-lg px-5 py-3 text-sm font-black uppercase disabled:opacity-60 md:w-auto"
           style={{
             color: "#001014",
             background:

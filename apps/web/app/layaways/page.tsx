@@ -1755,25 +1755,41 @@ export default function LayawaysPage() {
 
       {/* Modal nuevo */}
       {openForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-3">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-2xl rounded-xl p-3 sm:p-4 space-y-3 overflow-y-auto"
+            className="w-full max-w-5xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
               maxHeight: "92vh",
             }}
           >
-            <h2 className="text-lg font-semibold text-cyan-300 uppercase">
-              NUEVO ENCARGO / APARTADO
-            </h2>
+            <div className="flex flex-col gap-2 border-b border-slate-700/70 pb-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Nuevo registro
+                </div>
+                <h2 className="mt-1 text-2xl font-black uppercase tracking-wide text-cyan-300">
+                  Encargo / Apartado
+                </h2>
+              </div>
+              <div className="rounded-xl border border-cyan-400/25 bg-cyan-950/20 px-3 py-2 text-sm font-bold uppercase text-cyan-200">
+                Total objetivo: {toCOP(itemsTotal)}
+              </div>
+            </div>
 
             {/* Tipo */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-300">
+                Datos del registro
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <label className="block text-sm mb-1 uppercase">TIPO *</label>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Tipo *
+                </label>
                 <select
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -1788,12 +1804,12 @@ export default function LayawaysPage() {
 
               {kind === "ENCARGO" && (
                 <div>
-                  <label className="block text-sm mb-1 uppercase">
-                    FECHA DE RETIRO *
+                  <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                    Fecha de retiro *
                   </label>
                   <input
                     type="date"
-                    className="w-full rounded px-3 py-2 text-gray-100"
+                    className="w-full rounded-lg px-3 py-3 text-gray-100"
                     style={{
                       backgroundColor: COLORS.input,
                       border: `1px solid ${COLORS.border}`,
@@ -1803,16 +1819,21 @@ export default function LayawaysPage() {
                   />
                 </div>
               )}
+              </div>
             </div>
 
             {/* Cliente */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-300">
+                Cliente
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <label className="block text-sm mb-1 uppercase">
-                  NOMBRE CLIENTE *
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Nombre cliente *
                 </label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -1822,11 +1843,11 @@ export default function LayawaysPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 uppercase">
-                  WHATSAPP CLIENTE *
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  WhatsApp cliente *
                 </label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -1836,11 +1857,11 @@ export default function LayawaysPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm mb-1 uppercase">
-                  CIUDAD (OPCIONAL)
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Ciudad (opcional)
                 </label>
                 <input
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -1849,23 +1870,29 @@ export default function LayawaysPage() {
                   onChange={(e) => setCity(e.target.value)}
                 />
               </div>
+              </div>
             </div>
 
             {/* Items */}
-            <div className="mt-2 space-y-2">
-              <div className="text-sm font-semibold uppercase text-gray-300">
-                ÍTEMS *
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4 space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm font-bold uppercase tracking-wide text-slate-300">
+                  Ítems *
+                </div>
+                <div className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold uppercase text-cyan-300">
+                  {draftItems.length} producto(s)
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-6 sm:items-end">
                 <div className="md:col-span-4">
-                  <label className="block text-sm mb-1 uppercase">
-                    BUSCAR PRODUCTO
+                  <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                    Buscar producto
                   </label>
                   <div className="relative" ref={productSearchRef}>
                     <input
                       placeholder="Escribe para buscar por SKU o nombre..."
-                      className="w-full rounded px-3 py-2 text-gray-100 uppercase text-sm"
+                      className="w-full rounded-lg px-3 py-3 text-sm text-gray-100 uppercase"
                       style={{
                         backgroundColor: COLORS.input,
                         border: `1px solid ${COLORS.border}`,
@@ -1880,7 +1907,7 @@ export default function LayawaysPage() {
 
                     {productDropdownOpen && productSearch.trim() && (
                       <div
-                        className="absolute z-50 mt-1 w-full rounded-xl shadow-lg max-h-64 overflow-auto text-sm"
+                        className="absolute z-50 mt-2 w-full rounded-xl shadow-lg max-h-72 overflow-auto text-sm"
                         style={{
                           backgroundColor: COLORS.input,
                           border: `1px solid ${COLORS.border}`,
@@ -1897,7 +1924,7 @@ export default function LayawaysPage() {
                             key={p.id}
                             type="button"
                             onClick={() => handleSelectProduct(p)}
-                            className="w-full text-left px-3 py-2 hover:bg-white/5 flex flex-col"
+                            className="w-full text-left px-3 py-3 hover:bg-white/5 flex flex-col"
                           >
                             <span className="font-semibold text-cyan-300">
                               {p.sku} — {p.name}
@@ -1913,12 +1940,14 @@ export default function LayawaysPage() {
                 </div>
 
                 <div className="md:col-span-1">
-                  <label className="block text-sm mb-1 uppercase">CANT</label>
+                  <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                    Cant
+                  </label>
                   <input
                     type="number"
                     min={1}
                     step="1"
-                    className="w-full rounded px-3 py-2 text-gray-100"
+                    className="w-full rounded-lg px-3 py-3 text-gray-100"
                     style={{
                       backgroundColor: COLORS.input,
                       border: `1px solid ${COLORS.border}`,
@@ -1931,7 +1960,7 @@ export default function LayawaysPage() {
                 <div className="md:col-span-1">
                   <button
                     type="button"
-                    className="w-full px-3 py-2 rounded-lg font-semibold uppercase sm:col-span-1"
+                    className="w-full rounded-lg px-3 py-3 font-black uppercase sm:col-span-1"
                     style={{
                       color: "#001014",
                       background:
@@ -1948,46 +1977,46 @@ export default function LayawaysPage() {
 
               {/* Tabla items */}
               <div
-                className="hidden sm:block rounded-xl border overflow-hidden"
+                className="hidden overflow-hidden rounded-xl border border-slate-700/70 bg-slate-950/35 sm:block"
                 style={{ borderColor: COLORS.border }}
               >
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs min-w-[520px]">
-                    <thead className="bg-black/40">
+                  <table className="w-full min-w-[680px] border-separate border-spacing-y-2 px-2 text-left text-xs">
+                    <thead>
                       <tr>
-                        <th className="px-2 py-2 border-b border-gray-700">
+                        <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                           ÍTEM
                         </th>
-                        <th className="px-2 py-2 border-b border-gray-700">
+                        <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                           V. UNIT
                         </th>
-                        <th className="px-2 py-2 border-b border-gray-700">
+                        <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                           CANT
                         </th>
-                        <th className="px-2 py-2 border-b border-gray-700">
+                        <th className="px-3 py-2 text-[11px] uppercase text-slate-400">
                           SUBTOTAL
                         </th>
-                        <th className="px-2 py-2 border-b border-gray-700 text-right">
+                        <th className="px-3 py-2 text-right text-[11px] uppercase text-slate-400">
                           ACC
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {draftItems.map((it) => (
-                        <tr key={it.productId}>
-                          <td className="px-2 py-2 border-b border-gray-800 uppercase">
+                        <tr key={it.productId} className="bg-slate-900/65">
+                          <td className="rounded-l-lg px-3 py-3 font-semibold uppercase text-slate-100">
                             {it.sku ? `${it.sku} — ` : ""}
                             {it.name}
                           </td>
-                          <td className="px-2 py-2 border-b border-gray-800">
+                          <td className="px-3 py-3 text-slate-300">
                             {toCOP(it.unitPrice)}
                           </td>
-                          <td className="px-2 py-2 border-b border-gray-800">
+                          <td className="px-3 py-3">
                             <input
                               type="number"
                               min={1}
                               step="1"
-                              className="w-20 rounded px-2 py-1 text-gray-100"
+                              className="w-24 rounded-lg px-3 py-2 text-gray-100"
                               style={{
                                 backgroundColor: COLORS.input,
                                 border: `1px solid ${COLORS.border}`,
@@ -1998,13 +2027,13 @@ export default function LayawaysPage() {
                               }
                             />
                           </td>
-                          <td className="px-2 py-2 border-b border-gray-800">
+                          <td className="px-3 py-3 font-bold text-pink-300">
                             {toCOP(it.unitPrice * it.qty)}
                           </td>
-                          <td className="px-2 py-2 border-b border-gray-800 text-right">
+                          <td className="rounded-r-lg px-3 py-3 text-right">
                             <button
                               type="button"
-                              className="px-2 py-1 rounded border text-red-300 uppercase"
+                              className="rounded-lg border border-red-400/30 bg-red-950/20 px-3 py-2 text-red-300 uppercase"
                               style={{ borderColor: COLORS.border }}
                               onClick={() => removeDraftItem(it.productId)}
                             >
@@ -2017,7 +2046,7 @@ export default function LayawaysPage() {
                         <tr>
                           <td
                             colSpan={5}
-                            className="px-3 py-3 text-center text-gray-500"
+                            className="px-3 py-8 text-center text-sm text-slate-500"
                           >
                             Agrega productos para armar el registro.
                           </td>
@@ -2033,10 +2062,9 @@ export default function LayawaysPage() {
                 {draftItems.map((it) => (
                   <div
                     key={it.productId}
-                    className="rounded-xl border p-3 space-y-2"
+                    className="rounded-xl border border-slate-700/70 bg-slate-950/35 p-3 space-y-3"
                     style={{
                       borderColor: COLORS.border,
-                      backgroundColor: "rgba(0,0,0,0.25)",
                     }}
                   >
                     <div className="text-xs uppercase">
@@ -2051,14 +2079,14 @@ export default function LayawaysPage() {
 
                     <div className="grid grid-cols-2 gap-2 items-end">
                       <div>
-                        <label className="block text-[11px] mb-1 uppercase text-gray-400">
+                        <label className="mb-1 block text-[11px] font-bold uppercase text-slate-400">
                           CANTIDAD
                         </label>
                         <input
                           type="number"
                           min={1}
                           step="1"
-                          className="w-full rounded px-3 py-2 text-gray-100"
+                          className="w-full rounded-lg px-3 py-3 text-gray-100"
                           style={{
                             backgroundColor: COLORS.input,
                             border: `1px solid ${COLORS.border}`,
@@ -2074,7 +2102,7 @@ export default function LayawaysPage() {
                         <div className="text-[11px] uppercase text-gray-400 mb-1">
                           SUBTOTAL
                         </div>
-                        <div className="text-sm text-pink-300 font-semibold">
+                        <div className="text-base text-pink-300 font-black">
                           {toCOP(it.unitPrice * it.qty)}
                         </div>
                       </div>
@@ -2082,7 +2110,7 @@ export default function LayawaysPage() {
 
                     <button
                       type="button"
-                      className="w-full px-3 py-2 rounded border text-red-300 uppercase text-xs"
+                      className="w-full rounded-lg border border-red-400/30 bg-red-950/20 px-3 py-2 text-red-300 uppercase text-xs"
                       style={{ borderColor: COLORS.border }}
                       onClick={() => removeDraftItem(it.productId)}
                     >
@@ -2093,33 +2121,36 @@ export default function LayawaysPage() {
 
                 {draftItems.length === 0 && (
                   <div
-                    className="rounded-xl border p-3 text-center text-gray-500 text-sm"
-                    style={{ borderColor: COLORS.border }}
+                    className="rounded-xl border border-slate-700/70 bg-slate-950/35 p-5 text-center text-sm text-slate-500"
                   >
                     Agrega productos para armar el registro.
                   </div>
                 )}
               </div>
 
-              <div className="flex items-center justify-between text-sm uppercase">
-                <div className="text-gray-300">TOTAL OBJETIVO</div>
-                <div className="text-cyan-300 font-semibold">
+              <div className="flex items-center justify-between rounded-xl border border-cyan-400/25 bg-cyan-950/20 px-3 py-3 text-sm uppercase">
+                <div className="font-bold text-slate-300">Total objetivo</div>
+                <div className="text-lg font-black text-cyan-300">
                   {toCOP(itemsTotal)}
                 </div>
               </div>
             </div>
 
             {/* Pago inicial */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-300">
+                Pago inicial
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
-                <label className="block text-sm mb-1 uppercase">
-                  ABONO INICIAL (OPCIONAL)
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Abono inicial (opcional)
                 </label>
                 <input
                   type="number"
                   min={0}
                   step="1"
-                  className="w-full rounded px-3 py-2 text-gray-100"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2130,11 +2161,11 @@ export default function LayawaysPage() {
               </div>
 
               <div>
-                <label className="block text-sm mb-1 uppercase">
-                  MÉTODO PAGO
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                  Método pago
                 </label>
                 <select
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                   style={{
                     backgroundColor: COLORS.input,
                     border: `1px solid ${COLORS.border}`,
@@ -2150,14 +2181,16 @@ export default function LayawaysPage() {
                 </select>
               </div>
 
-              <div className="md:col-span-1 text-xs text-gray-300 uppercase flex items-end">
-                💬 Al crear se generará un <b>contrato PDF</b> para firma.
+              <div className="flex items-end rounded-xl border border-cyan-400/20 bg-cyan-950/15 p-3 text-xs uppercase text-slate-300">
+                Al crear se generará un{" "}
+                <b className="mx-1 text-cyan-300">contrato PDF</b> para firma.
+              </div>
               </div>
             </div>
 
             <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
+                className="w-full rounded-lg border px-4 py-3 text-sm font-semibold uppercase sm:w-auto"
                 style={{ borderColor: COLORS.border }}
                 onClick={() => {
                   setOpenForm(false);
@@ -2167,7 +2200,7 @@ export default function LayawaysPage() {
                 CANCELAR
               </button>
               <button
-                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
+                className="w-full rounded-lg px-5 py-3 text-sm font-black uppercase sm:w-auto"
                 style={{
                   color: "#001014",
                   background:
