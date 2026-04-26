@@ -785,7 +785,11 @@ export default function SalesPage() {
         </div>
 
         {/* Resumen (igual pero más pro) */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div
+          className={`grid grid-cols-1 gap-3 ${
+            isAdmin ? "sm:grid-cols-4" : "sm:grid-cols-2"
+          }`}
+        >
           <SummaryCard title="Ventas" value={totals.revenue} accent="cyan" />
           {isAdmin && (
             <>

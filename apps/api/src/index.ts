@@ -1547,7 +1547,7 @@ app.get("/reports/summary", requireRole("EMPLOYEE"), async (req, res) => {
 });
 
 // Detalle de ventas por ítem + métodos de pago
-app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
+app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req: AuthRequest, res) => {
   const fromParam = String(req.query.from || "");
   const toParam = String(req.query.to || "");
   if (!fromParam || !toParam) {
@@ -1648,6 +1648,12 @@ app.get("/reports/sales-lines", requireRole("EMPLOYEE"), async (req, res) => {
       };
     }),
   );
+
+  if (req.user?.role !== "ADMIN") {
+    return res.json(
+      rows.map(({ unitCost, cost, profit, ...row }) => row),
+    );
+  }
 
   res.json(rows);
 });

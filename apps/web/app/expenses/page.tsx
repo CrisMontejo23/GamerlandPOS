@@ -338,6 +338,13 @@ export default function ExpensesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
+  useEffect(() => {
+    const onScroll = () => setShowToTop(window.scrollY > 420);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   // ===== Filtros + búsqueda =====
   const filteredRows = useMemo(() => {
     const qq = q.trim().toUpperCase();
@@ -901,18 +908,173 @@ export default function ExpensesPage() {
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        <div
-          className="overflow-x-auto max-h-[70vh]"
-          onScroll={(e) => setShowToTop(e.currentTarget.scrollTop > 240)}
-        >
-          <div ref={tableTopRef} />
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 z-10">
+        <div ref={tableTopRef} />
+
+        <div className="md:hidden space-y-3 p-3">
+          {loading && (
+            <div className="rounded-xl border border-[#262862] bg-[#101235] p-4 text-sm text-gray-400">
+              Cargando...
+            </div>
+          )}
+          {!loading && pageSlice.length === 0 && (
+            <div className="rounded-xl border border-[#262862] bg-[#101235] p-4 text-sm text-gray-400">
+              Sin registros
+            </div>
+          )}
+
+          {pageSlice.map((r) => {
+            const isEditing = editId === r.id;
+
+            return (
+              <div
+                key={r.id}
+                className="rounded-xl border border-[#262862] bg-[#101235] p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 font-mono text-[11px] text-cyan-200">
+                        #{r.id}
+                      </span>
+                      <span className="rounded-md border border-[#262862] bg-[#0F1030] px-2 py-1 text-[11px] text-gray-300">
+                        {normMethodLabel(r.paymentMethod)}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 break-words text-sm font-semibold text-gray-100">
+                      {r.description || "-"}
+                    </div>
+                    <div className="mt-1 text-[11px] text-gray-400">
+                      {new Date(r.createdAt).toLocaleString("es-CO")} -{" "}
+                      {r.user?.username || "-"}
+                    </div>
+                  </div>
+
+                  {isAdmin && (
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        onClick={() => startEdit(r)}
+                        className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition`}
+                        title="Editar gasto"
+                        aria-label="Editar gasto"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/edit.png"
+                            alt="Editar"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="opacity-90 object-contain"
+                          />
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => deleteExpense(r.id)}
+                        className={`inline-flex items-center justify-center rounded-md ${ACTION_ICON.btn} hover:bg-white/5 transition`}
+                        title="Eliminar gasto"
+                        aria-label="Eliminar gasto"
+                      >
+                        <span className={`relative ${ACTION_ICON.box}`}>
+                          <Image
+                            src="/borrar.png"
+                            alt="Eliminar"
+                            fill
+                            sizes={ACTION_ICON.sizes}
+                            className="opacity-90 object-contain"
+                          />
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <MiniMetric label="Monto" value={fmtCOP(Number(r.amount || 0))} pink />
+                  <MiniMetric label="Vendedor" value={r.user?.username || "-"} cyan />
+                </div>
+
+                {isEditing && (
+                  <div className="mt-3 grid grid-cols-1 gap-2 border-t border-[#262862] pt-3">
+                    <input
+                      className="rounded-lg px-3 py-2 text-sm outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={editDesc}
+                      onChange={(e) => setEditDesc(e.target.value.toUpperCase())}
+                    />
+                    <select
+                      className="rounded-lg px-3 py-2 text-sm outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={editPay}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (isPaymentMethod(v)) setEditPay(v);
+                      }}
+                    >
+                      <option value="">METODO</option>
+                      <option value="EFECTIVO">EFECTIVO</option>
+                      <option value="QR_LLAVE">QR / LLAVE</option>
+                      <option value="DATAFONO">DATAFONO</option>
+                    </select>
+                    <input
+                      className="rounded-lg px-3 py-2 text-right text-sm outline-none"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      type="number"
+                      min={0}
+                      value={editAmount}
+                      onChange={(e) =>
+                        setEditAmount(
+                          e.target.value === ""
+                            ? ""
+                            : Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={confirmSaveEdit}
+                        className="flex-1 rounded-lg px-3 py-2 text-sm font-semibold"
+                        style={{ backgroundColor: "#0bd977", color: "#001014" }}
+                        disabled={
+                          !editDesc.trim() ||
+                          !editPay ||
+                          editAmount === "" ||
+                          confirmBusy
+                        }
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="flex-1 rounded-lg px-3 py-2 text-sm"
+                        style={{ backgroundColor: "#374151" }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="hidden w-full border-separate border-spacing-y-2 md:table">
+            <thead>
               <tr
                 className="text-left"
                 style={{
                   backgroundColor: "#101233",
-                  borderBottom: `1px solid ${COLORS.border}`,
                 }}
               >
                 <Th>Fecha</Th>
@@ -953,10 +1115,15 @@ export default function ExpensesPage() {
                 return (
                   <tr
                     key={r.id}
-                    className="hover:bg-[#191B4B]"
-                    style={{ borderBottom: `1px solid ${COLORS.border}` }}
+                    className="group"
+                    style={{
+                      boxShadow:
+                        "inset 0 1px 0 rgba(0,255,255,.12), inset 3px 0 0 rgba(255,0,255,.08)",
+                    }}
                   >
-                    <Td>{new Date(r.createdAt).toLocaleString("es-CO")}</Td>
+                    <Td className="border-l first:rounded-l-lg">
+                      {new Date(r.createdAt).toLocaleString("es-CO")}
+                    </Td>
 
                     <Td className="font-semibold text-cyan-200">
                       {r.user?.username || "-"}
@@ -1046,7 +1213,7 @@ export default function ExpensesPage() {
                     </Td>
 
                     {isAdmin && (
-                      <Td>
+                      <Td className="border-r last:rounded-r-lg">
                         <div className="flex flex-wrap gap-2">
                           {!isEditing ? (
                             <>
@@ -1181,10 +1348,6 @@ export default function ExpensesPage() {
         {showToTop && (
           <button
             onClick={() => {
-              const container = document.querySelector(
-                ".overflow-x-auto.max-h-\\[70vh\\]",
-              ) as HTMLDivElement | null;
-              if (container) container.scrollTo({ top: 0, behavior: "smooth" });
               tableTopRef.current?.scrollIntoView({
                 behavior: "smooth",
                 block: "start",
@@ -1295,7 +1458,39 @@ function Td({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <td className={`py-2 px-3 ${className}`}>{children}</td>;
+  return (
+    <td
+      className={`py-3 px-3 bg-[#101235] border-y border-[#262862] group-hover:bg-[#191B4B] transition-colors ${className}`}
+    >
+      {children}
+    </td>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+  cyan,
+  pink,
+}: {
+  label: string;
+  value: string;
+  cyan?: boolean;
+  pink?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-[#262862] bg-[#0F1030] px-3 py-2">
+      <div className="text-[11px] uppercase text-gray-400">{label}</div>
+      <div
+        className={[
+          "mt-1 break-words font-semibold",
+          cyan ? "text-cyan-300" : pink ? "text-pink-300" : "text-gray-100",
+        ].join(" ")}
+      >
+        {value}
+      </div>
+    </div>
+  );
 }
 
 /* ===== Botón pager ===== */
