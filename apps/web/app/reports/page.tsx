@@ -151,8 +151,8 @@ export default function ReportsPage() {
 
   /** ===== Métrica de salud de trabajos =====
    * - "Pendientes" = Recibidos + En proceso (esto define el semáforo)
-   * - "Total local" = Recibidos + En proceso + Finalizados + Entregados (100%)
-   * - Finalizados = OK (listo), pero hasta que pasen por él se vuelve ENTREGADO
+   * - "Total activo" = Recibidos + En proceso + Finalizados (100%)
+   * - Entregados queda como historico y no afecta porcentajes ni semaforo
    */
   const worksStats = useMemo(() => {
     const r = works?.received ?? 0;
@@ -160,15 +160,12 @@ export default function ReportsPage() {
     const f = works?.finished ?? 0;
     const d = works?.delivered ?? 0;
 
-    const totalAll =
-      typeof works?.totalAll === "number" ? works.totalAll : r + p + f + d;
+    const totalActive =
+      typeof works?.totalOpen === "number" ? works.totalOpen : r + p + f;
 
     const pendientes = r + p; // SOLO esto pinta el semáforo
-    const okListos = f; // listos (OK)
-    const entregados = d;
-
     const pct = (x: number) =>
-      totalAll > 0 ? Math.round((x / totalAll) * 100) : 0;
+      totalActive > 0 ? Math.round((x / totalActive) * 100) : 0;
 
     return {
       r,
@@ -176,14 +173,10 @@ export default function ReportsPage() {
       f,
       d,
       pendientes,
-      totalAll,
-      okListos,
-      entregados,
-      pPend: pct(pendientes),
+      totalActive,
       pRec: pct(r),
       pProc: pct(p),
       pFin: pct(f),
-      pDel: pct(d),
     };
   }, [works]);
 
@@ -345,7 +338,7 @@ export default function ReportsPage() {
               <MiniStat
                 label="Entregados"
                 value={String(worksStats.d)}
-                hint={`${worksStats.pDel}%`}
+                hint="Historico"
                 accent="cyan"
               />
             </div>
@@ -366,8 +359,8 @@ export default function ReportsPage() {
                   {String(worksStats.pendientes)}
                 </div>
                 <div className="text-xs mt-1" style={{ color: COLORS.muted }}>
-                  Total local (100%):{" "}
-                  <b className="text-cyan-300">{worksStats.totalAll}</b>
+                  Total activo (100%):{" "}
+                  <b className="text-cyan-300">{worksStats.totalActive}</b>
                 </div>
               </div>
 
@@ -377,7 +370,7 @@ export default function ReportsPage() {
                 </div>
                 <WorkHealthPill
                   pending={worksStats.pendientes}
-                  totalAll={worksStats.totalAll}
+                  totalActive={worksStats.totalActive}
                 />
               </div>
             </div>
@@ -391,8 +384,8 @@ export default function ReportsPage() {
                 delivered={worksStats.d}
               />
               <div className="text-xs mt-2" style={{ color: COLORS.muted }}>
-                La barra representa el 100% de trabajos del local (recibidos +
-                proceso + finalizados + entregados).
+                La barra representa el 100% activo (recibidos + proceso +
+                finalizados). Entregados queda como historico.
               </div>
             </div>
 
@@ -538,15 +531,15 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-/** Semáforo basado SOLO en pendientes = (recibidos + en proceso) relativo al totalAll (100%) */
+/** Semáforo basado SOLO en pendientes = (recibidos + en proceso) relativo al total activo (100%) */
 function WorkHealthPill({
   pending,
-  totalAll,
+  totalActive,
 }: {
   pending: number;
-  totalAll: number;
+  totalActive: number;
 }) {
-  const ratio = totalAll > 0 ? pending / totalAll : 0;
+  const ratio = totalActive > 0 ? pending / totalActive : 0;
 
   // Umbrales (ajústalos si quieres)
   // 0-10%: Bien | 10-25%: Alerta | >25%: Crítico
@@ -572,7 +565,7 @@ function WorkHealthPill({
             t: "Crítico",
           };
 
-  const pct = totalAll > 0 ? Math.round(ratio * 100) : 0;
+  const pct = totalActive > 0 ? Math.round(ratio * 100) : 0;
 
   return (
     <span
@@ -582,7 +575,7 @@ function WorkHealthPill({
         border: `1px solid ${tone.bd}`,
         color: tone.tx,
       }}
-      title={`Pendientes: ${pending} / ${totalAll} (${pct}%)`}
+      title={`Pendientes: ${pending} / ${totalActive} (${pct}%)`}
     >
       {tone.t}
       <span
@@ -642,7 +635,7 @@ function BarSplit({ a, b, c }: { a: number; b: number; c: number }) {
   );
 }
 
-/** Barra 100% del local (Recibidos + Proceso + Finalizados + Entregados) */
+/** Barra 100% activa (Recibidos + Proceso + Finalizados) */
 function WorkCompositionBar({
   received,
   inProgress,
@@ -654,14 +647,13 @@ function WorkCompositionBar({
   finished: number;
   delivered: number;
 }) {
-  const total = received + inProgress + finished + delivered;
+  const total = received + inProgress + finished;
 
   const pct = (x: number) => (total > 0 ? (x / total) * 100 : 0);
 
   const pr = pct(received);
   const pp = pct(inProgress);
   const pf = pct(finished);
-  const pd = pct(delivered);
 
   return (
     <div>
@@ -671,7 +663,7 @@ function WorkCompositionBar({
           backgroundColor: "rgba(255,255,255,.06)",
           border: `1px solid ${COLORS.border}`,
         }}
-        title={`Recibidos ${Math.round(pr)}% | Proceso ${Math.round(pp)}% | Finalizados ${Math.round(pf)}% | Entregados ${Math.round(pd)}%`}
+        title={`Recibidos ${Math.round(pr)}% | Proceso ${Math.round(pp)}% | Finalizados ${Math.round(pf)}%`}
       >
         <div className="h-full flex">
           {/* Recibidos */}
@@ -698,14 +690,6 @@ function WorkCompositionBar({
                 "linear-gradient(90deg, rgba(124,249,255,.55), rgba(124,249,255,.22))",
             }}
           />
-          {/* Entregados */}
-          <div
-            style={{
-              width: `${pd}%`,
-              background:
-                "linear-gradient(90deg, rgba(255,124,255,.55), rgba(255,124,255,.22))",
-            }}
-          />
         </div>
       </div>
 
@@ -727,7 +711,7 @@ function WorkCompositionBar({
         />
         <LegendItem
           label="Entregados"
-          value={`${delivered} (${Math.round(pd)}%)`}
+          value={`${delivered} historico`}
           tone="muted"
         />
       </div>

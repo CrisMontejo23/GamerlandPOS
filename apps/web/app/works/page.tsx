@@ -1222,37 +1222,44 @@ export default function WorksPage() {
     pendingNames: string[],
   ) {
     const depAll = Number(w.deposit || 0);
+    const pendingCount = pendingNames.length;
+    const pendingLabel = pendingCount === 1 ? "trabajo" : "trabajos";
 
     const lineas: string[] = [
       `Hola ${UU(w.customerName)}.`,
-      `Te confirmamos que el producto "${UU(item.label)}" del trabajo ${UU(w.code)} ya está listo.`,
+      ``,
+      `Ya fue terminado el trabajo "${UU(item.label)}" del servicio ${UU(w.code)}.`,
     ];
 
     if (item.detail) {
-      lineas.push(`Se realizó: ${UU(item.detail)}.`);
+      lineas.push(``, `Trabajo realizado:`, `${UU(item.detail)}.`);
     }
 
     lineas.push(
-      `Valor de este producto: ${toCOP(price)}.`,
+      ``,
+      `Valor de este trabajo: ${toCOP(price)}.`,
       `Abonos registrados del trabajo: ${toCOP(depAll)}.`,
     );
 
-    if (pendingNames.length > 0) {
+    if (pendingCount > 0) {
       lineas.push(
-        `Aún quedan pendientes: ${pendingNames.map((n) => UU(n)).join(", ")}.`,
-        `Te avisamos apenas estén listos.`,
+        ``,
+        `Aun faltan ${pendingCount} ${pendingLabel} por finalizar:`,
+        ...pendingNames.map((n, idx) => `${idx + 1}. ${UU(n)}`),
+        ``,
+        `Te avisaremos cuando este finalizado todo el servicio.`,
       );
     } else {
       lineas.push(
-        `Este era el último producto del trabajo.`,
-        `Puedes pasar a recoger cuando gustes en el horario de atención.`,
+        ``,
+        `Este era el ultimo producto del trabajo.`,
+        `Puedes pasar a recoger cuando gustes en el horario de atencion.`,
         `Gracias por confiar en Gamerland.`,
       );
     }
 
     return lineas.join("\n");
   }
-
   function buildAllProductsDoneMsg(
     w: WorkOrder,
     items: WorkItem[],
