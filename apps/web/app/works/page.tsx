@@ -26,7 +26,7 @@ type WorkOrder = {
   //  ya estaba
   informedCustomer?: boolean;
 
-  //  NUEVO: marca si esta orden es de garant?a y referencia opcional
+  //  NUEVO: marca si esta orden es de garantía y referencia opcional
   isWarranty?: boolean;
   parentId?: number | null;
 };
@@ -71,7 +71,7 @@ const BTN = {
 const BTN_STYLE = {
   received: {
     color: "#111827",
-    background: "linear-gradient(90deg, #FDE68A, #F59E0B)", // ?mbar
+    background: "linear-gradient(90deg, #FDE68A, #F59E0B)", // ámbar
     boxShadow: "0 0 14px rgba(245,158,11,.25)",
   },
   progress: {
@@ -187,11 +187,11 @@ type Patch = {
   quotation?: number | null;
   informedCustomer?: boolean;
 
-  //  NUEVO: campos que podemos mandar al backend para garant?as
+  //  NUEVO: campos que podemos mandar al backend para garantías
   isWarranty?: boolean;
   parentId?: number | null;
 
-  //  NUEVO: solo se usa al CREAR (garant?a) para reusar el mismo c?digo
+  //  NUEVO: solo se usa al CREAR (garantía) para reusar el mismo código
   code?: string;
 };
 
@@ -238,11 +238,11 @@ export default function WorksPage() {
   const [depositValue, setDepositValue] = useState<string>("");
   const [depositMethod, setDepositMethod] = useState<PayMethod>("EFECTIVO");
 
-  // PRODUCTOS RECIBIDOS (din?micos)
+  // PRODUCTOS RECIBIDOS (dinámicos)
   type ProductRow = { id: number; label: string; description: string };
 
   const [productRows, setProductRows] = useState<ProductRow[]>([
-    { id: Date.now(), label: "", description: "" }, // fila m?nima
+    { id: Date.now(), label: "", description: "" }, // fila mínima
   ]);
 
   const [productsCountByWork, setProductsCountByWork] = useState<
@@ -261,7 +261,7 @@ export default function WorksPage() {
   const [productModalPrice, setProductModalPrice] = useState<string>("");
   const [productModalDetail, setProductModalDetail] = useState<string>("");
 
-  // Finalizar (solo se usa cuando NO hay cotizaci?n)
+  // Finalizar (solo se usa cuando NO hay cotización)
   const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [finishAmount, setFinishAmount] = useState<string>("");
   const [finishTarget, setFinishTarget] = useState<WorkOrder | null>(null);
@@ -296,7 +296,7 @@ export default function WorksPage() {
   >({});
   const [editItemsSaving, setEditItemsSaving] = useState(false);
 
-  // === Modal GARANT?A ===
+  // === Modal GARANTÍA ===
   const [warrantyModalOpen, setWarrantyModalOpen] = useState(false);
   const [warrantyTarget, setWarrantyTarget] = useState<WorkOrder | null>(null);
   const [warrantyDescription, setWarrantyDescription] = useState("");
@@ -423,14 +423,14 @@ export default function WorksPage() {
   async function saveEditDetails() {
     if (!editTarget) return;
 
-    // validar: no vac?os
+    // validar: no vacíos
     if (editItems.length === 0) {
       setMsg("NO HAY PRODUCTOS PARA EDITAR");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
       if (editItems.some((it) => !it.label.trim())) {
-        setMsg("NO DEJES PRODUCTOS VAC?OS");
+        setMsg("NO DEJES PRODUCTOS VACÍOS");
         setTimeout(() => setMsg(""), 2200);
         return;
       }
@@ -603,7 +603,7 @@ export default function WorksPage() {
     setDepositValue("");
     setDepositMethod("EFECTIVO");
 
-    // resetear productos recibidos: m?nimo una fila vac?a
+    // resetear productos recibidos: mínimo una fila vacía
     setProductRows([{ id: Date.now(), label: "", description: "" }]);
   }
 
@@ -635,7 +635,7 @@ export default function WorksPage() {
       const works = normalizeRows(data);
       setRows(works);
 
-      //  precargar productos y contar para que #PRODUCTOS est? de una vez
+      //  precargar productos y contar para que #PRODUCTOS esté de una vez
       preloadItemsCounts(works);
     } catch {
       setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
@@ -663,7 +663,7 @@ export default function WorksPage() {
   }, [q, ready]);
 
   useEffect(() => {
-    // cada vez que cambies de pesta?a, reinicia el contador de items por columna
+    // cada vez que cambies de pestaña, reinicia el contador de items por columna
     setVisibleByStatus({
       RECEIVED: PAGE_SIZE,
       IN_PROGRESS: PAGE_SIZE,
@@ -740,7 +740,7 @@ export default function WorksPage() {
     if (!confirm("¿ELIMINAR ESTE TRABAJO? ESTA ACCIÓN ES PERMANENTE.")) return;
     const r = await apiFetch(`/works/${id}`, { method: "DELETE" });
     if (r.ok) {
-      setMsg("TRABAJO ELIMINADO ?");
+      setMsg("TRABAJO ELIMINADO ✅");
       load();
     } else {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
@@ -752,8 +752,8 @@ export default function WorksPage() {
     }
   };
 
-  // FINALIZAR: si hay cotizaci?n -> finalizar directo con saldo; si no, modal
-  // FINALIZAR: siempre abre modal con opci?n de ajuste final
+  // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
+  // FINALIZAR: siempre abre modal con opción de ajuste final
   const openFinish = (w: WorkOrder) => {
     setFinishTarget(w);
 
@@ -776,7 +776,7 @@ export default function WorksPage() {
     const w = finishTarget;
     const dep = Number(w.deposit || 0);
 
-    // SIN info adicional: usa cotizaci?n/saldo o valor manual
+    // SIN info adicional: usa cotización/saldo o valor manual
     if (finishUseExtra === "NO") {
       let totalValue: number;
 
@@ -819,7 +819,7 @@ export default function WorksPage() {
       return;
     }
 
-    // CON ajuste de descripci?n / valor
+    // CON ajuste de descripción / valor
     const extraValNum = Number(finishExtraValue || finishAmount);
     if (!Number.isFinite(extraValNum) || extraValNum < 0) {
       setMsg("VALOR FINAL INVÁLIDO");
@@ -875,7 +875,7 @@ export default function WorksPage() {
       if (!r.ok) throw new Error();
 
       setPayments((prev) => prev.filter((p) => p.id !== paymentId));
-      setMsg("ABONO ELIMINADO ?");
+      setMsg("ABONO ELIMINADO ✅");
       setTimeout(() => setMsg(""), 1800);
       await load();
     } catch {
@@ -980,7 +980,7 @@ export default function WorksPage() {
       return;
     }
 
-    // Lo vamos a marcar como LISTO ? abrir modal gamer
+    // Lo vamos a marcar como LISTO → abrir modal gamer
     setProductModalTargetWork(w);
     setProductModalTargetItem(item);
     setProductModalPrice(item.price != null ? String(item.price) : "");
@@ -1032,15 +1032,15 @@ export default function WorksPage() {
 
       // 4) Calcular abonos y saldo
       const depAll = Number(w.deposit || 0); // suma de pagos desde el back
-      const newQuote = totalProducts; // la "cotizaci?n" real = total arreglos
+      const newQuote = totalProducts; // la "cotización" real = total arreglos
       const saldo = Math.max(newQuote - depAll, 0);
 
-      // 5) Saber si a?n quedan productos pendientes
+      // 5) Saber si aún quedan productos pendientes
       const pending = allItems.filter((it) => !it.done);
 
       // 6) Actualizar la orden SIEMPRE con el acumulado de arreglos
       const patch: Patch = {
-        // mientras el trabajo est? en curso, total = ACUMULADO ARREGLOS
+        // mientras el trabajo está en curso, total = ACUMULADO ARREGLOS
         total: totalProducts,
         quote: newQuote,
         quotation: newQuote,
@@ -1049,7 +1049,7 @@ export default function WorksPage() {
       // Si ya NO hay pendientes -> marcar FINALIZADO y dejar total = SALDO A PAGAR
       if (pending.length === 0) {
         patch.status = "FINISHED";
-        patch.total = saldo; // aqu? total pasa a ser "VALOR A PAGAR"
+        patch.total = saldo; // aquí total pasa a ser "VALOR A PAGAR"
       }
 
       const okUpdate = await update(w.id, patch);
@@ -1076,7 +1076,7 @@ export default function WorksPage() {
         );
         openWhatsApp(w.customerPhone, msgAll);
       } else {
-        // Solo este producto qued? listo
+        // Solo este producto quedó listo
         const pendingNames = pending.map((it) => it.label);
 
         const msgToSend = buildProductDoneMsg(
@@ -1111,7 +1111,7 @@ export default function WorksPage() {
     // Traemos los productos para poder enumerarlos
     const items = await fetchItemsForMsg(w.id);
 
-    // Si ya est? marcado, solo reenviamos el mensaje
+    // Si ya está marcado, solo reenviamos el mensaje
     if (w.informedCustomer) {
       openWhatsApp(w.customerPhone, buildReceivedMsg(w, items));
       return;
@@ -1254,7 +1254,7 @@ export default function WorksPage() {
   ) {
     const lineas: string[] = [
       `Hola ${UU(w.customerName)}.`,
-      `Te confirmamos que todos los productos del trabajo ${UU(w.code)} ya est?n listos.`,
+      `Te confirmamos que todos los productos del trabajo ${UU(w.code)} ya están listos.`,
       `Resumen del trabajo:`,
     ];
 
@@ -1271,7 +1271,7 @@ export default function WorksPage() {
       `Total arreglos: ${toCOP(totalProducts)}.`,
       `Abonos registrados: ${toCOP(depAll)}.`,
       `Saldo a pagar: ${toCOP(saldo)}.`,
-      `Puedes pasar a recoger en horario de atenci?n.`,
+      `Puedes pasar a recoger en horario de atención.`,
       `Gracias por elegir Gamerland.`,
     );
 
@@ -1291,11 +1291,11 @@ export default function WorksPage() {
 
     const productos = items && items.length > 0 ? items : undefined;
 
-    // Garant?a
+    // Garantía
     if (w.isWarranty) {
       const lineas: string[] = [
         `Hola ${UU(w.customerName)}.`,
-        `Confirmamos recepci?n del equipo por garant?a. Trabajo: ${UU(w.code)}.`,
+        `Confirmamos recepción del equipo por garantía. Trabajo: ${UU(w.code)}.`,
       ];
 
       if (productos) {
@@ -1306,12 +1306,12 @@ export default function WorksPage() {
       } else {
         lineas.push(
           `Equipo: ${UU(w.item)}`,
-          `Descripci?n: ${UU(w.description)}`,
+          `Descripción: ${UU(w.description)}`,
         );
       }
 
       lineas.push(
-        `Este servicio no genera cobro adicional por el mismo da?o reportado.`,
+        `Este servicio no genera cobro adicional por el mismo daño reportado.`,
         `Si se detecta una falla diferente, te informaremos antes de realizar cualquier cobro.`,
         `Gracias por confiar en Gamerland.`,
       );
@@ -1322,7 +1322,7 @@ export default function WorksPage() {
     // Normal
     const partes: string[] = [
       `Hola ${UU(w.customerName)}.`,
-      `Confirmamos recepci?n del trabajo ${UU(w.code)}.`,
+      `Confirmamos recepción del trabajo ${UU(w.code)}.`,
     ];
 
     if (productos) {
@@ -1331,12 +1331,12 @@ export default function WorksPage() {
         partes.push(`${idx + 1}. ${UU(it.label)}`),
       );
     } else {
-      partes.push(`Equipo: ${UU(w.item)}`, `Descripci?n: ${UU(w.description)}`);
+      partes.push(`Equipo: ${UU(w.item)}`, `Descripción: ${UU(w.description)}`);
     }
 
     if (w.quote != null) {
       partes.push(
-        `Cotizaci?n: ${toCOP(quote)}.`,
+        `Cotización: ${toCOP(quote)}.`,
         `Abonos: ${toCOP(dep)}.`,
         `Saldo: ${toCOP(saldo)}.`,
       );
@@ -1358,7 +1358,7 @@ export default function WorksPage() {
       return [
         `Hola ${UU(w.customerName)}.`,
         `Tu trabajo ${base} ha iniciado proceso.`,
-        `Te avisaremos cuando est? finalizado.`,
+        `Te avisaremos cuando está finalizado.`,
       ].join("\n");
     }
 
@@ -1367,13 +1367,13 @@ export default function WorksPage() {
         `Hola ${UU(w.customerName)}.`,
         w.isWarranty
           ? `Tu trabajo ${base} (garantía) está finalizado.`
-          : `Tu trabajo ${base} est? finalizado.`,
-        `Descripci?n del trabajo: ${UU(w.description)}`,
+          : `Tu trabajo ${base} está finalizado.`,
+        `Descripción del trabajo: ${UU(w.description)}`,
       ];
 
       if (!w.isWarranty && quoteNum != null) {
         lineas.push(
-          `Cotizaci?n: ${toCOP(quoteNum)}.`,
+          `Cotización: ${toCOP(quoteNum)}.`,
           `Abono: ${toCOP(dep)}.`,
           `Saldo: ${toCOP(saldo ?? 0)}.`,
         );
@@ -1381,12 +1381,12 @@ export default function WorksPage() {
 
       if (w.isWarranty) {
         lineas.push(
-          `Servicio por garant?a sin costo adicional por el mismo da?o reportado.`,
+          `Servicio por garantía sin costo adicional por el mismo daño reportado.`,
         );
       }
 
       lineas.push(
-        `Puedes pasar a recoger en horario de atenci?n.`,
+        `Puedes pasar a recoger en horario de atención.`,
         `Gracias por elegir Gamerland.`,
       );
 
@@ -1397,24 +1397,24 @@ export default function WorksPage() {
       if (w.isWarranty) {
         return [
           `Hola ${UU(w.customerName)}.`,
-          `Tu equipo del trabajo ${base} fue entregado (garant?a).`,
+          `Tu equipo del trabajo ${base} fue entregado (garantía).`,
           `Recuerda: este servicio no tuvo costo adicional.`,
-          `Si vuelve a presentar fallas, cont?ctanos para ayudarte.`,
+          `Si vuelve a presentar fallas, contáctanos para ayudarte.`,
         ].join("\n");
       }
 
-      // Mejor que el ?solo una l?nea?
+      // Mejor que el “solo una línea”
       return [
         `Hola ${UU(w.customerName)}.`,
         `Tu equipo del trabajo ${base} fue entregado.`,
-        `Si necesitas soporte o garant?a, escr?benos para ayudarte.`,
+        `Si necesitas soporte o garantía, escríbenos para ayudarte.`,
         `Gracias por elegir Gamerland.`,
       ].join("\n");
     }
 
     return [
       `Hola ${UU(w.customerName)}.`,
-      `Tu trabajo ${base} ahora est?: ${niceStatus[newStatus]}.`,
+      `Tu trabajo ${base} ahora está: ${niceStatus[newStatus]}.`,
     ].join("\n");
   }
 
@@ -1423,12 +1423,12 @@ export default function WorksPage() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
-  // sortedRows ya est? ordenado de m?s nuevo a m?s viejo
+  // sortedRows ya está ordenado de más nuevo a más viejo
   const latestByCode = new Map<string, WorkOrder>();
 
   for (const w of sortedRows) {
     if (!latestByCode.has(w.code)) {
-      latestByCode.set(w.code, w); // primera vez que vemos ese code = m?s reciente
+      latestByCode.set(w.code, w); // primera vez que vemos ese code = más reciente
     }
   }
 
@@ -1466,7 +1466,7 @@ export default function WorksPage() {
       : baseDesc;
 
     const payload: Patch = {
-      //  Reutilizamos el mismo c?digo del trabajo original
+      //  Reutilizamos el mismo código del trabajo original
       code: warrantyTarget.code,
 
       item: UDATA(warrantyTarget.item),
@@ -1486,7 +1486,7 @@ export default function WorksPage() {
     });
 
     if (r.ok) {
-      setMsg("ORDEN POR GARANT?A CREADA ?");
+      setMsg("ORDEN POR GARANTÍA CREADA ✅");
       resetWarrantyModal();
       await load();
     } else {
@@ -1524,7 +1524,7 @@ export default function WorksPage() {
             {UU(w.code)}
             {w.isWarranty && (
               <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded bg-pink-200 text-pink-800">
-                GARANT?A
+                GARANTÍA
               </span>
             )}
             </div>
@@ -1532,7 +1532,7 @@ export default function WorksPage() {
               {fmtIngreso(w.createdAt)}
             </div>
             <div className="mt-1 text-sm font-semibold uppercase text-gray-100">
-              {UU(w.customerName)} ? {UU(w.customerPhone)}
+              {UU(w.customerName)} • {UU(w.customerPhone)}
             </div>
           </div>
           <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
@@ -1545,10 +1545,10 @@ export default function WorksPage() {
             <b>INGRESO:</b> {fmt(w.createdAt)}
           </div>
           <div>
-            <b># PRODUCTOS:</b> {totalProducts || "?"}
+            <b># PRODUCTOS:</b> {totalProducts || "—"}
           </div>
           <div>
-            <b># PENDIENTES:</b> {pendingProducts || "?"}
+            <b># PENDIENTES:</b> {pendingProducts || "—"}
           </div>
         </div>
 
@@ -1574,7 +1574,7 @@ export default function WorksPage() {
                       const next = !inputOpen;
                       setOpenChecklist((prev) => ({ ...prev, [w.id]: next }));
                       if (!itemsByWork[w.id] && !itemsLoading[w.id]) {
-                        // carga perezosa si a?n no tenemos items
+                        // carga perezosa si aún no tenemos items
                         loadWorkItems(w.id);
                       }
                     }}
@@ -1583,7 +1583,7 @@ export default function WorksPage() {
                   </button>
                 </div>
 
-                {/* Input para nuevo producto SOLO cuando se abre el bot?n */}
+                {/* Input para nuevo producto SOLO cuando se abre el botón */}
                 {inputOpen && (
                   <div className="flex gap-2 items-center">
                     <input
@@ -1692,7 +1692,7 @@ export default function WorksPage() {
             </>
           )}
 
-          {/*  NUEVO: total acumulado por productos mientras a?n no est? finalizado/entregado */}
+          {/*  NUEVO: total acumulado por productos mientras aún no está finalizado/entregado */}
           {w.total != null &&
             Number(w.total) > 0 &&
             w.status !== "FINISHED" &&
@@ -1713,7 +1713,7 @@ export default function WorksPage() {
               <b>PAGO:</b>{" "}
               {w.total != null
                 ? `$${Number(w.total).toLocaleString("es-CO")}`
-                : "?"}
+                : "—"}
             </div>
           )}
 
@@ -1724,7 +1724,7 @@ export default function WorksPage() {
           )}
         </div>
 
-        {/* Botonera seg?n estado (sin retornos) */}
+        {/* Botonera según estado (sin retornos) */}
         {!delivered && (
           <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:flex-wrap">
             {role === "ADMIN" && (
@@ -1814,14 +1814,14 @@ export default function WorksPage() {
                 CAMBIAR ESTADO
               </button>
             )}
-            {/* Bot?n GARANT?A disponible para cualquier rol */}
+            {/* Botón GARANTÍA disponible para cualquier rol */}
             <button
               className={BTN.base}
               style={BTN_STYLE.pinkNeon}
               onClick={() => openWarranty(w)}
-              title="Ver historial y crear nueva orden por garant?a"
+              title="Ver historial y crear nueva orden por garantía"
             >
-              GARANT?A
+              GARANTÍA
             </button>
 
             <button
@@ -1849,7 +1849,7 @@ export default function WorksPage() {
     );
   };
 
-  // ===== Historial para el modal de garant?a =====
+  // ===== Historial para el modal de garantía =====
   const warrantyHistory: WorkOrder[] =
     warrantyTarget == null
       ? []
@@ -1939,7 +1939,7 @@ export default function WorksPage() {
 
       {/* Lista en 4 columnas por estado */}
       <section className="space-y-4">
-        {loading && <div className="text-gray-400 text-sm">CARGANDO?</div>}
+        {loading && <div className="text-gray-400 text-sm">CARGANDO…</div>}
         {!loading && rows.length === 0 && (
           <div className="text-gray-400 text-sm">NO HAY TRABAJOS</div>
         )}
@@ -2018,7 +2018,7 @@ export default function WorksPage() {
                     </span>
                   </span>
                   <span className="text-cyan-300">
-                    {showDelivered ? "?" : "?"}
+                    {showDelivered ? "▲" : "▼"}
                   </span>
                 </button>
 
@@ -2067,7 +2067,7 @@ export default function WorksPage() {
           >
             <div className="border-b border-slate-700/70 pb-4">
               <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                Servicio t?cnico
+                Servicio técnico
               </div>
               <h2 className="mt-1 text-2xl font-black uppercase tracking-wide text-cyan-300">
                 NUEVO TRABAJO
@@ -2119,7 +2119,7 @@ export default function WorksPage() {
                       }}
                     />
 
-                    {/* + PRODUCTO solo en la ?ltima fila */}
+                    {/* + PRODUCTO solo en la última fila */}
                     {index === productRows.length - 1 && (
                       <button
                         className="w-full rounded-lg px-3 py-3 text-[11px] font-black uppercase sm:w-auto"
@@ -2312,14 +2312,14 @@ export default function WorksPage() {
                     "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={async () => {
-                  // Validaci?n b?sica
+                  // Validación básica
                   if (!customerName.trim() || !customerPhone.trim()) {
                     setMsg("FALTAN CAMPOS OBLIGATORIOS");
                     setTimeout(() => setMsg(""), 2200);
                     return;
                   }
 
-                  // validar productos recibidos (al menos 1 con label, filas vac?as permitidas)
+                  // validar productos recibidos (al menos 1 con label, filas vacías permitidas)
                   const nonEmptyProducts = productRows.filter((p) =>
                     p.label.trim(),
                   );
@@ -2400,7 +2400,7 @@ export default function WorksPage() {
                         await Promise.all(
                           nonEmptyProducts.map((p) => {
                             const fullLabel = p.description
-                              ? `${UDATA(p.label)} ? ${UDATA(p.description)}`
+                              ? `${UDATA(p.label)} — ${UDATA(p.description)}`
                               : UDATA(p.label);
                             return apiFetch(`/works/${workId}/items`, {
                               method: "POST",
@@ -2410,7 +2410,7 @@ export default function WorksPage() {
                         );
                       }
 
-                      //  abono inicial, igual que ya ten?as
+                      //  abono inicial, igual que ya tenías
                       if (depositNum > 0) {
                         await apiFetch(`/works/${workId}/payments`, {
                           method: "POST",
@@ -2424,7 +2424,7 @@ export default function WorksPage() {
                       }
                     }
 
-                    setMsg("TRABAJO CREADO ?");
+                    setMsg("TRABAJO CREADO ✅");
                     resetForm();
                     setOpenForm(false);
                     load();
@@ -2444,7 +2444,7 @@ export default function WorksPage() {
         </div>
       )}
 
-      {/* Modal FINALIZAR (solo sin cotizaci?n) */}
+      {/* Modal FINALIZAR (solo sin cotización) */}
       {finishModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
@@ -2600,7 +2600,7 @@ export default function WorksPage() {
               <option value="DELIVERED">ENTREGADO</option>
             </select>
             <div className="text-xs text-gray-400">
-              Al guardar se actualizar? el estado y se abrir? WhatsApp con el
+              Al guardar se actualizará el estado y se abrirá WhatsApp con el
               mensaje correspondiente.
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -2644,7 +2644,7 @@ export default function WorksPage() {
               id="edit-desc-title"
               className="border-b border-slate-700/70 pb-4 text-2xl font-black uppercase tracking-wide text-cyan-300"
             >
-              EDITAR ? {editTarget ? UU(editTarget.code) : ""}
+              EDITAR — {editTarget ? UU(editTarget.code) : ""}
             </h3>
 
             <div className="space-y-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
@@ -2677,7 +2677,7 @@ export default function WorksPage() {
                         onChange={(e) =>
                           updateEditItemLabel(it.id, e.target.value)
                         }
-                        placeholder="EJ: CONTROL ? STICK DRIFT"
+                        placeholder="EJ: CONTROL — STICK DRIFT"
                       />
                       <textarea
                         className="min-h-24 w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
@@ -2718,7 +2718,7 @@ export default function WorksPage() {
               </div>
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  ?Hay cotizaci?n?
+                  ¿Hay cotización?
                 </label>
                 <select
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -2758,7 +2758,7 @@ export default function WorksPage() {
                   </div>
                   <div>
                     <label className="block text-sm mb-1 uppercase">
-                      ?Nuevo abono?
+                      ¿Nuevo abono?
                     </label>
                     <select
                       className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -2895,7 +2895,7 @@ export default function WorksPage() {
                             </td>
                             <td className="py-1 pr-2">{p.method}</td>
                             <td className="py-1 pr-2">
-                              {p.note ? UU(p.note) : ""}
+                              {p.note ? UU(p.note) : "—"}
                             </td>
                             {canDelete && (
                               <td className="py-1 text-right">
@@ -3166,7 +3166,7 @@ export default function WorksPage() {
             </h3>
 
             <p className="text-xs text-gray-300 uppercase">
-              Trabajo {UU(productModalTargetWork.code)} ? Producto:{" "}
+              Trabajo {UU(productModalTargetWork.code)} • Producto:{" "}
               <b>{UU(productModalTargetItem.label)}</b>
             </p>
 
@@ -3192,7 +3192,7 @@ export default function WorksPage() {
 
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  Descripci?n / trabajo realizado
+                  Descripción / trabajo realizado
                 </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
