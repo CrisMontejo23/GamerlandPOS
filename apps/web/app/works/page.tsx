@@ -23,10 +23,10 @@ type WorkOrder = {
   createdAt: string;
   updatedAt: string;
 
-  // 👇 ya estaba
+  // ðŸ‘‡ ya estaba
   informedCustomer?: boolean;
 
-  // 👇 NUEVO: marca si esta orden es de garantía y referencia opcional
+  // ðŸ‘‡ NUEVO: marca si esta orden es de garantÃ­a y referencia opcional
   isWarranty?: boolean;
   parentId?: number | null;
 };
@@ -45,7 +45,7 @@ type WorkItem = {
   workOrderId: number;
   label: string;
   done: boolean;
-  price?: number | string | null; // 👈 puede venir como string o número
+  price?: number | string | null; // ðŸ‘ˆ puede venir como string o nÃºmero
   detail?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -71,7 +71,7 @@ const BTN = {
 const BTN_STYLE = {
   received: {
     color: "#111827",
-    background: "linear-gradient(90deg, #FDE68A, #F59E0B)", // ámbar
+    background: "linear-gradient(90deg, #FDE68A, #F59E0B)", // Ã¡mbar
     boxShadow: "0 0 14px rgba(245,158,11,.25)",
   },
   progress: {
@@ -187,11 +187,11 @@ type Patch = {
   quotation?: number | null;
   informedCustomer?: boolean;
 
-  // 👇 NUEVO: campos que podemos mandar al backend para garantías
+  // ðŸ‘‡ NUEVO: campos que podemos mandar al backend para garantÃ­as
   isWarranty?: boolean;
   parentId?: number | null;
 
-  // 👇 NUEVO: solo se usa al CREAR (garantía) para reusar el mismo código
+  // ðŸ‘‡ NUEVO: solo se usa al CREAR (garantÃ­a) para reusar el mismo cÃ³digo
   code?: string;
 };
 
@@ -238,11 +238,11 @@ export default function WorksPage() {
   const [depositValue, setDepositValue] = useState<string>("");
   const [depositMethod, setDepositMethod] = useState<PayMethod>("EFECTIVO");
 
-  // PRODUCTOS RECIBIDOS (dinámicos)
+  // PRODUCTOS RECIBIDOS (dinÃ¡micos)
   type ProductRow = { id: number; label: string; description: string };
 
   const [productRows, setProductRows] = useState<ProductRow[]>([
-    { id: Date.now(), label: "", description: "" }, // fila mínima
+    { id: Date.now(), label: "", description: "" }, // fila mÃ­nima
   ]);
 
   const [productsCountByWork, setProductsCountByWork] = useState<
@@ -261,7 +261,7 @@ export default function WorksPage() {
   const [productModalPrice, setProductModalPrice] = useState<string>("");
   const [productModalDetail, setProductModalDetail] = useState<string>("");
 
-  // Finalizar (solo se usa cuando NO hay cotización)
+  // Finalizar (solo se usa cuando NO hay cotizaciÃ³n)
   const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [finishAmount, setFinishAmount] = useState<string>("");
   const [finishTarget, setFinishTarget] = useState<WorkOrder | null>(null);
@@ -270,8 +270,6 @@ export default function WorksPage() {
   const [finishExtraValue, setFinishExtraValue] = useState("");
 
   // Editar COT/ABONO (abono persistente)
-  const [editQDOpen, setEditQDOpen] = useState(false);
-  const [editQDTarget, setEditQDTarget] = useState<WorkOrder | null>(null);
   const [editHasQuote, setEditHasQuote] = useState<"YES" | "NO">("NO");
   const [editQuoteValue, setEditQuoteValue] = useState<string>("");
   const [editTotalValue, setEditTotalValue] = useState<string>("");
@@ -286,34 +284,28 @@ export default function WorksPage() {
   const [statusTarget, setStatusTarget] = useState<WorkOrder | null>(null);
   const [statusDraft, setStatusDraft] = useState<WorkStatus>("RECEIVED");
 
-  // === Editar DESCRIPCIÓN / ITEM ===
+  // === Editar DESCRIPCIÃ“N / ITEM ===
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<WorkOrder | null>(null);
-  const [editItem, setEditItem] = useState("");
-  const [editDescription, setEditDescription] = useState("");
   // === Modal EDITAR ITEMS (antes era desc/item del WorkOrder) ===
-  type EditItemRow = { id: number; label: string; detail: string };
+  type EditItemRow = { id: number; label: string; detail: string; price: string };
 
   const [editItems, setEditItems] = useState<EditItemRow[]>([]);
   const [editItemsOriginal, setEditItemsOriginal] = useState<
-    Record<number, { label: string; detail: string }>
+    Record<number, { label: string; detail: string; price: string }>
   >({});
   const [editItemsSaving, setEditItemsSaving] = useState(false);
 
-  // === Modal GARANTÍA ===
+  // === Modal GARANTÃA ===
   const [warrantyModalOpen, setWarrantyModalOpen] = useState(false);
   const [warrantyTarget, setWarrantyTarget] = useState<WorkOrder | null>(null);
   const [warrantyDescription, setWarrantyDescription] = useState("");
+  const [warrantyObservation, setWarrantyObservation] = useState("");
 
   // Historial de abonos
-  const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [paymentsTarget, setPaymentsTarget] = useState<WorkOrder | null>(null);
   const [payments, setPayments] = useState<WorkPayment[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
-  const [newPaymentAmount, setNewPaymentAmount] = useState("");
-  const [newPaymentMethod, setNewPaymentMethod] =
-    useState<PayMethod>("EFECTIVO");
-  const [newPaymentNote, setNewPaymentNote] = useState("");
 
   // === CHECKLIST POR TRABAJO ===
   const [itemsByWork, setItemsByWork] = useState<Record<number, WorkItem[]>>(
@@ -360,9 +352,30 @@ export default function WorksPage() {
       prev.map((r) => (r.id === id ? { ...r, detail: UU(value) } : r)),
     );
   }
+  function updateEditItemPrice(id: number, value: string) {
+    setEditItems((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, price: value } : r)),
+    );
+  }
 
   async function openEditDetails(w: WorkOrder) {
     setEditTarget(w);
+    setPaymentsTarget(w);
+    setPayments([]);
+    setPaymentsLoading(true);
+
+    if (w.quote != null && Number(w.quote) > 0) {
+      setEditHasQuote("YES");
+      setEditQuoteValue(String(Number(w.quote)));
+    } else {
+      setEditHasQuote("NO");
+      setEditQuoteValue("");
+    }
+    setEditTotalValue(w.total != null ? String(Number(w.total)) : "");
+    setEditHasDeposit("NO");
+    setEditDepositValue("");
+    setEditDepositMethod("EFECTIVO");
+    setEditDepositNote("");
 
     // asegurar que tenemos items
     let items = itemsByWork[w.id];
@@ -370,74 +383,206 @@ export default function WorksPage() {
       items = await fetchItemsForMsg(w.id);
     }
 
-    const rowsToEdit: EditItemRow[] = (items || []).map((it) => ({
-      id: it.id,
-      label: UU(it.label),
-      detail: UU(it.detail || ""),
-    }));
+      const rowsToEdit: EditItemRow[] = (items || []).map((it) => ({
+        id: it.id,
+        label: UU(it.label),
+        detail: UU(it.detail || ""),
+        price: it.price != null ? String(it.price) : "",
+      }));
 
-    const originalMap: Record<number, { label: string; detail: string }> = {};
-    rowsToEdit.forEach(
-      (r) => (originalMap[r.id] = { label: r.label, detail: r.detail }),
-    );
+      const originalMap: Record<
+        number,
+        { label: string; detail: string; price: string }
+      > = {};
+      rowsToEdit.forEach(
+        (r) =>
+          (originalMap[r.id] = {
+            label: r.label,
+            detail: r.detail,
+            price: r.price,
+          }),
+      );
 
-    setEditItems(rowsToEdit);
-    setEditItemsOriginal(originalMap);
+      setEditItems(rowsToEdit);
+      setEditItemsOriginal(originalMap);
 
-    setEditOpen(true);
-  }
+      setEditOpen(true);
+      try {
+        const r = await apiFetch(`/works/${w.id}/payments`);
+        if (!r.ok) throw new Error();
+        const data = (await r.json()) as WorkPayment[];
+        setPayments(data);
+      } catch {
+        setMsg("NO SE PUDIERON CARGAR LOS ABONOS");
+        setTimeout(() => setMsg(""), 2200);
+      } finally {
+        setPaymentsLoading(false);
+      }
+    }
 
   async function saveEditDetails() {
     if (!editTarget) return;
 
-    // validar: no vacíos
+    // validar: no vacÃ­os
     if (editItems.length === 0) {
       setMsg("NO HAY PRODUCTOS PARA EDITAR");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
-    if (editItems.some((it) => !it.label.trim())) {
-      setMsg("NO DEJES PRODUCTOS VACÍOS");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
+      if (editItems.some((it) => !it.label.trim())) {
+        setMsg("NO DEJES PRODUCTOS VACÃOS");
+        setTimeout(() => setMsg(""), 2200);
+        return;
+      }
+      if (
+        editItems.some(
+          (it) =>
+            it.price.trim() !== "" &&
+            (!Number.isFinite(Number(it.price)) || Number(it.price) < 0),
+        )
+      ) {
+        setMsg("NO DEJES VALORES INVALIDOS");
+        setTimeout(() => setMsg(""), 2200);
+        return;
+      }
 
     setEditItemsSaving(true);
 
     try {
       // solo enviar los que cambiaron
-      const changed = editItems.filter((it) => {
-        const original = editItemsOriginal[it.id] ?? { label: "", detail: "" };
-        return original.label !== it.label || original.detail !== it.detail;
-      });
+        const changed = editItems.filter((it) => {
+          const original = editItemsOriginal[it.id] ?? {
+            label: "",
+            detail: "",
+            price: "",
+          };
+          return (
+            original.label !== it.label ||
+            original.detail !== it.detail ||
+            original.price !== it.price
+          );
+        });
 
-      await Promise.all(
-        changed.map(async (it) => {
-          const r = await apiFetch(`/works/${editTarget.id}/items/${it.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              label: UDATA(it.label),
-              detail: it.detail.trim() ? UDATA(it.detail) : "",
-            }),
-          });
+        await Promise.all(
+          changed.map(async (it) => {
+            const r = await apiFetch(`/works/${editTarget.id}/items/${it.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                label: UDATA(it.label),
+                detail: it.detail.trim() ? UDATA(it.detail) : "",
+                ...(it.price.trim() !== "" ? { price: Number(it.price) } : {}),
+              }),
+            });
           if (!r.ok) {
             const e = (await r.json().catch(() => ({}))) as { error?: string };
             throw new Error(e?.error || "NO SE PUDO ACTUALIZAR UN PRODUCTO");
+            }
+          }),
+        );
+
+        const canEditFinalTotal =
+          editTarget.status === "FINISHED" || editTarget.status === "DELIVERED";
+        let quotePatch: Patch = {};
+        let paymentToCreate:
+          | { amount: number; method: PayMethod; note: string }
+          | null = null;
+
+        if (editHasQuote === "NO") {
+          const finalTotal =
+            editTotalValue.trim() === "" ? null : Number(editTotalValue);
+          if (
+            canEditFinalTotal &&
+            finalTotal != null &&
+            (!Number.isFinite(finalTotal) || finalTotal < 0)
+          ) {
+            throw new Error("VALOR TOTAL INVALIDO");
           }
-        }),
-      );
+          quotePatch = {
+            quotation: null,
+            quote: null,
+            ...(canEditFinalTotal ? { total: finalTotal } : {}),
+          };
+        } else {
+          const qNum = Number(editQuoteValue);
+          if (!Number.isFinite(qNum) || qNum <= 0) {
+            throw new Error("COTIZACION INVALIDA");
+          }
 
-      // refrescar items y trabajos (para que se vea al instante)
-      await fetchItemsForMsg(editTarget.id);
-      await load();
+          const currentDeposit = payments.reduce(
+            (sum, p) => sum + Number(p.amount || 0),
+            0,
+          );
+          const newDeposit =
+            editHasDeposit === "YES" ? Number(editDepositValue) : 0;
 
-      setMsg("PRODUCTOS ACTUALIZADOS ✅");
-      setTimeout(() => setMsg(""), 1800);
+          if (
+            editHasDeposit === "YES" &&
+            (!Number.isFinite(newDeposit) ||
+              newDeposit <= 0 ||
+              currentDeposit + newDeposit > qNum)
+          ) {
+            throw new Error("ABONO INVALIDO");
+          }
 
-      setEditOpen(false);
-      setEditTarget(null);
-      setEditItems([]);
-      setEditItemsOriginal({});
+          const nextBalance = Math.max(qNum - currentDeposit - newDeposit, 0);
+          quotePatch = {
+            quotation: qNum,
+            quote: qNum,
+            ...(canEditFinalTotal ? { total: nextBalance } : {}),
+          };
+
+          if (editHasDeposit === "YES") {
+            paymentToCreate = {
+              amount: newDeposit,
+              method: editDepositMethod,
+              note: editDepositNote,
+            };
+          }
+        }
+
+        const financial = await apiFetch(`/works/${editTarget.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(normalizePatch(quotePatch)),
+        });
+        if (!financial.ok) {
+          const e = (await financial.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(e?.error || "NO SE PUDO ACTUALIZAR VALORES");
+        }
+
+        if (paymentToCreate) {
+          const pr = await apiFetch(`/works/${editTarget.id}/payments`, {
+            method: "POST",
+            body: JSON.stringify({
+              amount: paymentToCreate.amount,
+              method: paymentToCreate.method,
+              note: paymentToCreate.note,
+              createdBy: username || undefined,
+            }),
+          });
+          if (!pr.ok) {
+            const e = (await pr.json().catch(() => ({}))) as {
+              error?: string;
+            };
+            throw new Error(e?.error || "NO SE PUDO REGISTRAR EL ABONO");
+          }
+        }
+
+        // refrescar items y trabajos (para que se vea al instante)
+        await fetchItemsForMsg(editTarget.id);
+        await load();
+
+        setMsg("TRABAJO ACTUALIZADO ✅");
+        setTimeout(() => setMsg(""), 1800);
+
+        setEditOpen(false);
+        setEditTarget(null);
+        setPaymentsTarget(null);
+        setPayments([]);
+        setEditItems([]);
+        setEditItemsOriginal({});
+        resetEditQD();
     } catch (err) {
       setMsg(
         "ERROR: " + UDATA((err as Error)?.message || "NO SE PUDO GUARDAR"),
@@ -458,12 +603,11 @@ export default function WorksPage() {
     setDepositValue("");
     setDepositMethod("EFECTIVO");
 
-    // resetear productos recibidos: mínimo una fila vacía
+    // resetear productos recibidos: mÃ­nimo una fila vacÃ­a
     setProductRows([{ id: Date.now(), label: "", description: "" }]);
   }
 
   function resetEditQD() {
-    setEditQDTarget(null);
     setEditHasQuote("NO");
     setEditQuoteValue("");
     setEditTotalValue("");
@@ -476,6 +620,7 @@ export default function WorksPage() {
     setWarrantyModalOpen(false);
     setWarrantyTarget(null);
     setWarrantyDescription("");
+    setWarrantyObservation("");
   }
 
   const load = async () => {
@@ -490,7 +635,7 @@ export default function WorksPage() {
       const works = normalizeRows(data);
       setRows(works);
 
-      // 👇 precargar productos y contar para que #PRODUCTOS esté de una vez
+      // ðŸ‘‡ precargar productos y contar para que #PRODUCTOS estÃ© de una vez
       preloadItemsCounts(works);
     } catch {
       setMsg("NO SE PUDIERON CARGAR LOS TRABAJOS");
@@ -504,7 +649,7 @@ export default function WorksPage() {
     if (!ready) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]); // 👈 ya no recargamos por cambio de status (tab)
+  }, [ready]); // ðŸ‘ˆ ya no recargamos por cambio de status (tab)
 
   useEffect(() => {
     if (!ready) return;
@@ -518,7 +663,7 @@ export default function WorksPage() {
   }, [q, ready]);
 
   useEffect(() => {
-    // cada vez que cambies de pestaña, reinicia el contador de items por columna
+    // cada vez que cambies de pestaÃ±a, reinicia el contador de items por columna
     setVisibleByStatus({
       RECEIVED: PAGE_SIZE,
       IN_PROGRESS: PAGE_SIZE,
@@ -592,10 +737,10 @@ export default function WorksPage() {
 
   const onDelete = async (id: number) => {
     if (!canDelete) return;
-    if (!confirm("¿ELIMINAR ESTE TRABAJO? ESTA ACCIÓN ES PERMANENTE.")) return;
+    if (!confirm("Â¿ELIMINAR ESTE TRABAJO? ESTA ACCIÃ“N ES PERMANENTE.")) return;
     const r = await apiFetch(`/works/${id}`, { method: "DELETE" });
     if (r.ok) {
-      setMsg("TRABAJO ELIMINADO ✅");
+      setMsg("TRABAJO ELIMINADO âœ…");
       load();
     } else {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
@@ -607,8 +752,8 @@ export default function WorksPage() {
     }
   };
 
-  // FINALIZAR: si hay cotización -> finalizar directo con saldo; si no, modal
-  // FINALIZAR: siempre abre modal con opción de ajuste final
+  // FINALIZAR: si hay cotizaciÃ³n -> finalizar directo con saldo; si no, modal
+  // FINALIZAR: siempre abre modal con opciÃ³n de ajuste final
   const openFinish = (w: WorkOrder) => {
     setFinishTarget(w);
 
@@ -631,14 +776,14 @@ export default function WorksPage() {
     const w = finishTarget;
     const dep = Number(w.deposit || 0);
 
-    // SIN info adicional: usa cotización/saldo o valor manual
+    // SIN info adicional: usa cotizaciÃ³n/saldo o valor manual
     if (finishUseExtra === "NO") {
       let totalValue: number;
 
       if (w.quote != null) {
         const quoteNum = Number(w.quote);
         if (!Number.isFinite(quoteNum) || quoteNum < 0) {
-          setMsg("COTIZACIÓN INVÁLIDA");
+          setMsg("COTIZACIÃ“N INVÃLIDA");
           setTimeout(() => setMsg(""), 2200);
           return;
         }
@@ -646,7 +791,7 @@ export default function WorksPage() {
       } else {
         const val = Number(finishAmount);
         if (!Number.isFinite(val) || val < 0) {
-          setMsg("VALOR INVÁLIDO");
+          setMsg("VALOR INVÃLIDO");
           setTimeout(() => setMsg(""), 2000);
           return;
         }
@@ -674,10 +819,10 @@ export default function WorksPage() {
       return;
     }
 
-    // CON ajuste de descripción / valor
+    // CON ajuste de descripciÃ³n / valor
     const extraValNum = Number(finishExtraValue || finishAmount);
     if (!Number.isFinite(extraValNum) || extraValNum < 0) {
-      setMsg("VALOR FINAL INVÁLIDO");
+      setMsg("VALOR FINAL INVÃLIDO");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
@@ -717,171 +862,10 @@ export default function WorksPage() {
     await load();
   };
 
-  // Editar/Agregar COT y ABONO (abono se persiste via /works/:id/payments)
-  function openEditQuoteDeposit(w: WorkOrder) {
-    setEditQDTarget(w);
-
-    if (w.quote != null && Number(w.quote) > 0) {
-      setEditHasQuote("YES");
-      setEditQuoteValue(String(Number(w.quote)));
-    } else {
-      setEditHasQuote("NO");
-      setEditQuoteValue("");
-    }
-    setEditTotalValue(w.total != null ? String(Number(w.total)) : "");
-    // por defecto no obliga abono
-    setEditHasDeposit("NO");
-    setEditDepositValue("");
-    setEditDepositMethod("EFECTIVO");
-    setEditDepositNote("");
-
-    setEditQDOpen(true);
-  }
-
-  async function saveEditQuoteDeposit() {
-    if (!editQDTarget) return;
-    const canEditFinalTotal =
-      editQDTarget.status === "FINISHED" || editQDTarget.status === "DELIVERED";
-    const finalTotal =
-      editTotalValue.trim() === "" ? null : Number(editTotalValue);
-
-    if (
-      canEditFinalTotal &&
-      finalTotal != null &&
-      (!Number.isFinite(finalTotal) || finalTotal < 0)
-    ) {
-      setMsg("VALOR TOTAL INVÁLIDO");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-
-    // 1) Actualizar/limpiar cotización en WorkOrder
-    if (editHasQuote === "NO") {
-      const ok = await update(editQDTarget.id, {
-        quotation: null,
-        quote: null,
-        ...(canEditFinalTotal ? { total: finalTotal } : {}),
-      });
-      if (ok !== false) setMsg("COTIZACIÓN ACTUALIZADA ✅");
-      // si no hay cotización, ignoramos abono
-      setEditQDOpen(false);
-      resetEditQD();
-      return;
-    }
-
-    const qNum = Number(editQuoteValue);
-    if (!Number.isFinite(qNum) || qNum <= 0) {
-      setMsg("COTIZACIÓN INVÁLIDA");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-    const ok = await update(editQDTarget.id, {
-      quotation: qNum,
-      quote: qNum,
-      ...(canEditFinalTotal ? { total: finalTotal } : {}),
-    });
-    if (ok === false) return;
-
-    // 2) (Opcional) Registrar abono como pago real
-    if (editHasDeposit === "YES") {
-      const dNum = Number(editDepositValue);
-      if (!Number.isFinite(dNum) || dNum < 0 || dNum > qNum) {
-        setMsg("ABONO INVÁLIDO (≥ 0 y ≤ cotización)");
-        setTimeout(() => setMsg(""), 2200);
-        return;
-      }
-      const pr = await apiFetch(`/works/${editQDTarget.id}/payments`, {
-        method: "POST",
-        body: JSON.stringify({
-          amount: dNum,
-          method: editDepositMethod,
-          note: editDepositNote,
-          createdBy: username || undefined,
-        }),
-      });
-      if (!pr.ok) {
-        const e = (await pr.json().catch(() => ({}))) as { error?: string };
-        setMsg("ERROR AL REGISTRAR ABONO: " + UDATA(e?.error || ""));
-        setTimeout(() => setMsg(""), 2500);
-        return;
-      }
-    }
-
-    setMsg("COTIZACIÓN/ABONO ACTUALIZADOS ✅");
-    setEditQDOpen(false);
-    resetEditQD();
-    load();
-  }
-
-  async function openPaymentsModal(w: WorkOrder) {
-    setPaymentsTarget(w);
-    setPaymentsOpen(true);
-    setPayments([]);
-    setPaymentsLoading(true);
-    setNewPaymentAmount("");
-    setNewPaymentMethod("EFECTIVO");
-    setNewPaymentNote("");
-
-    try {
-      const r = await apiFetch(`/works/${w.id}/payments`);
-      if (!r.ok) throw new Error();
-      const data = (await r.json()) as WorkPayment[];
-      setPayments(data);
-    } catch {
-      setMsg("NO SE PUDIERON CARGAR LOS ABONOS");
-      setTimeout(() => setMsg(""), 2200);
-    } finally {
-      setPaymentsLoading(false);
-    }
-  }
-
-  async function addPaymentFromModal() {
-    if (!paymentsTarget) return;
-    const amount = Number(newPaymentAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMsg("ABONO INVÁLIDO");
-      setTimeout(() => setMsg(""), 2200);
-      return;
-    }
-
-    try {
-      const r = await apiFetch(`/works/${paymentsTarget.id}/payments`, {
-        method: "POST",
-        body: JSON.stringify({
-          amount,
-          method: newPaymentMethod,
-          note: newPaymentNote,
-          createdBy: username || undefined,
-        }),
-      });
-      if (!r.ok) {
-        const e = (await r.json().catch(() => ({}))) as { error?: string };
-        setMsg("ERROR AL REGISTRAR ABONO: " + UDATA(e?.error || ""));
-        setTimeout(() => setMsg(""), 2500);
-        return;
-      }
-
-      const created = (await r.json().catch(() => null)) as WorkPayment | null;
-      if (created) {
-        // lo ponemos al inicio (ya que el back ordena DESC por createdAt)
-        setPayments((prev) => [created, ...prev]);
-      }
-
-      setNewPaymentAmount("");
-      setNewPaymentNote("");
-      setMsg("ABONO REGISTRADO ✅");
-      setTimeout(() => setMsg(""), 1800);
-      await load(); // para refrescar depósito en las tarjetas
-    } catch {
-      setMsg("ERROR AL REGISTRAR ABONO");
-      setTimeout(() => setMsg(""), 2500);
-    }
-  }
-
   async function deletePayment(paymentId: number) {
     if (!canDelete) return;
     if (!paymentsTarget) return;
-    if (!confirm("¿ELIMINAR ESTE ABONO? ESTA ACCIÓN ES PERMANENTE.")) return;
+    if (!confirm("Â¿ELIMINAR ESTE ABONO? ESTA ACCIÃ“N ES PERMANENTE.")) return;
 
     try {
       const r = await apiFetch(
@@ -891,7 +875,7 @@ export default function WorksPage() {
       if (!r.ok) throw new Error();
 
       setPayments((prev) => prev.filter((p) => p.id !== paymentId));
-      setMsg("ABONO ELIMINADO ✅");
+      setMsg("ABONO ELIMINADO âœ…");
       setTimeout(() => setMsg(""), 1800);
       await load();
     } catch {
@@ -996,7 +980,7 @@ export default function WorksPage() {
       return;
     }
 
-    // Lo vamos a marcar como LISTO → abrir modal gamer
+    // Lo vamos a marcar como LISTO â†’ abrir modal gamer
     setProductModalTargetWork(w);
     setProductModalTargetItem(item);
     setProductModalPrice(item.price != null ? String(item.price) : "");
@@ -1012,7 +996,7 @@ export default function WorksPage() {
 
     const precioNum = Number(productModalPrice);
     if (!Number.isFinite(precioNum) || precioNum < 0) {
-      setMsg("VALOR DEL PRODUCTO INVÁLIDO");
+      setMsg("VALOR DEL PRODUCTO INVÃLIDO");
       setTimeout(() => setMsg(""), 2200);
       return;
     }
@@ -1048,15 +1032,15 @@ export default function WorksPage() {
 
       // 4) Calcular abonos y saldo
       const depAll = Number(w.deposit || 0); // suma de pagos desde el back
-      const newQuote = totalProducts; // la "cotización" real = total arreglos
+      const newQuote = totalProducts; // la "cotizaciÃ³n" real = total arreglos
       const saldo = Math.max(newQuote - depAll, 0);
 
-      // 5) Saber si aún quedan productos pendientes
+      // 5) Saber si aÃºn quedan productos pendientes
       const pending = allItems.filter((it) => !it.done);
 
       // 6) Actualizar la orden SIEMPRE con el acumulado de arreglos
       const patch: Patch = {
-        // mientras el trabajo está en curso, total = ACUMULADO ARREGLOS
+        // mientras el trabajo estÃ¡ en curso, total = ACUMULADO ARREGLOS
         total: totalProducts,
         quote: newQuote,
         quotation: newQuote,
@@ -1065,7 +1049,7 @@ export default function WorksPage() {
       // Si ya NO hay pendientes -> marcar FINALIZADO y dejar total = SALDO A PAGAR
       if (pending.length === 0) {
         patch.status = "FINISHED";
-        patch.total = saldo; // aquí total pasa a ser "VALOR A PAGAR"
+        patch.total = saldo; // aquÃ­ total pasa a ser "VALOR A PAGAR"
       }
 
       const okUpdate = await update(w.id, patch);
@@ -1092,7 +1076,7 @@ export default function WorksPage() {
         );
         openWhatsApp(w.customerPhone, msgAll);
       } else {
-        // Solo este producto quedó listo
+        // Solo este producto quedÃ³ listo
         const pendingNames = pending.map((it) => it.label);
 
         const msgToSend = buildProductDoneMsg(
@@ -1127,7 +1111,7 @@ export default function WorksPage() {
     // Traemos los productos para poder enumerarlos
     const items = await fetchItemsForMsg(w.id);
 
-    // Si ya está marcado, solo reenviamos el mensaje
+    // Si ya estÃ¡ marcado, solo reenviamos el mensaje
     if (w.informedCustomer) {
       openWhatsApp(w.customerPhone, buildReceivedMsg(w, items));
       return;
@@ -1206,9 +1190,10 @@ export default function WorksPage() {
     if (d.length === 10) return "57" + d;
     return d.length >= 10 ? "57" + d.slice(-10) : d;
   }
-  function toCOP(n?: number | null) {
-    if (typeof n !== "number" || !Number.isFinite(n)) return "—";
-    return n.toLocaleString("es-CO", {
+  function toCOP(n?: number | string | null) {
+    const value = typeof n === "string" ? Number(n) : n;
+    if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+    return value.toLocaleString("es-CO", {
       style: "currency",
       currency: "COP",
       maximumFractionDigits: 0,
@@ -1269,7 +1254,7 @@ export default function WorksPage() {
   ) {
     const lineas: string[] = [
       `Hola ${UU(w.customerName)}.`,
-      `Te confirmamos que todos los productos del trabajo ${UU(w.code)} ya están listos.`,
+      `Te confirmamos que todos los productos del trabajo ${UU(w.code)} ya estÃ¡n listos.`,
       `Resumen del trabajo:`,
     ];
 
@@ -1286,7 +1271,7 @@ export default function WorksPage() {
       `Total arreglos: ${toCOP(totalProducts)}.`,
       `Abonos registrados: ${toCOP(depAll)}.`,
       `Saldo a pagar: ${toCOP(saldo)}.`,
-      `Puedes pasar a recoger en horario de atención.`,
+      `Puedes pasar a recoger en horario de atenciÃ³n.`,
       `Gracias por elegir Gamerland.`,
     );
 
@@ -1306,11 +1291,11 @@ export default function WorksPage() {
 
     const productos = items && items.length > 0 ? items : undefined;
 
-    // Garantía
+    // GarantÃ­a
     if (w.isWarranty) {
       const lineas: string[] = [
         `Hola ${UU(w.customerName)}.`,
-        `Confirmamos recepción del equipo por garantía. Trabajo: ${UU(w.code)}.`,
+        `Confirmamos recepciÃ³n del equipo por garantÃ­a. Trabajo: ${UU(w.code)}.`,
       ];
 
       if (productos) {
@@ -1321,12 +1306,12 @@ export default function WorksPage() {
       } else {
         lineas.push(
           `Equipo: ${UU(w.item)}`,
-          `Descripción: ${UU(w.description)}`,
+          `DescripciÃ³n: ${UU(w.description)}`,
         );
       }
 
       lineas.push(
-        `Este servicio no genera cobro adicional por el mismo daño reportado.`,
+        `Este servicio no genera cobro adicional por el mismo daÃ±o reportado.`,
         `Si se detecta una falla diferente, te informaremos antes de realizar cualquier cobro.`,
         `Gracias por confiar en Gamerland.`,
       );
@@ -1337,7 +1322,7 @@ export default function WorksPage() {
     // Normal
     const partes: string[] = [
       `Hola ${UU(w.customerName)}.`,
-      `Confirmamos recepción del trabajo ${UU(w.code)}.`,
+      `Confirmamos recepciÃ³n del trabajo ${UU(w.code)}.`,
     ];
 
     if (productos) {
@@ -1346,12 +1331,12 @@ export default function WorksPage() {
         partes.push(`${idx + 1}. ${UU(it.label)}`),
       );
     } else {
-      partes.push(`Equipo: ${UU(w.item)}`, `Descripción: ${UU(w.description)}`);
+      partes.push(`Equipo: ${UU(w.item)}`, `DescripciÃ³n: ${UU(w.description)}`);
     }
 
     if (w.quote != null) {
       partes.push(
-        `Cotización: ${toCOP(quote)}.`,
+        `CotizaciÃ³n: ${toCOP(quote)}.`,
         `Abonos: ${toCOP(dep)}.`,
         `Saldo: ${toCOP(saldo)}.`,
       );
@@ -1373,7 +1358,7 @@ export default function WorksPage() {
       return [
         `Hola ${UU(w.customerName)}.`,
         `Tu trabajo ${base} ha iniciado proceso.`,
-        `Te avisaremos cuando esté finalizado.`,
+        `Te avisaremos cuando estÃ© finalizado.`,
       ].join("\n");
     }
 
@@ -1381,14 +1366,14 @@ export default function WorksPage() {
       const lineas: string[] = [
         `Hola ${UU(w.customerName)}.`,
         w.isWarranty
-          ? `Tu trabajo ${base} (garantía) está finalizado.`
-          : `Tu trabajo ${base} está finalizado.`,
-        `Descripción del trabajo: ${UU(w.description)}`,
+          ? `Tu trabajo ${base} (garantÃ­a) estÃ¡ finalizado.`
+          : `Tu trabajo ${base} estÃ¡ finalizado.`,
+        `DescripciÃ³n del trabajo: ${UU(w.description)}`,
       ];
 
       if (!w.isWarranty && quoteNum != null) {
         lineas.push(
-          `Cotización: ${toCOP(quoteNum)}.`,
+          `CotizaciÃ³n: ${toCOP(quoteNum)}.`,
           `Abono: ${toCOP(dep)}.`,
           `Saldo: ${toCOP(saldo ?? 0)}.`,
         );
@@ -1396,12 +1381,12 @@ export default function WorksPage() {
 
       if (w.isWarranty) {
         lineas.push(
-          `Servicio por garantía sin costo adicional por el mismo daño reportado.`,
+          `Servicio por garantÃ­a sin costo adicional por el mismo daÃ±o reportado.`,
         );
       }
 
       lineas.push(
-        `Puedes pasar a recoger en horario de atención.`,
+        `Puedes pasar a recoger en horario de atenciÃ³n.`,
         `Gracias por elegir Gamerland.`,
       );
 
@@ -1412,24 +1397,24 @@ export default function WorksPage() {
       if (w.isWarranty) {
         return [
           `Hola ${UU(w.customerName)}.`,
-          `Tu equipo del trabajo ${base} fue entregado (garantía).`,
+          `Tu equipo del trabajo ${base} fue entregado (garantÃ­a).`,
           `Recuerda: este servicio no tuvo costo adicional.`,
-          `Si vuelve a presentar fallas, contáctanos para ayudarte.`,
+          `Si vuelve a presentar fallas, contÃ¡ctanos para ayudarte.`,
         ].join("\n");
       }
 
-      // Mejor que el “solo una línea”
+      // Mejor que el â€œsolo una lÃ­neaâ€
       return [
         `Hola ${UU(w.customerName)}.`,
         `Tu equipo del trabajo ${base} fue entregado.`,
-        `Si necesitas soporte o garantía, escríbenos para ayudarte.`,
+        `Si necesitas soporte o garantÃ­a, escrÃ­benos para ayudarte.`,
         `Gracias por elegir Gamerland.`,
       ].join("\n");
     }
 
     return [
       `Hola ${UU(w.customerName)}.`,
-      `Tu trabajo ${base} ahora está: ${niceStatus[newStatus]}.`,
+      `Tu trabajo ${base} ahora estÃ¡: ${niceStatus[newStatus]}.`,
     ].join("\n");
   }
 
@@ -1438,12 +1423,12 @@ export default function WorksPage() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
-  // sortedRows ya está ordenado de más nuevo a más viejo
+  // sortedRows ya estÃ¡ ordenado de mÃ¡s nuevo a mÃ¡s viejo
   const latestByCode = new Map<string, WorkOrder>();
 
   for (const w of sortedRows) {
     if (!latestByCode.has(w.code)) {
-      latestByCode.set(w.code, w); // primera vez que vemos ese code = más reciente
+      latestByCode.set(w.code, w); // primera vez que vemos ese code = mÃ¡s reciente
     }
   }
 
@@ -1456,23 +1441,32 @@ export default function WorksPage() {
         ? statusOrderActive
         : [status as WorkStatus].filter((s) => s !== "DELIVERED");
 
-  function openWarranty(w: WorkOrder) {
+  async function openWarranty(w: WorkOrder) {
     setWarrantyTarget(w);
     setWarrantyDescription(
-      `GARANTÍA: ${UU(w.description || "REVISIÓN GARANTÍA")}`,
+      `GARANTIA SOBRE: ${UU(w.description || w.item || "TRABAJO ENTREGADO")}`,
     );
+    setWarrantyObservation("");
     setWarrantyModalOpen(true);
+
+    if (!itemsByWork[w.id] || itemsByWork[w.id].length === 0) {
+      await fetchItemsForMsg(w.id);
+    }
   }
 
   async function createWarrantyOrder() {
     if (!warrantyTarget) return;
 
-    const desc =
+    const baseDesc =
       warrantyDescription.trim() ||
-      `GARANTÍA: ${UU(warrantyTarget.description)}`;
+      `GARANTIA SOBRE: ${UU(warrantyTarget.description)}`;
+    const obs = warrantyObservation.trim();
+    const desc = obs
+      ? `${baseDesc}\n\nOBSERVACIONES: ${UU(obs)}`
+      : baseDesc;
 
     const payload: Patch = {
-      // 👇 Reutilizamos el mismo código del trabajo original
+      // ðŸ‘‡ Reutilizamos el mismo cÃ³digo del trabajo original
       code: warrantyTarget.code,
 
       item: UDATA(warrantyTarget.item),
@@ -1492,13 +1486,13 @@ export default function WorksPage() {
     });
 
     if (r.ok) {
-      setMsg("ORDEN POR GARANTÍA CREADA ✅");
+      setMsg("ORDEN POR GARANTÃA CREADA âœ…");
       resetWarrantyModal();
       await load();
     } else {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
       setMsg(
-        "ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR LA ORDEN DE GARANTÍA"),
+        "ERROR: " + UDATA(e?.error || "NO SE PUDO CREAR LA ORDEN DE GARANTÃA"),
       );
       setTimeout(() => setMsg(""), 2500);
     }
@@ -1530,7 +1524,7 @@ export default function WorksPage() {
             {UU(w.code)}
             {w.isWarranty && (
               <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded bg-pink-200 text-pink-800">
-                GARANTÍA
+                GARANTÃA
               </span>
             )}
             </div>
@@ -1538,7 +1532,7 @@ export default function WorksPage() {
               {fmtIngreso(w.createdAt)}
             </div>
             <div className="mt-1 text-sm font-semibold uppercase text-gray-100">
-              {UU(w.customerName)} • {UU(w.customerPhone)}
+              {UU(w.customerName)} â€¢ {UU(w.customerPhone)}
             </div>
           </div>
           <span className={`text-xs px-2 py-0.5 rounded ${s.badge} uppercase`}>
@@ -1551,10 +1545,10 @@ export default function WorksPage() {
             <b>INGRESO:</b> {fmt(w.createdAt)}
           </div>
           <div>
-            <b># PRODUCTOS:</b> {totalProducts || "—"}
+            <b># PRODUCTOS:</b> {totalProducts || "â€”"}
           </div>
           <div>
-            <b># PENDIENTES:</b> {pendingProducts || "—"}
+            <b># PENDIENTES:</b> {pendingProducts || "â€”"}
           </div>
         </div>
 
@@ -1580,7 +1574,7 @@ export default function WorksPage() {
                       const next = !inputOpen;
                       setOpenChecklist((prev) => ({ ...prev, [w.id]: next }));
                       if (!itemsByWork[w.id] && !itemsLoading[w.id]) {
-                        // carga perezosa si aún no tenemos items
+                        // carga perezosa si aÃºn no tenemos items
                         loadWorkItems(w.id);
                       }
                     }}
@@ -1589,7 +1583,7 @@ export default function WorksPage() {
                   </button>
                 </div>
 
-                {/* Input para nuevo producto SOLO cuando se abre el botón */}
+                {/* Input para nuevo producto SOLO cuando se abre el botÃ³n */}
                 {inputOpen && (
                   <div className="flex gap-2 items-center">
                     <input
@@ -1630,7 +1624,7 @@ export default function WorksPage() {
                 {/* Estas partes SIEMPRE visibles */}
                 {loadingItems && (
                   <div className="text-[11px] text-gray-400">
-                    CARGANDO PRODUCTOS…
+                    CARGANDO PRODUCTOSâ€¦
                   </div>
                 )}
 
@@ -1687,7 +1681,7 @@ export default function WorksPage() {
           {w.quote != null && (
             <>
               <div>
-                <b>COTIZACIÓN:</b> ${Number(quote).toLocaleString("es-CO")}
+                <b>COTIZACIÃ“N:</b> ${Number(quote).toLocaleString("es-CO")}
               </div>
               <div>
                 <b>ABONOS:</b> ${Number(dep).toLocaleString("es-CO")}
@@ -1698,7 +1692,7 @@ export default function WorksPage() {
             </>
           )}
 
-          {/* 👇 NUEVO: total acumulado por productos mientras aún no está finalizado/entregado */}
+          {/* ðŸ‘‡ NUEVO: total acumulado por productos mientras aÃºn no estÃ¡ finalizado/entregado */}
           {w.total != null &&
             Number(w.total) > 0 &&
             w.status !== "FINISHED" &&
@@ -1719,7 +1713,7 @@ export default function WorksPage() {
               <b>PAGO:</b>{" "}
               {w.total != null
                 ? `$${Number(w.total).toLocaleString("es-CO")}`
-                : "—"}
+                : "â€”"}
             </div>
           )}
 
@@ -1730,7 +1724,7 @@ export default function WorksPage() {
           )}
         </div>
 
-        {/* Botonera según estado (sin retornos) */}
+        {/* Botonera segÃºn estado (sin retornos) */}
         {!delivered && (
           <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:flex-wrap">
             {role === "ADMIN" && (
@@ -1757,7 +1751,7 @@ export default function WorksPage() {
                   </button>
                 )}
 
-                {/* EN PROCESO SOLO DESPUÉS DE INFORMAR AL CLIENTE */}
+                {/* EN PROCESO SOLO DESPUÃ‰S DE INFORMAR AL CLIENTE */}
                 {w.informedCustomer && (
                   <button
                     className={BTN.base}
@@ -1771,7 +1765,7 @@ export default function WorksPage() {
               </>
             )}
 
-            {/* OJO: EN IN_PROGRESS NO HAY BOTÓN FINALIZADO */}
+            {/* OJO: EN IN_PROGRESS NO HAY BOTÃ“N FINALIZADO */}
 
             {w.status === "FINISHED" && (
               <button
@@ -1784,45 +1778,14 @@ export default function WorksPage() {
               </button>
             )}
 
-            {/* ACCIONES SIEMPRE DISPONIBLES MIENTRAS NO ESTÉ ENTREGADO */}
+            {/* ACCIONES SIEMPRE DISPONIBLES MIENTRAS NO ESTÃ‰ ENTREGADO */}
             <button
               className={BTN.secondary}
               style={{ borderColor: COLORS.border }}
               onClick={() => openEditDetails(w)}
-              title="Editar descripción y 'qué se recibe'"
+              title="Editar productos, valores y abonos"
             >
-              EDITAR DESC.
-            </button>
-
-            <button
-              className={BTN.secondary}
-              style={{ borderColor: COLORS.border }}
-              onClick={() => openEditQuoteDeposit(w)}
-              title={
-                w.quote != null
-                  ? "Editar cotización / agregar abono"
-                  : "Agregar cotización"
-              }
-            >
-              {w.quote != null ? "EDITAR COT/ABONO" : "+ COT/ABONO"}
-            </button>
-
-            <button
-              className={BTN.secondary}
-              style={{ borderColor: COLORS.border }}
-              onClick={() => openEditQuoteDeposit(w)}
-              title="Editar cotización, abonos o valor total"
-            >
-              VALORES
-            </button>
-
-            <button
-              className={BTN.secondary}
-              style={{ borderColor: COLORS.border }}
-              onClick={() => openPaymentsModal(w)}
-              title="Ver historial de abonos"
-            >
-              ABONOS
+              EDITAR
             </button>
 
             {/* Eliminar (solo ADMIN) */}
@@ -1851,23 +1814,23 @@ export default function WorksPage() {
                 CAMBIAR ESTADO
               </button>
             )}
-            {/* Botón GARANTÍA disponible para cualquier rol */}
+            {/* BotÃ³n GARANTÃA disponible para cualquier rol */}
             <button
               className={BTN.base}
               style={BTN_STYLE.pinkNeon}
               onClick={() => openWarranty(w)}
-              title="Ver historial y crear nueva orden por garantía"
+              title="Ver historial y crear nueva orden por garantÃ­a"
             >
-              GARANTÍA
+              GARANTÃA
             </button>
 
             <button
               className={BTN.secondary}
               style={{ borderColor: COLORS.border }}
-              onClick={() => openPaymentsModal(w)}
-              title="Ver historial de abonos"
+              onClick={() => openEditDetails(w)}
+              title="Editar valores y abonos"
             >
-              ABONOS
+              EDITAR
             </button>
 
             {canDelete && (
@@ -1886,7 +1849,7 @@ export default function WorksPage() {
     );
   };
 
-  // ===== Historial para el modal de garantía =====
+  // ===== Historial para el modal de garantÃ­a =====
   const warrantyHistory: WorkOrder[] =
     warrantyTarget == null
       ? []
@@ -1896,6 +1859,8 @@ export default function WorksPage() {
             (a, b) =>
               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           );
+  const warrantyItems: WorkItem[] =
+    warrantyTarget == null ? [] : itemsByWork[warrantyTarget.id] ?? [];
 
   return (
     <div className="max-w-6xl mx-auto text-gray-200 space-y-6">
@@ -1905,7 +1870,7 @@ export default function WorksPage() {
 
         <div className="flex flex-col w-full gap-2 sm:flex-row sm:items-center">
           <input
-            placeholder="BUSCAR POR CÓDIGO, CLIENTE, EQUIPO..."
+            placeholder="BUSCAR POR CÃ“DIGO, CLIENTE, EQUIPO..."
             className="rounded px-3 py-2 text-gray-100 w-full sm:flex-1 uppercase"
             style={{
               backgroundColor: COLORS.input,
@@ -1966,15 +1931,15 @@ export default function WorksPage() {
           border: `1px solid ${COLORS.border}`,
         }}
       >
-        💡 <b>REVISIÓN $20.000:</b> SI EL CLIENTE <b>ACEPTA EL ARREGLO</b>, LA
-        REVISIÓN <b>NO SE COBRA</b>. SOLO SE COBRA EL VALOR DEL ARREGLO.
+        ðŸ’¡ <b>REVISIÃ“N $20.000:</b> SI EL CLIENTE <b>ACEPTA EL ARREGLO</b>, LA
+        REVISIÃ“N <b>NO SE COBRA</b>. SOLO SE COBRA EL VALOR DEL ARREGLO.
       </div>
 
       {!!msg && <div className="text-sm text-cyan-300">{msg}</div>}
 
       {/* Lista en 4 columnas por estado */}
       <section className="space-y-4">
-        {loading && <div className="text-gray-400 text-sm">CARGANDO…</div>}
+        {loading && <div className="text-gray-400 text-sm">CARGANDOâ€¦</div>}
         {!loading && rows.length === 0 && (
           <div className="text-gray-400 text-sm">NO HAY TRABAJOS</div>
         )}
@@ -2016,7 +1981,7 @@ export default function WorksPage() {
                           }))
                         }
                       >
-                        MOSTRAR MÁS
+                        MOSTRAR MÃS
                       </button>
                     )}
                   </div>
@@ -2053,7 +2018,7 @@ export default function WorksPage() {
                     </span>
                   </span>
                   <span className="text-cyan-300">
-                    {showDelivered ? "▲" : "▼"}
+                    {showDelivered ? "â–²" : "â–¼"}
                   </span>
                 </button>
 
@@ -2078,7 +2043,7 @@ export default function WorksPage() {
                           }))
                         }
                       >
-                        MOSTRAR MÁS
+                        MOSTRAR MÃS
                       </button>
                     )}
                   </div>
@@ -2102,7 +2067,7 @@ export default function WorksPage() {
           >
             <div className="border-b border-slate-700/70 pb-4">
               <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                Servicio técnico
+                Servicio tÃ©cnico
               </div>
               <h2 className="mt-1 text-2xl font-black uppercase tracking-wide text-cyan-300">
                 NUEVO TRABAJO
@@ -2126,13 +2091,13 @@ export default function WorksPage() {
                     key={row.id}
                     className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center"
                   >
-                    {/* QUÉ SE RECIBE */}
+                    {/* QUÃ‰ SE RECIBE */}
                     <input
                       value={row.label}
                       onChange={(e) =>
                         updateProductRow(row.id, "label", e.target.value)
                       }
-                      placeholder="QUÉ SE RECIBE (EJ: CONTROL, CONSOLA...)"
+                      placeholder="QUÃ‰ SE RECIBE (EJ: CONTROL, CONSOLA...)"
                       className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase text-sm"
                       style={{
                         backgroundColor: COLORS.input,
@@ -2140,13 +2105,13 @@ export default function WorksPage() {
                       }}
                     />
 
-                    {/* DESCRIPCIÓN */}
+                    {/* DESCRIPCIÃ“N */}
                     <input
                       value={row.description}
                       onChange={(e) =>
                         updateProductRow(row.id, "description", e.target.value)
                       }
-                      placeholder="DESCRIPCIÓN (COLOR, ESTADO, DETALLE...)"
+                      placeholder="DESCRIPCIÃ“N (COLOR, ESTADO, DETALLE...)"
                       className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase text-sm"
                       style={{
                         backgroundColor: COLORS.input,
@@ -2154,7 +2119,7 @@ export default function WorksPage() {
                       }}
                     />
 
-                    {/* + PRODUCTO solo en la última fila */}
+                    {/* + PRODUCTO solo en la Ãºltima fila */}
                     {index === productRows.length - 1 && (
                       <button
                         className="w-full rounded-lg px-3 py-3 text-[11px] font-black uppercase sm:w-auto"
@@ -2180,11 +2145,11 @@ export default function WorksPage() {
                 )}
               </div>
 
-              {/* COTIZACIÓN (crear) */}
+              {/* COTIZACIÃ“N (crear) */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
                 <div>
                   <label className="block text-sm mb-1 uppercase">
-                    ¿HAY COTIZACIÓN? *
+                    Â¿HAY COTIZACIÃ“N? *
                   </label>
                   <select
                     className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -2198,7 +2163,7 @@ export default function WorksPage() {
                     }
                   >
                     <option value="NO">NO</option>
-                    <option value="YES">SÍ</option>
+                    <option value="YES">SÃ</option>
                   </select>
                 </div>
 
@@ -2206,7 +2171,7 @@ export default function WorksPage() {
                   <>
                     <div>
                       <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
-                        VALOR COTIZACIÓN *
+                        VALOR COTIZACIÃ“N *
                       </label>
                       <input
                         type="number"
@@ -2225,7 +2190,7 @@ export default function WorksPage() {
 
                     <div>
                       <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
-                        ¿ABONA AHORA?
+                        Â¿ABONA AHORA?
                       </label>
                       <select
                         className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
@@ -2239,7 +2204,7 @@ export default function WorksPage() {
                         }
                       >
                         <option value="NO">NO</option>
-                        <option value="YES">SÍ</option>
+                        <option value="YES">SÃ</option>
                       </select>
                     </div>
 
@@ -2265,7 +2230,7 @@ export default function WorksPage() {
                         </div>
                         <div>
                           <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
-                            MÉTODO PAGO
+                            MÃ‰TODO PAGO
                           </label>
                           <select
                             className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
@@ -2318,10 +2283,10 @@ export default function WorksPage() {
               </div>
 
               <div className="md:col-span-2 rounded-2xl border border-cyan-400/20 bg-cyan-950/15 p-3 text-xs text-slate-300 uppercase">
-                💬 SE INFORMA AL CLIENTE:{" "}
+                ðŸ’¬ SE INFORMA AL CLIENTE:{" "}
                 <i>
-                  “LA REVISIÓN TIENE UN COSTO DE $20.000; SI REALIZA EL ARREGLO,
-                  NO SE COBRA LA REVISIÓN, SOLO EL VALOR DEL ARREGLO.”
+                  â€œLA REVISIÃ“N TIENE UN COSTO DE $20.000; SI REALIZA EL ARREGLO,
+                  NO SE COBRA LA REVISIÃ“N, SOLO EL VALOR DEL ARREGLO.â€
                 </i>
               </div>
             </div>
@@ -2347,20 +2312,20 @@ export default function WorksPage() {
                     "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
                 }}
                 onClick={async () => {
-                  // Validación básica
+                  // ValidaciÃ³n bÃ¡sica
                   if (!customerName.trim() || !customerPhone.trim()) {
                     setMsg("FALTAN CAMPOS OBLIGATORIOS");
                     setTimeout(() => setMsg(""), 2200);
                     return;
                   }
 
-                  // validar productos recibidos (al menos 1 con label, filas vacías permitidas)
+                  // validar productos recibidos (al menos 1 con label, filas vacÃ­as permitidas)
                   const nonEmptyProducts = productRows.filter((p) =>
                     p.label.trim(),
                   );
 
                   if (nonEmptyProducts.length === 0) {
-                    setMsg("AGREGA AL MENOS UN PRODUCTO (QUÉ SE RECIBE)");
+                    setMsg("AGREGA AL MENOS UN PRODUCTO (QUÃ‰ SE RECIBE)");
                     setTimeout(() => setMsg(""), 2200);
                     return;
                   }
@@ -2371,7 +2336,7 @@ export default function WorksPage() {
                   if (hasQuote === "YES") {
                     const qn = Number(quoteValue);
                     if (!Number.isFinite(qn) || qn <= 0) {
-                      setMsg("COTIZACIÓN INVÁLIDA");
+                      setMsg("COTIZACIÃ“N INVÃLIDA");
                       setTimeout(() => setMsg(""), 2200);
                       return;
                     }
@@ -2380,7 +2345,7 @@ export default function WorksPage() {
                     if (hasDeposit === "YES") {
                       const dn = Number(depositValue);
                       if (!Number.isFinite(dn) || dn < 0 || dn > qn) {
-                        setMsg("ABONO INVÁLIDO");
+                        setMsg("ABONO INVÃLIDO");
                         setTimeout(() => setMsg(""), 2200);
                         return;
                       }
@@ -2393,7 +2358,7 @@ export default function WorksPage() {
                   const mainDescription =
                     firstProduct?.description ||
                     firstProduct?.label ||
-                    "SIN DESCRIPCIÓN";
+                    "SIN DESCRIPCIÃ“N";
 
                   const payload: Patch = {
                     item: UDATA(mainItemLabel), // EQUIPO = primer producto
@@ -2418,7 +2383,7 @@ export default function WorksPage() {
                     if (created && typeof created.id === "number") {
                       const workId = created.id;
 
-                      // 👇 crear productos iniciales (SOLO los que tienen label)
+                      // ðŸ‘‡ crear productos iniciales (SOLO los que tienen label)
                       const nonEmptyProducts = productRows.filter((p) =>
                         p.label.trim(),
                       );
@@ -2435,7 +2400,7 @@ export default function WorksPage() {
                         await Promise.all(
                           nonEmptyProducts.map((p) => {
                             const fullLabel = p.description
-                              ? `${UDATA(p.label)} — ${UDATA(p.description)}`
+                              ? `${UDATA(p.label)} â€” ${UDATA(p.description)}`
                               : UDATA(p.label);
                             return apiFetch(`/works/${workId}/items`, {
                               method: "POST",
@@ -2445,7 +2410,7 @@ export default function WorksPage() {
                         );
                       }
 
-                      // 👇 abono inicial, igual que ya tenías
+                      // ðŸ‘‡ abono inicial, igual que ya tenÃ­as
                       if (depositNum > 0) {
                         await apiFetch(`/works/${workId}/payments`, {
                           method: "POST",
@@ -2459,7 +2424,7 @@ export default function WorksPage() {
                       }
                     }
 
-                    setMsg("TRABAJO CREADO ✅");
+                    setMsg("TRABAJO CREADO âœ…");
                     resetForm();
                     setOpenForm(false);
                     load();
@@ -2479,7 +2444,7 @@ export default function WorksPage() {
         </div>
       )}
 
-      {/* Modal FINALIZAR (solo sin cotización) */}
+      {/* Modal FINALIZAR (solo sin cotizaciÃ³n) */}
       {finishModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
           <div
@@ -2519,7 +2484,7 @@ export default function WorksPage() {
 
             <div className="mt-3">
               <label className="block text-sm mb-1 uppercase">
-                ¿AGREGAR DESCRIPCIÓN / VALOR FINAL?
+                Â¿AGREGAR DESCRIPCIÃ“N / VALOR FINAL?
               </label>
               <select
                 className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -2533,7 +2498,7 @@ export default function WorksPage() {
                 }
               >
                 <option value="NO">NO</option>
-                <option value="YES">SÍ</option>
+                <option value="YES">SÃ</option>
               </select>
             </div>
 
@@ -2541,7 +2506,7 @@ export default function WorksPage() {
               <div className="grid grid-cols-1 gap-3 mt-2">
                 <div>
                   <label className="block text-sm mb-1 uppercase">
-                    DESCRIPCIÓN FINAL DEL TRABAJO
+                    DESCRIPCIÃ“N FINAL DEL TRABAJO
                   </label>
                   <input
                     className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -2553,12 +2518,12 @@ export default function WorksPage() {
                     onChange={(e) =>
                       setFinishExtraDescription(UU(e.target.value))
                     }
-                    placeholder="EJ: CAMBIO DE DISCO Y FORMATEO, REPARACIÓN EXTRA, ETC."
+                    placeholder="EJ: CAMBIO DE DISCO Y FORMATEO, REPARACIÃ“N EXTRA, ETC."
                   />
                 </div>
                 <div>
                   <label className="block text-sm mb-1 uppercase">
-                    VALOR FINAL (SOBREESCRIBE LA COTIZACIÓN)
+                    VALOR FINAL (SOBREESCRIBE LA COTIZACIÃ“N)
                   </label>
                   <input
                     type="number"
@@ -2618,7 +2583,7 @@ export default function WorksPage() {
             }}
           >
             <h3 className="border-b border-slate-700/70 pb-4 text-2xl font-black tracking-wide text-cyan-300 uppercase">
-              CAMBIAR ESTADO — {UU(statusTarget.code)}
+              CAMBIAR ESTADO â€” {UU(statusTarget.code)}
             </h3>
             <select
               className="w-full rounded px-3 py-2 text-gray-100 uppercase"
@@ -2635,7 +2600,7 @@ export default function WorksPage() {
               <option value="DELIVERED">ENTREGADO</option>
             </select>
             <div className="text-xs text-gray-400">
-              Al guardar se actualizará el estado y se abrirá WhatsApp con el
+              Al guardar se actualizarÃ¡ el estado y se abrirÃ¡ WhatsApp con el
               mensaje correspondiente.
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -2661,205 +2626,7 @@ export default function WorksPage() {
         </div>
       )}
 
-      {/* Modal EDITAR COT/ABONO */}
-      {editQDOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
-          <div
-            className="w-full max-w-3xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
-            style={{
-              backgroundColor: COLORS.bgCard,
-              border: `1px solid ${COLORS.border}`,
-              maxHeight: "92vh",
-            }}
-          >
-            <h3 className="text-lg font-semibold text-cyan-300 uppercase">
-              {editQDTarget?.code
-                ? `EDITAR COT/ABONO — ${UU(editQDTarget.code)}`
-                : "EDITAR COT/ABONO"}
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
-              <div>
-                <label className="block text-sm mb-1 uppercase">
-                  ¿HAY COTIZACIÓN? *
-                </label>
-                <select
-                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={editHasQuote}
-                  onChange={(e) =>
-                    setEditHasQuote(e.target.value as "YES" | "NO")
-                  }
-                >
-                  <option value="NO">NO</option>
-                  <option value="YES">SÍ</option>
-                </select>
-              </div>
-
-              {editHasQuote === "YES" && (
-                <>
-                  <div>
-                    <label className="block text-sm mb-1 uppercase">
-                      VALOR COTIZACIÓN *
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="1"
-                      className="w-full rounded px-3 py-2 text-gray-100"
-                      style={{
-                        backgroundColor: COLORS.input,
-                        border: `1px solid ${COLORS.border}`,
-                      }}
-                      value={editQuoteValue}
-                      onChange={(e) => setEditQuoteValue(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-1 uppercase">
-                      ¿ABONO?
-                    </label>
-                    <select
-                      className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                      style={{
-                        backgroundColor: COLORS.input,
-                        border: `1px solid ${COLORS.border}`,
-                      }}
-                      value={editHasDeposit}
-                      onChange={(e) =>
-                        setEditHasDeposit(e.target.value as "YES" | "NO")
-                      }
-                    >
-                      <option value="NO">NO</option>
-                      <option value="YES">SÍ</option>
-                    </select>
-                  </div>
-
-                  {editHasDeposit === "YES" && (
-                    <>
-                      <div className="md:col-span-3">
-                        <label className="block text-sm mb-1 uppercase">
-                          VALOR ABONO
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step="1"
-                          className="w-full rounded px-3 py-2 text-gray-100"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          value={editDepositValue}
-                          onChange={(e) => setEditDepositValue(e.target.value)}
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm mb-1 uppercase">
-                          MÉTODO PAGO
-                        </label>
-                        <select
-                          className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          value={editDepositMethod}
-                          onChange={(e) =>
-                            setEditDepositMethod(e.target.value as PayMethod)
-                          }
-                        >
-                          <option value="EFECTIVO">EFECTIVO</option>
-                          <option value="QR_LLAVE">QR_LLAVE</option>
-                          <option value="DATAFONO">DATAFONO</option>
-                        </select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-sm mb-1 uppercase">
-                          NOTA (opcional)
-                        </label>
-                        <input
-                          className="w-full rounded px-3 py-2 text-gray-100 uppercase"
-                          style={{
-                            backgroundColor: COLORS.input,
-                            border: `1px solid ${COLORS.border}`,
-                          }}
-                          value={editDepositNote}
-                          onChange={(e) => setEditDepositNote(e.target.value)}
-                          placeholder="ABONO A COTIZACIÓN / ACEPTACIÓN / ..."
-                        />
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            {editHasQuote === "YES" && (
-              <div className="text-xs text-gray-300">
-                Saldo = Cotización – Abonos (pagos). Se usará al “FINALIZAR”.
-              </div>
-            )}
-
-            {editQDTarget &&
-              (editQDTarget.status === "FINISHED" ||
-                editQDTarget.status === "DELIVERED") && (
-                <div>
-                  <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
-                    VALOR TOTAL / VALOR A PAGAR
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    className="w-full rounded px-3 py-2 text-gray-100"
-                    style={{
-                      backgroundColor: COLORS.input,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                    value={editTotalValue}
-                    onChange={(e) => setEditTotalValue(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-              )}
-
-            <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase"
-                style={{ borderColor: COLORS.border }}
-                onClick={() => {
-                  setEditQDOpen(false);
-                  resetEditQD();
-                }}
-              >
-                CANCELAR
-              </button>
-              <button
-                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase"
-                style={{
-                  color: "#001014",
-                  background:
-                    "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                  boxShadow:
-                    "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
-                }}
-                onClick={saveEditQuoteDeposit}
-              >
-                GUARDAR
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal EDITAR DESCRIPCIÓN / ITEM */}
+      {/* Modal EDITAR DESCRIPCIÃ“N / ITEM */}
       {editOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div
@@ -2877,7 +2644,7 @@ export default function WorksPage() {
               id="edit-desc-title"
               className="border-b border-slate-700/70 pb-4 text-2xl font-black uppercase tracking-wide text-cyan-300"
             >
-              EDITAR — {editTarget ? UU(editTarget.code) : ""}
+              EDITAR â€” {editTarget ? UU(editTarget.code) : ""}
             </h3>
 
             <div className="space-y-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
@@ -2901,7 +2668,7 @@ export default function WorksPage() {
                         PRODUCTO #{it.id}
                       </label>
                       <input
-                    className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
+                        className="w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
                         style={{
                           backgroundColor: COLORS.input,
                           border: `1px solid ${COLORS.border}`,
@@ -2910,7 +2677,7 @@ export default function WorksPage() {
                         onChange={(e) =>
                           updateEditItemLabel(it.id, e.target.value)
                         }
-                        placeholder="EJ: CONTROL — STICK DRIFT"
+                        placeholder="EJ: CONTROL â€” STICK DRIFT"
                       />
                       <textarea
                         className="min-h-24 w-full rounded-lg px-3 py-3 text-gray-100 uppercase"
@@ -2922,12 +2689,232 @@ export default function WorksPage() {
                         onChange={(e) =>
                           updateEditItemDetail(it.id, e.target.value)
                         }
-                        placeholder="DESCRIPCIÓN / TRABAJO REALIZADO / OBSERVACIONES"
+                        placeholder="DESCRIPCIÃ“N / TRABAJO REALIZADO / OBSERVACIONES"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        className="w-full rounded-lg px-3 py-3 text-gray-100"
+                        style={{
+                          backgroundColor: COLORS.input,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                        value={it.price}
+                        onChange={(e) =>
+                          updateEditItemPrice(it.id, e.target.value)
+                        }
+                        placeholder="VALOR / COSTO DEL ARREGLO"
                       />
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4 md:grid-cols-3">
+              <div className="md:col-span-3 text-xs font-semibold text-slate-300 uppercase">
+                Valores y abonos
+              </div>
+              <div>
+                <label className="block text-sm mb-1 uppercase">
+                  ¿Hay cotizacion?
+                </label>
+                <select
+                  className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={editHasQuote}
+                  onChange={(e) =>
+                    setEditHasQuote(e.target.value as "YES" | "NO")
+                  }
+                >
+                  <option value="NO">NO</option>
+                  <option value="YES">SI</option>
+                </select>
+              </div>
+
+              {editHasQuote === "YES" && (
+                <>
+                  <div>
+                    <label className="block text-sm mb-1 uppercase">
+                      Valor cotizacion
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1"
+                      className="w-full rounded px-3 py-2 text-gray-100"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={editQuoteValue}
+                      onChange={(e) => setEditQuoteValue(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1 uppercase">
+                      ¿Nuevo abono?
+                    </label>
+                    <select
+                      className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={editHasDeposit}
+                      onChange={(e) =>
+                        setEditHasDeposit(e.target.value as "YES" | "NO")
+                      }
+                    >
+                      <option value="NO">NO</option>
+                      <option value="YES">SI</option>
+                    </select>
+                  </div>
+
+                  {editHasDeposit === "YES" && (
+                    <>
+                      <div>
+                        <label className="block text-sm mb-1 uppercase">
+                          Valor abono
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="1"
+                          className="w-full rounded px-3 py-2 text-gray-100"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={editDepositValue}
+                          onChange={(e) => setEditDepositValue(e.target.value)}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm mb-1 uppercase">
+                          Metodo
+                        </label>
+                        <select
+                          className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={editDepositMethod}
+                          onChange={(e) =>
+                            setEditDepositMethod(e.target.value as PayMethod)
+                          }
+                        >
+                          <option value="EFECTIVO">EFECTIVO</option>
+                          <option value="QR_LLAVE">QR_LLAVE</option>
+                          <option value="DATAFONO">DATAFONO</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm mb-1 uppercase">
+                          Nota
+                        </label>
+                        <input
+                          className="w-full rounded px-3 py-2 text-gray-100 uppercase"
+                          style={{
+                            backgroundColor: COLORS.input,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                          value={editDepositNote}
+                          onChange={(e) => setEditDepositNote(UU(e.target.value))}
+                          placeholder="ABONO / PAGO TOTAL"
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {editTarget &&
+                (editTarget.status === "FINISHED" ||
+                  editTarget.status === "DELIVERED") && (
+                  <div className="md:col-span-3">
+                    <label className="block text-sm mb-1 uppercase">
+                      Valor a pagar
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1"
+                      className="w-full rounded px-3 py-2 text-gray-100"
+                      style={{
+                        backgroundColor: COLORS.input,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                      value={editTotalValue}
+                      onChange={(e) => setEditTotalValue(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                )}
+
+              <div className="md:col-span-3 border-t border-white/10 pt-3">
+                <div className="mb-2 text-xs font-semibold uppercase text-slate-300">
+                  Historial de abonos
+                </div>
+                {paymentsLoading && (
+                  <div className="text-sm text-gray-300">Cargando abonos...</div>
+                )}
+                {!paymentsLoading && payments.length === 0 && (
+                  <div className="text-sm text-gray-400">
+                    Este trabajo no tiene abonos registrados.
+                  </div>
+                )}
+                {!paymentsLoading && payments.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto text-sm">
+                    <table className="w-full text-xs">
+                      <thead className="border-b border-white/10 text-gray-400">
+                        <tr>
+                          <th className="py-1 pr-2 text-left">FECHA</th>
+                          <th className="py-1 pr-2 text-right">VALOR</th>
+                          <th className="py-1 pr-2 text-left">METODO</th>
+                          <th className="py-1 pr-2 text-left">NOTA</th>
+                          {canDelete && <th className="py-1 text-right">ACCIONES</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payments.map((p) => (
+                          <tr
+                            key={p.id}
+                            className="border-b border-white/5 last:border-b-0"
+                          >
+                            <td className="py-1 pr-2">{fmt(p.createdAt)}</td>
+                            <td className="py-1 pr-2 text-right">
+                              {toCOP(p.amount)}
+                            </td>
+                            <td className="py-1 pr-2">{p.method}</td>
+                            <td className="py-1 pr-2">
+                              {p.note ? UU(p.note) : "—"}
+                            </td>
+                            {canDelete && (
+                              <td className="py-1 text-right">
+                                <button
+                                  className="rounded border px-2 py-0.5 text-[11px] uppercase text-pink-400"
+                                  style={{ borderColor: COLORS.border }}
+                                  onClick={() => deletePayment(p.id)}
+                                >
+                                  ELIMINAR
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -2937,6 +2924,9 @@ export default function WorksPage() {
                 onClick={() => {
                   setEditOpen(false);
                   setEditTarget(null);
+                  setPaymentsTarget(null);
+                  setPayments([]);
+                  resetEditQD();
                 }}
               >
                 CANCELAR
@@ -2961,75 +2951,168 @@ export default function WorksPage() {
         </div>
       )}
 
-      {/* Modal GARANTÍA */}
+      {/* Modal GARANTIA */}
       {warrantyModalOpen && warrantyTarget && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-3">
           <div
-            className="w-full max-w-2xl rounded-xl p-4 space-y-3"
+            className="w-full max-w-4xl rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{
               backgroundColor: COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
+              maxHeight: "92vh",
             }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="warranty-title"
           >
-            <h3
-              id="warranty-title"
-              className="text-lg font-semibold text-cyan-300 uppercase"
-            >
-              GARANTÍA — {UU(warrantyTarget.code)}
-            </h3>
-
-            <div className="text-sm text-gray-200 uppercase space-y-1">
+            <div className="flex flex-col gap-3 border-b border-slate-700/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <b>EQUIPO:</b> {UU(warrantyTarget.item)}
+                <div className="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300">
+                  Nueva garantia
+                </div>
+                <h3
+                  id="warranty-title"
+                  className="mt-1 text-2xl font-black uppercase tracking-wide text-cyan-300"
+                >
+                  {UU(warrantyTarget.code)}
+                </h3>
               </div>
-              <div>
-                <b>ÚLTIMO TRABAJO:</b> {UU(warrantyTarget.description)}
-              </div>
-              <div>
-                <b>CLIENTE:</b> {UU(warrantyTarget.customerName)} •{" "}
-                {UU(warrantyTarget.customerPhone)}
-              </div>
-              <div>
-                <b>FECHA ENTREGA (ÚLTIMA):</b> {fmt(warrantyTarget.updatedAt)}
-              </div>
-              <div>
-                <b>VALOR PAGADO:</b>{" "}
-                {warrantyTarget.total != null
-                  ? toCOP(warrantyTarget.total)
-                  : "—"}
+              <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-right text-xs uppercase text-cyan-100">
+                <div className="font-bold">Entregado</div>
+                <div>{fmt(warrantyTarget.updatedAt)}</div>
               </div>
             </div>
 
-            <div className="mt-2">
-              <h4 className="text-xs font-semibold text-gray-300 uppercase">
-                Historial de trabajos de este código
-              </h4>
-              <div
-                className="mt-1 max-h-40 overflow-y-auto text-xs text-gray-300 border border-dashed rounded p-2"
-                style={{ borderColor: COLORS.border }}
-              >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3">
+                <div className="text-[11px] font-bold uppercase text-slate-400">Cliente</div>
+                <div className="mt-1 text-sm font-semibold uppercase text-slate-100">
+                  {UU(warrantyTarget.customerName)}
+                </div>
+                <div className="text-xs text-slate-400">{UU(warrantyTarget.customerPhone)}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 md:col-span-2">
+                <div className="text-[11px] font-bold uppercase text-slate-400">Equipo</div>
+                <div className="mt-1 text-sm font-semibold uppercase text-slate-100">
+                  {UU(warrantyTarget.item)}
+                </div>
+                <div className="text-xs uppercase text-slate-400">
+                  Estado actual: {niceStatus[warrantyTarget.status]}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3">
+                <div className="text-[11px] font-bold uppercase text-slate-400">Valor pagado</div>
+                <div className="mt-1 text-lg font-black text-emerald-300">
+                  {warrantyTarget.total != null ? toCOP(warrantyTarget.total) : "-"}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="mb-2 text-xs font-semibold uppercase text-slate-300">
+                Lo que se le hizo
+              </div>
+              <div className="rounded-xl border border-slate-700/70 bg-slate-900/45 p-3 text-sm uppercase text-slate-100">
+                {UU(warrantyTarget.description || "SIN DESCRIPCION REGISTRADA")}
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {itemsLoading[warrantyTarget.id] && (
+                  <div className="text-sm text-slate-400">Cargando productos...</div>
+                )}
+                {!itemsLoading[warrantyTarget.id] && warrantyItems.length === 0 && (
+                  <div className="text-sm text-slate-500">
+                    Sin productos detallados para este trabajo.
+                  </div>
+                )}
+                {!itemsLoading[warrantyTarget.id] &&
+                  warrantyItems.map((it) => (
+                    <div
+                      key={it.id}
+                      className="rounded-xl border border-slate-700/70 bg-slate-900/55 p-3"
+                    >
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="text-sm font-bold uppercase text-slate-100">
+                            {UU(it.label)}
+                          </div>
+                          {it.detail && (
+                            <div className="mt-1 text-xs uppercase text-slate-400">
+                              {UU(it.detail)}
+                            </div>
+                          )}
+                        </div>
+                        {it.price != null && Number(it.price) > 0 && (
+                          <div className="text-sm font-black text-emerald-300">
+                            {toCOP(it.price)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+                <label className="mb-2 block text-xs font-bold uppercase text-slate-400">
+                  Garantia sobre este trabajo
+                </label>
+                <textarea
+                  readOnly
+                  className="min-h-28 w-full resize-none rounded-lg px-3 py-3 text-sm uppercase text-slate-300 opacity-90"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={warrantyDescription}
+                />
+                <div className="mt-2 text-[11px] uppercase text-slate-500">
+                  Este campo queda fijo para que la garantia corresponda al trabajo entregado.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+                <label className="mb-2 block text-xs font-bold uppercase text-slate-400">
+                  Observaciones opcionales
+                </label>
+                <textarea
+                  className="min-h-28 w-full rounded-lg px-3 py-3 text-sm uppercase text-gray-100"
+                  style={{
+                    backgroundColor: COLORS.input,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                  value={warrantyObservation}
+                  onChange={(e) => setWarrantyObservation(UU(e.target.value))}
+                  placeholder="EJ: CLIENTE REPORTA QUE LA FALLA VOLVIO / REVISION SIN COSTO"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 sm:p-4">
+              <div className="mb-2 text-xs font-semibold uppercase text-slate-300">
+                Historial de este codigo
+              </div>
+              <div className="max-h-44 overflow-y-auto text-xs text-slate-300">
                 {warrantyHistory.length === 0 && (
-                  <div>Sin otros registros para este código.</div>
+                  <div>Sin otros registros para este codigo.</div>
                 )}
                 {warrantyHistory.map((h) => (
                   <div
                     key={h.id}
-                    className="flex justify-between border-b border-white/10 py-1 last:border-b-0"
+                    className="flex flex-col gap-1 border-b border-white/10 py-2 last:border-b-0 sm:flex-row sm:items-start sm:justify-between"
                   >
-                    <div className="pr-2">
-                      <div>
-                        <b>{niceStatus[h.status]}</b>
-                        {h.isWarranty && " · GARANTÍA"}
+                    <div>
+                      <div className="font-bold uppercase text-slate-100">
+                        {niceStatus[h.status]}
+                        {h.isWarranty && " - GARANTIA"}
                       </div>
-                      <div>{fmt(h.createdAt)}</div>
+                      <div className="text-slate-500">{fmt(h.createdAt)}</div>
                     </div>
-                    <div className="text-right">
+                    <div className="uppercase text-slate-300 sm:text-right">
                       <div>{UU(h.description)}</div>
-                      <div className="text-[11px] text-gray-400">
-                        Total: {h.total != null ? toCOP(h.total) : "—"}
+                      <div className="text-[11px] text-slate-500">
+                        Total: {h.total != null ? toCOP(h.total) : "-"}
                       </div>
                     </div>
                   </div>
@@ -3037,36 +3120,16 @@ export default function WorksPage() {
               </div>
             </div>
 
-            <div className="mt-3">
-              <h4 className="text-xs font-semibold text-gray-300 uppercase">
-                Crear nueva orden por GARANTÍA
-              </h4>
-              <p className="text-[11px] text-gray-400 mb-1">
-                Esta nueva orden se creará SIN cotización ni abono, marcada como
-                garantía para este mismo código.
-              </p>
-              <input
-                className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
-                style={{
-                  backgroundColor: COLORS.input,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-                value={warrantyDescription}
-                onChange={(e) => setWarrantyDescription(UU(e.target.value))}
-                placeholder="GARANTÍA: DESCRIPCIÓN DEL NUEVO PROBLEMA / REVISIÓN"
-              />
-            </div>
-
-            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase text-xs"
+                className="w-full rounded-lg border px-4 py-3 text-sm font-semibold uppercase sm:w-auto"
                 style={{ borderColor: COLORS.border }}
                 onClick={resetWarrantyModal}
               >
-                CERRAR
+                Cerrar
               </button>
               <button
-                className="px-5 py-2.5 rounded-lg font-semibold w-full sm:w-auto uppercase text-xs"
+                className="w-full rounded-lg px-5 py-3 text-sm font-black uppercase sm:w-auto"
                 style={{
                   color: "#001014",
                   background:
@@ -3076,13 +3139,12 @@ export default function WorksPage() {
                 }}
                 onClick={createWarrantyOrder}
               >
-                CREAR ORDEN DE GARANTÍA
+                Crear garantia
               </button>
             </div>
           </div>
         </div>
       )}
-
       {/* Modal VALOR ARREGLO PRODUCTO (gamer) */}
       {productModalOpen && productModalTargetWork && productModalTargetItem && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
@@ -3104,7 +3166,7 @@ export default function WorksPage() {
             </h3>
 
             <p className="text-xs text-gray-300 uppercase">
-              Trabajo {UU(productModalTargetWork.code)} • Producto:{" "}
+              Trabajo {UU(productModalTargetWork.code)} â€¢ Producto:{" "}
               <b>{UU(productModalTargetItem.label)}</b>
             </p>
 
@@ -3130,7 +3192,7 @@ export default function WorksPage() {
 
               <div>
                 <label className="block text-sm mb-1 uppercase">
-                  Descripción / trabajo realizado
+                  DescripciÃ³n / trabajo realizado
                 </label>
                 <input
                   className="w-full rounded px-3 py-2 text-gray-100 uppercase text-xs"
@@ -3177,170 +3239,7 @@ export default function WorksPage() {
         </div>
       )}
 
-      {/* Modal ABONOS */}
-      {paymentsOpen && paymentsTarget && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
-          <div
-            className="w-full max-w-xl rounded-xl p-4 space-y-3"
-            style={{
-              backgroundColor: COLORS.bgCard,
-              border: `1px solid ${COLORS.border}`,
-            }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="payments-title"
-          >
-            <h3
-              id="payments-title"
-              className="text-lg font-semibold text-cyan-300 uppercase"
-            >
-              ABONOS — {UU(paymentsTarget.code)}
-            </h3>
 
-            {/* Formulario para nuevo abono */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-              <div>
-                <label className="block mb-1 uppercase">VALOR ABONO</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="1"
-                  className="w-full rounded px-2 py-1 text-gray-100"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={newPaymentAmount}
-                  onChange={(e) => setNewPaymentAmount(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block mb-1 uppercase">MÉTODO</label>
-                <select
-                  className="w-full rounded px-2 py-1 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={newPaymentMethod}
-                  onChange={(e) =>
-                    setNewPaymentMethod(e.target.value as PayMethod)
-                  }
-                >
-                  <option value="EFECTIVO">EFECTIVO</option>
-                  <option value="QR_LLAVE">QR_LLAVE</option>
-                  <option value="DATAFONO">DATAFONO</option>
-                </select>
-              </div>
-              <div className="md:col-span-3">
-                <label className="block mb-1 uppercase">NOTA (opcional)</label>
-                <input
-                  className="w-full rounded px-2 py-1 text-gray-100 uppercase"
-                  style={{
-                    backgroundColor: COLORS.input,
-                    border: `1px solid ${COLORS.border}`,
-                  }}
-                  value={newPaymentNote}
-                  onChange={(e) => setNewPaymentNote(UU(e.target.value))}
-                  placeholder="ABONO A COTIZACIÓN / ACEPTACIÓN / ..."
-                />
-              </div>
-              <div className="md:col-span-3 flex justify-end">
-                <button
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold uppercase"
-                  style={{
-                    color: "#001014",
-                    background:
-                      "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                    boxShadow:
-                      "0 0 18px rgba(0,255,255,.25), 0 0 28px rgba(255,0,255,.25)",
-                  }}
-                  onClick={addPaymentFromModal}
-                >
-                  REGISTRAR ABONO
-                </button>
-              </div>
-            </div>
-
-            <hr className="border-white/10" />
-
-            {paymentsLoading && (
-              <div className="text-sm text-gray-300">CARGANDO ABONOS…</div>
-            )}
-
-            {!paymentsLoading && payments.length === 0 && (
-              <div className="text-sm text-gray-400">
-                Este trabajo no tiene abonos registrados.
-              </div>
-            )}
-
-            {!paymentsLoading && payments.length > 0 && (
-              <div className="max-h-64 overflow-y-auto text-sm">
-                <table className="w-full text-xs">
-                  <thead className="text-gray-400 border-b border-white/10">
-                    <tr>
-                      <th className="text-left py-1 pr-2">FECHA</th>
-                      <th className="text-right py-1 pr-2">VALOR</th>
-                      <th className="text-left py-1 pr-2">MÉTODO</th>
-                      <th className="text-left py-1 pr-2">NOTA</th>
-                      <th className="text-left py-1">USUARIO</th>
-                      {canDelete && (
-                        <th className="py-1 text-right">ACCIONES</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((p) => (
-                      <tr
-                        key={p.id}
-                        className="border-b border-white/5 last:border-b-0"
-                      >
-                        <td className="py-1 pr-2">{fmt(p.createdAt)}</td>
-                        <td className="py-1 pr-2 text-right">
-                          {toCOP(p.amount)}
-                        </td>
-                        <td className="py-1 pr-2">{p.method}</td>
-                        <td className="py-1 pr-2">
-                          {p.note ? UU(p.note) : "—"}
-                        </td>
-                        <td className="py-1 pr-2">
-                          {p.createdBy ? UU(p.createdBy) : "—"}
-                        </td>
-                        {canDelete && (
-                          <td className="py-1 text-right">
-                            <button
-                              className="px-2 py-0.5 rounded border text-[11px] text-pink-400 uppercase"
-                              style={{ borderColor: COLORS.border }}
-                              onClick={() => deletePayment(p.id)}
-                            >
-                              ELIMINAR
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                className="px-4 py-2 rounded border w-full sm:w-auto uppercase text-xs"
-                style={{ borderColor: COLORS.border }}
-                onClick={() => {
-                  setPaymentsOpen(false);
-                  setPaymentsTarget(null);
-                  setPayments([]);
-                }}
-              >
-                CERRAR
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

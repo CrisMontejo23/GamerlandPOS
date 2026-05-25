@@ -801,7 +801,12 @@ app.patch("/sales/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
       if (parsed.data.items) {
         // 1.1) Borrar TODOS los movimientos de stock asociados a esa venta (sale#id, sale#id:edit, sale#id:edit-revert, etc.)
         await tx.stockMovement.deleteMany({
-          where: { reference: { startsWith: `sale#${id}` } },
+          where: {
+            OR: [
+              { reference: `sale#${id}` },
+              { reference: { startsWith: `sale#${id}:` } },
+            ],
+          },
         });
 
         // 1.2) Reemplazar items en BD
@@ -1068,7 +1073,12 @@ app.delete(
 
         // ✅ CLAVE: borra todos los movimientos de esa venta (out/in de edits/deletes, etc.)
         await tx.stockMovement.deleteMany({
-          where: { reference: { startsWith: `sale#${id}` } },
+          where: {
+            OR: [
+              { reference: `sale#${id}` },
+              { reference: { startsWith: `sale#${id}:` } },
+            ],
+          },
         });
 
         // borrar pagos, items y venta
@@ -1116,11 +1126,20 @@ app.delete(
 
         const remainingItems = item.sale.items.filter((it) => it.id !== itemId);
         if (remainingItems.length === 0) {
-          throw new Error(
-            "No se puede eliminar el último artículo. Elimina la venta completa.",
-          );
-        }
+          await tx.stockMovement.deleteMany({
+            where: {
+              OR: [
+                { reference: `sale#${saleId}` },
+                { reference: { startsWith: `sale#${saleId}:` } },
+              ],
+            },
+          });
+          await tx.payment.deleteMany({ where: { saleId } });
+          await tx.saleItem.delete({ where: { id: itemId } });
+          await tx.sale.delete({ where: { id: saleId } });
 
+          return { ok: true, saleId, deletedItemId: itemId, deletedSale: true };
+        }
         await tx.stockMovement.create({
           data: {
             productId: item.productId,
@@ -2044,9 +2063,18 @@ app.post("/works/:id/payments", requireRole("EMPLOYEE"), async (req, res) => {
       where: { workOrderId: id },
       _sum: { amount: true },
     });
+    const deposit = Number(agg2._sum.amount ?? 0);
+    const balance =
+      wo.quote != null && ["FINISHED", "DELIVERED"].includes(String(wo.status))
+        ? Math.max(Number(wo.quote) - deposit, 0)
+        : undefined;
+
     await prisma.workOrder.update({
       where: { id },
-      data: { deposit: Number(agg2._sum.amount ?? 0) },
+      data: {
+        deposit,
+        ...(balance !== undefined ? { total: balance } : {}),
+      },
     });
   } catch {
     /* noop */
@@ -2106,9 +2134,21 @@ app.delete(
 
       const newDeposit = Number(agg._sum.amount ?? 0);
 
+      const wo = await prisma.workOrder.findUnique({
+        where: { id: workId },
+        select: { quote: true, status: true },
+      });
+      const balance =
+        wo?.quote != null && ["FINISHED", "DELIVERED"].includes(String(wo.status))
+          ? Math.max(Number(wo.quote) - newDeposit, 0)
+          : undefined;
+
       await prisma.workOrder.update({
         where: { id: workId },
-        data: { deposit: newDeposit },
+        data: {
+          deposit: newDeposit,
+          ...(balance !== undefined ? { total: balance } : {}),
+        },
       });
 
       res.json({

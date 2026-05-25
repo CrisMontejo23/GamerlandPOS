@@ -579,11 +579,16 @@ export default function SalesPage() {
         setTimeout(hideToast, 2400);
         return;
       }
+      const payload = (await resp.json().catch(() => ({}))) as {
+        deletedSale?: boolean;
+      };
       setToast({
         open: true,
         kind: "success",
-        title: "Artículo eliminado",
-        subtitle: "La venta fue recalculada y el stock fue compensado.",
+        title: payload.deletedSale ? "Venta eliminada" : "Articulo eliminado",
+        subtitle: payload.deletedSale
+          ? "Era el ultimo articulo, asi que se elimino la venta completa."
+          : "La venta fue recalculada y el stock fue compensado.",
       });
       setTimeout(hideToast, 2200);
       load();
@@ -1367,9 +1372,9 @@ export default function SalesPage() {
 
       <GamerConfirm
         open={confirmOpen}
-        title="¿Eliminar venta?"
-        message="Esta acción no se puede deshacer."
-        confirmText="Sí, eliminar"
+        title="Eliminar registro"
+        message="Se eliminara este registro. Si es el unico registro de la venta, la venta completa se eliminara automaticamente."
+        confirmText="Si, eliminar"
         cancelText="Cancelar"
         onConfirm={() => confirmAction?.()}
         onCancel={() => {
