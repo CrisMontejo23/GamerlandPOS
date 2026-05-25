@@ -1200,6 +1200,43 @@ export default function WorksPage() {
     });
   }
 
+  function cleanWhatsAppText(text: string) {
+    const replacements: Array<[string, string]> = [
+      ["\u00c3\u00a1", "á"],
+      ["\u00c3\u00a9", "é"],
+      ["\u00c3\u00ad", "í"],
+      ["\u00c3\u00b3", "ó"],
+      ["\u00c3\u00ba", "ú"],
+      ["\u00c3\u00b1", "ñ"],
+      ["\u00c3\u0081", "Á"],
+      ["\u00c3\u0089", "É"],
+      ["\u00c3\u008d", "Í"],
+      ["\u00c3\u0093", "Ó"],
+      ["\u00c3\u009a", "Ú"],
+      ["\u00c2\u00bf", "¿"],
+      ["\u00c2\u00a1", "¡"],
+      ["\u00e2\u20ac\u0153", "“"],
+      ["\u00e2\u20ac\u009d", "”"],
+      ["\u00e2\u20ac\u201d", "—"],
+      ["\u00e2\u20ac\u00a2", "•"],
+      ["\u00e2\u20ac\u00a6", "…"],
+      ["\u00e2\u0153\u2026", "✅"],
+      ["está finalizado", "esté finalizado"],
+      ["este finalizado", "esté finalizado"],
+      ["Aun faltan", "Aún faltan"],
+      ["ultimo producto", "último producto"],
+      ["horario de atencion", "horario de atención"],
+    ];
+
+    let clean = text;
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (const [from, to] of replacements) {
+        clean = clean.split(from).join(to);
+      }
+    }
+    return clean;
+  }
+
   function buildProductDoneMsg(
     w: WorkOrder,
     item: WorkItem,
@@ -1229,16 +1266,16 @@ export default function WorksPage() {
     if (pendingCount > 0) {
       lineas.push(
         ``,
-        `Aun faltan ${pendingCount} ${pendingLabel} por finalizar:`,
+        `Aún faltan ${pendingCount} ${pendingLabel} por finalizar:`,
         ...pendingNames.map((n, idx) => `${idx + 1}. ${UU(n)}`),
         ``,
-        `Te avisaremos cuando este finalizado todo el servicio.`,
+        `Te avisaremos cuando esté finalizado todo el servicio.`,
       );
     } else {
       lineas.push(
         ``,
-        `Este era el ultimo producto del trabajo.`,
-        `Puedes pasar a recoger cuando gustes en el horario de atencion.`,
+        `Este era el último producto del trabajo.`,
+        `Puedes pasar a recoger cuando gustes en el horario de atención.`,
         `Gracias por confiar en Gamerland.`,
       );
     }
@@ -1280,7 +1317,9 @@ export default function WorksPage() {
 
   function openWhatsApp(phone: string, text: string) {
     const num = normalizeCOPhone(phone);
-    const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+    const url = `https://wa.me/${num}?text=${encodeURIComponent(
+      cleanWhatsAppText(text),
+    )}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -1357,8 +1396,8 @@ export default function WorksPage() {
     if (newStatus === "IN_PROGRESS") {
       return [
         `Hola ${UU(w.customerName)}.`,
-        `Tu trabajo ${base} ha iniciado proceso.`,
-        `Te avisaremos cuando está finalizado.`,
+        `Tu trabajo ${base} ya está en proceso.`,
+        `Te avisaremos cuando esté finalizado.`,
       ].join("\n");
     }
 
