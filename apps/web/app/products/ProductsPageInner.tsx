@@ -976,147 +976,6 @@ export default function ProductsPage() {
           )}
         </div>
 
-        {role === "ADMIN" && (
-          <section
-            className="mb-4 rounded-2xl p-3 sm:p-4"
-            style={{
-              backgroundColor: UI.bgCard,
-              border: `1px solid ${UI.border}`,
-            }}
-          >
-            <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-wide text-cyan-300">
-                  Resumen de mercanc?a en stock
-                </h2>
-                <p className="text-xs text-gray-400">
-                  Costos y valor potencial de venta calculados por categor?a.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                {inventorySummaryLoading && (
-                  <span className="text-xs uppercase text-gray-400">
-                    Cargando resumen...
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={exportInventorySummaryPdf}
-                  disabled={!inventorySummary || inventorySummaryLoading}
-                  className="rounded-lg border px-3 py-2 text-xs font-semibold uppercase disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ borderColor: UI.border }}
-                >
-                  PDF resumen
-                </button>
-                <button
-                  type="button"
-                  onClick={exportInventoryDetailPdf}
-                  disabled={!inventorySummary || inventorySummaryLoading}
-                  className="rounded-lg px-3 py-2 text-xs font-semibold uppercase text-[#001014] disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{
-                    background:
-                      "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
-                    boxShadow: UI.glow,
-                  }}
-                >
-                  PDF detallado
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
-                <div className="text-[11px] uppercase text-gray-400">
-                  Categorías
-                </div>
-                <div className="mt-1 text-xl font-black text-cyan-300">
-                  {inventorySummary?.totals.categories ?? 0}
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
-                <div className="text-[11px] uppercase text-gray-400">
-                  Productos
-                </div>
-                <div className="mt-1 text-xl font-black text-slate-100">
-                  {inventorySummary?.totals.products ?? 0}
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
-                <div className="text-[11px] uppercase text-gray-400">
-                  Unidades
-                </div>
-                <div className="mt-1 text-xl font-black text-slate-100">
-                  {inventorySummary?.totals.units ?? 0}
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
-                <div className="text-[11px] uppercase text-gray-400">
-                  Costo total
-                </div>
-                <div className="mt-1 text-lg font-black text-pink-300">
-                  {fmtCOP(inventorySummary?.totals.totalCost ?? 0)}
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
-                <div className="text-[11px] uppercase text-gray-400">
-                  Venta posible
-                </div>
-                <div className="mt-1 text-lg font-black text-emerald-300">
-                  {fmtCOP(inventorySummary?.totals.totalSale ?? 0)}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="bg-[#0F1030] text-xs uppercase text-gray-400">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Categoría</th>
-                    <th className="px-3 py-2 text-right">Productos</th>
-                    <th className="px-3 py-2 text-right">Unidades</th>
-                    <th className="px-3 py-2 text-right">Costo stock</th>
-                    <th className="px-3 py-2 text-right">Venta posible</th>
-                    <th className="px-3 py-2 text-right">Ganancia posible</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!inventorySummaryLoading &&
-                    (inventorySummary?.categories.length ?? 0) === 0 && (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-3 py-4 text-center text-sm text-gray-500"
-                        >
-                          No hay mercancía con stock positivo.
-                        </td>
-                      </tr>
-                    )}
-                  {inventorySummary?.categories.map((cat) => (
-                    <tr
-                      key={cat.category}
-                      className="border-t border-white/10 text-gray-100"
-                    >
-                      <td className="px-3 py-2 font-semibold">{cat.category}</td>
-                      <td className="px-3 py-2 text-right">{cat.products}</td>
-                      <td className="px-3 py-2 text-right">{cat.units}</td>
-                      <td className="px-3 py-2 text-right text-pink-200">
-                        {fmtCOP(cat.totalCost)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-emerald-200">
-                        {fmtCOP(cat.totalSale)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-cyan-200">
-                        {fmtCOP(cat.potentialProfit)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-        )}
-
         <div
           className="rounded-xl overflow-x-auto"
           style={{
@@ -1512,6 +1371,147 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+        {role === "ADMIN" && (
+          <section
+            className="mb-4 rounded-2xl p-3 sm:p-4"
+            style={{
+              backgroundColor: UI.bgCard,
+              border: `1px solid ${UI.border}`,
+            }}
+          >
+            <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-wide text-cyan-300">
+                  Resumen de mercancía en stock
+                </h2>
+                <p className="text-xs text-gray-400">
+                  Costos y valor potencial de venta calculados por categoría.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {inventorySummaryLoading && (
+                  <span className="text-xs uppercase text-gray-400">
+                    Cargando resumen...
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={exportInventorySummaryPdf}
+                  disabled={!inventorySummary || inventorySummaryLoading}
+                  className="rounded-lg border px-3 py-2 text-xs font-semibold uppercase disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ borderColor: UI.border }}
+                >
+                  PDF resumen
+                </button>
+                <button
+                  type="button"
+                  onClick={exportInventoryDetailPdf}
+                  disabled={!inventorySummary || inventorySummaryLoading}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold uppercase text-[#001014] disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{
+                    background:
+                      "linear-gradient(90deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9))",
+                    boxShadow: UI.glow,
+                  }}
+                >
+                  PDF detallado
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
+                <div className="text-[11px] uppercase text-gray-400">
+                  Categorías
+                </div>
+                <div className="mt-1 text-xl font-black text-cyan-300">
+                  {inventorySummary?.totals.categories ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
+                <div className="text-[11px] uppercase text-gray-400">
+                  Productos
+                </div>
+                <div className="mt-1 text-xl font-black text-slate-100">
+                  {inventorySummary?.totals.products ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
+                <div className="text-[11px] uppercase text-gray-400">
+                  Unidades
+                </div>
+                <div className="mt-1 text-xl font-black text-slate-100">
+                  {inventorySummary?.totals.units ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
+                <div className="text-[11px] uppercase text-gray-400">
+                  Costo total
+                </div>
+                <div className="mt-1 text-lg font-black text-pink-300">
+                  {fmtCOP(inventorySummary?.totals.totalCost ?? 0)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0F1030] p-3">
+                <div className="text-[11px] uppercase text-gray-400">
+                  Venta posible
+                </div>
+                <div className="mt-1 text-lg font-black text-emerald-300">
+                  {fmtCOP(inventorySummary?.totals.totalSale ?? 0)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-[#0F1030] text-xs uppercase text-gray-400">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Categoría</th>
+                    <th className="px-3 py-2 text-right">Productos</th>
+                    <th className="px-3 py-2 text-right">Unidades</th>
+                    <th className="px-3 py-2 text-right">Costo stock</th>
+                    <th className="px-3 py-2 text-right">Venta posible</th>
+                    <th className="px-3 py-2 text-right">Ganancia posible</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!inventorySummaryLoading &&
+                    (inventorySummary?.categories.length ?? 0) === 0 && (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="px-3 py-4 text-center text-sm text-gray-500"
+                        >
+                          No hay mercancía con stock positivo.
+                        </td>
+                      </tr>
+                    )}
+                  {inventorySummary?.categories.map((cat) => (
+                    <tr
+                      key={cat.category}
+                      className="border-t border-white/10 text-gray-100"
+                    >
+                      <td className="px-3 py-2 font-semibold">{cat.category}</td>
+                      <td className="px-3 py-2 text-right">{cat.products}</td>
+                      <td className="px-3 py-2 text-right">{cat.units}</td>
+                      <td className="px-3 py-2 text-right text-pink-200">
+                        {fmtCOP(cat.totalCost)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-emerald-200">
+                        {fmtCOP(cat.totalSale)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-cyan-200">
+                        {fmtCOP(cat.potentialProfit)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+        )}
+
       </div>
 
       {/* Toast gamer */}

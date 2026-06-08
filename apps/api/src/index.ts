@@ -1390,6 +1390,8 @@ app.get("/stock/category-summary", requireRole("ADMIN"), async (_req, res) => {
     if (stock <= 0) continue;
 
     const category = String(p.category || "SIN CATEGORIA").trim().toUpperCase();
+    if (category === "SERVICIOS") continue;
+
     const costValue = stock * Number(p.cost || 0);
     const saleValue = stock * Number(p.price || 0);
 
