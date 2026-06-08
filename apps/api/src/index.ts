@@ -1335,7 +1335,7 @@ app.get("/stock/summary", requireRole("EMPLOYEE"), async (_req, res) => {
   );
 });
 
-app.get("/stock/category-summary", requireRole("EMPLOYEE"), async (_req, res) => {
+app.get("/stock/category-summary", requireRole("ADMIN"), async (_req, res) => {
   const rows = (await prisma.stockMovement.groupBy({
     by: ["productId", "type"] as const,
     _sum: { qty: true },
@@ -1366,6 +1366,17 @@ app.get("/stock/category-summary", requireRole("EMPLOYEE"), async (_req, res) =>
     totalCost: number;
     totalSale: number;
     potentialProfit: number;
+    items: Array<{
+      id: number;
+      sku: string | null;
+      name: string;
+      stock: number;
+      unitCost: number;
+      unitPrice: number;
+      totalCost: number;
+      totalSale: number;
+      potentialProfit: number;
+    }>;
   };
 
   const categoryMap = new Map<string, CategoryRow>();
@@ -1391,6 +1402,7 @@ app.get("/stock/category-summary", requireRole("EMPLOYEE"), async (_req, res) =>
         totalCost: 0,
         totalSale: 0,
         potentialProfit: 0,
+        items: [],
       } satisfies CategoryRow);
 
     current.products += 1;
@@ -1398,6 +1410,17 @@ app.get("/stock/category-summary", requireRole("EMPLOYEE"), async (_req, res) =>
     current.totalCost += costValue;
     current.totalSale += saleValue;
     current.potentialProfit += saleValue - costValue;
+    current.items.push({
+      id: p.id,
+      sku: p.sku,
+      name: p.name,
+      stock,
+      unitCost: Number(p.cost || 0),
+      unitPrice: Number(p.price || 0),
+      totalCost: costValue,
+      totalSale: saleValue,
+      potentialProfit: saleValue - costValue,
+    });
     categoryMap.set(category, current);
 
     totalProducts += 1;
@@ -1413,6 +1436,17 @@ app.get("/stock/category-summary", requireRole("EMPLOYEE"), async (_req, res) =>
       totalCost: Math.round(r.totalCost),
       totalSale: Math.round(r.totalSale),
       potentialProfit: Math.round(r.potentialProfit),
+      items: r.items
+        .map((item) => ({
+          ...item,
+          stock: Math.round(item.stock),
+          unitCost: Math.round(item.unitCost),
+          unitPrice: Math.round(item.unitPrice),
+          totalCost: Math.round(item.totalCost),
+          totalSale: Math.round(item.totalSale),
+          potentialProfit: Math.round(item.potentialProfit),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, "es")),
     }))
     .sort((a, b) => b.totalCost - a.totalCost);
 
