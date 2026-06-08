@@ -1335,6 +1335,100 @@ app.get("/stock/summary", requireRole("EMPLOYEE"), async (_req, res) => {
   );
 });
 
+app.get("/stock/category-summary", requireRole("EMPLOYEE"), async (_req, res) => {
+  const rows = (await prisma.stockMovement.groupBy({
+    by: ["productId", "type"] as const,
+    _sum: { qty: true },
+  })) as unknown as Array<{
+    productId: number;
+    type: string;
+    _sum: { qty: number | null };
+  }>;
+
+  const stockByProduct = new Map<number, number>();
+  for (const r of rows) {
+    const sign = r.type === "out" ? -1 : 1;
+    stockByProduct.set(
+      r.productId,
+      (stockByProduct.get(r.productId) || 0) + sign * Number(r._sum.qty || 0),
+    );
+  }
+
+  const ids = Array.from(stockByProduct.keys());
+  const products = ids.length
+    ? await prisma.product.findMany({ where: { id: { in: ids } } })
+    : [];
+
+  type CategoryRow = {
+    category: string;
+    products: number;
+    units: number;
+    totalCost: number;
+    totalSale: number;
+    potentialProfit: number;
+  };
+
+  const categoryMap = new Map<string, CategoryRow>();
+  let totalProducts = 0;
+  let totalUnits = 0;
+  let totalCost = 0;
+  let totalSale = 0;
+
+  for (const p of products) {
+    const stock = stockByProduct.get(p.id) || 0;
+    if (stock <= 0) continue;
+
+    const category = String(p.category || "SIN CATEGORIA").trim().toUpperCase();
+    const costValue = stock * Number(p.cost || 0);
+    const saleValue = stock * Number(p.price || 0);
+
+    const current =
+      categoryMap.get(category) ||
+      ({
+        category,
+        products: 0,
+        units: 0,
+        totalCost: 0,
+        totalSale: 0,
+        potentialProfit: 0,
+      } satisfies CategoryRow);
+
+    current.products += 1;
+    current.units += stock;
+    current.totalCost += costValue;
+    current.totalSale += saleValue;
+    current.potentialProfit += saleValue - costValue;
+    categoryMap.set(category, current);
+
+    totalProducts += 1;
+    totalUnits += stock;
+    totalCost += costValue;
+    totalSale += saleValue;
+  }
+
+  const categories = Array.from(categoryMap.values())
+    .map((r) => ({
+      ...r,
+      units: Math.round(r.units),
+      totalCost: Math.round(r.totalCost),
+      totalSale: Math.round(r.totalSale),
+      potentialProfit: Math.round(r.potentialProfit),
+    }))
+    .sort((a, b) => b.totalCost - a.totalCost);
+
+  res.json({
+    totals: {
+      categories: categories.length,
+      products: totalProducts,
+      units: Math.round(totalUnits),
+      totalCost: Math.round(totalCost),
+      totalSale: Math.round(totalSale),
+      potentialProfit: Math.round(totalSale - totalCost),
+    },
+    categories,
+  });
+});
+
 // ==================== EXPENSES ====================
 
 // Presets para que el front alimente el selector
